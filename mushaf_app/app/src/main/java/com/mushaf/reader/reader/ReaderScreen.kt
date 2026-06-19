@@ -328,32 +328,33 @@ private fun ReaderHeader(
                 .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
         ) {
             // Camera-safe top strip: every quick-access button lives here, split between the two
-            // corners so the center stays clear for a punch-hole/notch.
+            // corners so the center stays clear for a punch-hole/notch. Trim a little of the inset
+            // to tighten the top gap, but never below the icon height (32dp).
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(maxOf(topInset, 34.dp))
+                    .height(maxOf(topInset - 6.dp, 32.dp))
             ) {
                 // Start corner (top-right in RTL): index, theme, fill-screen.
                 Row(
                     modifier = Modifier.align(Alignment.TopStart),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onOpenIndex, modifier = Modifier.size(34.dp)) {
+                    IconButton(onClick = onOpenIndex, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.MenuBook,
                             contentDescription = "فهرس السور والأجزاء",
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                    IconButton(onClick = onToggleTheme, modifier = Modifier.size(34.dp)) {
+                    IconButton(onClick = onToggleTheme, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = if (dark) Icons.Filled.LightMode else Icons.Filled.DarkMode,
                             contentDescription = "تبديل الوضع",
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                    IconButton(onClick = onToggleFillScreen, modifier = Modifier.size(34.dp)) {
+                    IconButton(onClick = onToggleFillScreen, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = if (fillScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
                             contentDescription = if (fillScreen) "عرض الصفحة كاملة" else "ملء الشاشة",
@@ -367,7 +368,7 @@ private fun ReaderHeader(
                     modifier = Modifier.align(Alignment.TopEnd),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onStats, modifier = Modifier.size(34.dp)) {
+                    IconButton(onClick = onStats, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = Icons.Filled.BarChart,
                             contentDescription = "إحصائيات القراءة",
@@ -377,7 +378,7 @@ private fun ReaderHeader(
                     IconButton(
                         onClick = onBookmarkJump,
                         enabled = hasBookmark,
-                        modifier = Modifier.size(34.dp)
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Bookmark,
@@ -385,14 +386,14 @@ private fun ReaderHeader(
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                    IconButton(onClick = onHideHeader, modifier = Modifier.size(34.dp)) {
+                    IconButton(onClick = onHideHeader, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = Icons.Filled.KeyboardArrowUp,
                             contentDescription = "إخفاء الشريط العلوي وملء الشاشة",
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                    IconButton(onClick = onOpenSearch, modifier = Modifier.size(34.dp)) {
+                    IconButton(onClick = onOpenSearch, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = Icons.Filled.Search,
                             contentDescription = "بحث",
