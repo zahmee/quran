@@ -25,6 +25,9 @@ data class SurahEntry(val number: Int, val nameAr: String, val firstPage: Int)
 /** One juz in the navigation index: number and the page it begins on. */
 data class JuzEntry(val number: Int, val firstPage: Int)
 
+/** Juz position for a page: juz number, the page's index within that juz, and the juz's page count. */
+data class JuzPageInfo(val juz: Int, val pageInJuz: Int, val pagesInJuz: Int)
+
 /** A single search hit. */
 data class SearchResult(
     val verseKey: String,
@@ -186,6 +189,42 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         return byNumber.entries.sortedBy { it.key }.map { JuzEntry(it.key, it.value) }
+    }
+
+    /** Total number of ayahs in each surah (index 0 = surah 1), standard Hafs/Madinah numbering. */
+    private val surahAyahCounts = intArrayOf(
+        7, 286, 200, 176, 120, 165, 206, 75, 129, 109,
+        123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
+        112, 78, 118, 64, 77, 227, 93, 88, 69, 60,
+        34, 30, 73, 54, 45, 83, 182, 88, 75, 85,
+        54, 53, 89, 59, 37, 35, 38, 29, 18, 45,
+        60, 49, 62, 55, 78, 96, 29, 22, 24, 13,
+        14, 11, 11, 18, 12, 12, 30, 52, 52, 44,
+        28, 28, 20, 56, 40, 31, 50, 40, 46, 42,
+        29, 19, 36, 25, 22, 17, 19, 26, 30, 20,
+        15, 21, 11, 8, 8, 19, 5, 8, 8, 11,
+        11, 8, 3, 9, 5, 4, 7, 3, 6, 3,
+        5, 4, 5, 6
+    )
+
+    /** Number of ayahs in [surahNumber] (1..114); 0 if out of range. */
+    fun surahAyahCount(surahNumber: Int): Int =
+        surahAyahCounts.getOrElse(surahNumber - 1) { 0 }
+
+    /** Juz number, current page within the juz, and total pages in the juz — derived purely from
+     *  the page number using the Madinah mushaf layout: juz 1 = 21 pages (1..21), juz 2..29 =
+     *  20 pages each, juz 30 = 23 pages (582..604). */
+    fun juzInfoForPage(page: Int): JuzPageInfo {
+        val p = page.coerceIn(1, pageCount)
+        return when {
+            p <= 21 -> JuzPageInfo(1, p, 21)
+            p >= 582 -> JuzPageInfo(30, p - 581, 23)
+            else -> {
+                val juz = 2 + (p - 22) / 20
+                val start = 22 + (juz - 2) * 20
+                JuzPageInfo(juz, p - start + 1, 20)
+            }
+        }
     }
 
     // Cached (marker, normalized text) pairs, built once from the loaded ayah data.

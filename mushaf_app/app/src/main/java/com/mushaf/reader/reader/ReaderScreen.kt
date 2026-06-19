@@ -133,12 +133,17 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
             ) {
                 val currentPage = pagerState.currentPage + 1
                 val pageInfo = viewModel.markersForPage(currentPage).firstOrNull()
+                val juzInfo = viewModel.juzInfoForPage(currentPage)
 
                 if (headerVisible) {
                     ReaderHeader(
                         page = currentPage,
+                        surahNumber = pageInfo?.surahNumber,
                         surah = pageInfo?.surahNameAr,
-                        juz = pageInfo?.juz,
+                        ayahCount = pageInfo?.let { viewModel.surahAyahCount(it.surahNumber) },
+                        juz = juzInfo.juz,
+                        pageInJuz = juzInfo.pageInJuz,
+                        pagesInJuz = juzInfo.pagesInJuz,
                         dark = viewModel.darkTheme,
                         hasBookmark = viewModel.bookmarks.isNotEmpty(),
                         fillScreen = viewModel.fillScreen,
@@ -285,8 +290,12 @@ private fun ReaderPager(
 @Composable
 private fun ReaderHeader(
     page: Int,
+    surahNumber: Int?,
     surah: String?,
-    juz: Int?,
+    ayahCount: Int?,
+    juz: Int,
+    pageInJuz: Int,
+    pagesInJuz: Int,
     dark: Boolean,
     hasBookmark: Boolean,
     fillScreen: Boolean,
@@ -318,28 +327,64 @@ private fun ReaderHeader(
                 // Keep clear of a side notch in landscape; the top band is handled by the strip.
                 .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
         ) {
-            // Camera-safe top strip: quick-access buttons in the two corners, beside the camera.
+            // Camera-safe top strip: every quick-access button lives here, split between the two
+            // corners so the center stays clear for a punch-hole/notch.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(maxOf(topInset, 34.dp))
             ) {
-                IconButton(
-                    onClick = onOpenIndex,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .size(34.dp)
+                // Start corner (top-right in RTL): index, theme, fill-screen.
+                Row(
+                    modifier = Modifier.align(Alignment.TopStart),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.MenuBook,
-                        contentDescription = "فهرس السور والأجزاء",
-                        modifier = Modifier.size(20.dp)
-                    )
+                    IconButton(onClick = onOpenIndex, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                            contentDescription = "فهرس السور والأجزاء",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(onClick = onToggleTheme, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            imageVector = if (dark) Icons.Filled.LightMode else Icons.Filled.DarkMode,
+                            contentDescription = "تبديل الوضع",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(onClick = onToggleFillScreen, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            imageVector = if (fillScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                            contentDescription = if (fillScreen) "عرض الصفحة كاملة" else "ملء الشاشة",
+                            tint = if (fillScreen) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
+                // End corner (top-left in RTL): stats, bookmark, hide, search (search at the corner).
                 Row(
                     modifier = Modifier.align(Alignment.TopEnd),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    IconButton(onClick = onStats, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            imageVector = Icons.Filled.BarChart,
+                            contentDescription = "إحصائيات القراءة",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = onBookmarkJump,
+                        enabled = hasBookmark,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Bookmark,
+                            contentDescription = "الذهاب إلى الإشارة المرجعية",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                     IconButton(onClick = onHideHeader, modifier = Modifier.size(34.dp)) {
                         Icon(
                             imageVector = Icons.Filled.KeyboardArrowUp,
@@ -357,78 +402,45 @@ private fun ReaderHeader(
                 }
             }
 
+            // Info row — surah identity (start) · page number (center) · juz position (end).
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 1.dp)
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
             ) {
-            if (surah != null) {
-                val label = if (juz != null && juz > 0) {
-                    "$surah  •  الجزء ${juz.toArabicDigits()}"
-                } else {
-                    surah
+                if (surah != null) {
+                    val surahLabel = buildString {
+                        if (surahNumber != null) append("${surahNumber.toArabicDigits()} ")
+                        append(surah)
+                        if (ayahCount != null && ayahCount > 0) append(" (${ayahCount.toArabicDigits()})")
+                    }
+                    Text(
+                        text = surahLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(start = 4.dp)
+                    )
                 }
+
                 Text(
-                    text = label,
+                    text = page.toArabicDigits(),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { onPageClick() }
+                        .padding(horizontal = 16.dp, vertical = 3.dp)
+                )
+
+                Text(
+                    text = "الجزء ${juz.toArabicDigits()} (${pageInJuz.toArabicDigits()}/${pagesInJuz.toArabicDigits()})",
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = 4.dp)
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 4.dp)
                 )
-            }
-
-            Text(
-                text = page.toArabicDigits(),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .clip(RoundedCornerShape(6.dp))
-                    .clickable { onPageClick() }
-                    .padding(horizontal = 16.dp, vertical = 3.dp)
-            )
-
-            Row(
-                modifier = Modifier.align(Alignment.CenterEnd),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onToggleFillScreen, modifier = Modifier.size(34.dp)) {
-                    Icon(
-                        imageVector = if (fillScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
-                        contentDescription = if (fillScreen) "عرض الصفحة كاملة" else "ملء الشاشة",
-                        tint = if (fillScreen) MaterialTheme.colorScheme.primary else LocalContentColor.current,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                IconButton(onClick = onStats, modifier = Modifier.size(34.dp)) {
-                    Icon(
-                        imageVector = Icons.Filled.BarChart,
-                        contentDescription = "إحصائيات القراءة",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                IconButton(
-                    onClick = onBookmarkJump,
-                    enabled = hasBookmark,
-                    modifier = Modifier.size(34.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Bookmark,
-                        contentDescription = "الذهاب إلى الإشارة المرجعية",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                IconButton(
-                    onClick = onToggleTheme,
-                    modifier = Modifier.size(34.dp)
-                ) {
-                    Icon(
-                        imageVector = if (dark) Icons.Filled.LightMode else Icons.Filled.DarkMode,
-                        contentDescription = "تبديل الوضع",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
             }
         }
     }
