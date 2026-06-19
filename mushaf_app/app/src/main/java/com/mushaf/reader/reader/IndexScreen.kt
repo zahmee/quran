@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +38,7 @@ fun IndexScreen(
     surahs: List<SurahEntry>,
     juzs: List<JuzEntry>,
     onJump: (Int) -> Unit,
+    onAbout: () -> Unit,
     onBack: () -> Unit,
 ) {
     var tab by remember { mutableStateOf(0) }
@@ -57,8 +59,12 @@ fun IndexScreen(
                     Text(
                         text = "الفهرس",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
                     )
+                    IconButton(onClick = onAbout) {
+                        Icon(Icons.Outlined.Info, contentDescription = "حول التطبيق")
+                    }
                 }
             }
 

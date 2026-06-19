@@ -101,6 +101,7 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
     var showStatsScreen by remember { mutableStateOf(false) }
     var showIndex by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
     var headerVisible by remember { mutableStateOf(true) }
     val selected = viewModel.selectedAyah
 
@@ -111,8 +112,10 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
     BackHandler(enabled = showStatsScreen) { showStatsScreen = false }
     BackHandler(enabled = showIndex) { showIndex = false }
     BackHandler(enabled = showSearch) { showSearch = false }
+    // Registered after showIndex so Back from About returns to the index it was opened from.
+    BackHandler(enabled = showAbout) { showAbout = false }
     // When the header is hidden, Back brings it back instead of leaving the app.
-    BackHandler(enabled = !showStatsScreen && !showIndex && !showSearch && !headerVisible) {
+    BackHandler(enabled = !showStatsScreen && !showIndex && !showSearch && !showAbout && !headerVisible) {
         headerVisible = true
     }
 
@@ -207,8 +210,13 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                     showIndex = false
                     jumpToPage(page)
                 },
+                onAbout = { showAbout = true },
                 onBack = { showIndex = false }
             )
+        }
+
+        if (showAbout) {
+            AboutScreen(onBack = { showAbout = false })
         }
 
         if (showSearch) {
