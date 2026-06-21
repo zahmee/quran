@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
@@ -24,6 +25,13 @@ class ReadingStore(private val context: Context) {
     private val keyBigButtons = booleanPreferencesKey("big_buttons")
     private val keyShowClock = booleanPreferencesKey("show_clock")
     private val keyShowSessionTimer = booleanPreferencesKey("show_session_timer")
+    private val keyShowSurahNumber = booleanPreferencesKey("show_surah_number")
+    private val keyShowSurahAyahCount = booleanPreferencesKey("show_surah_ayah_count")
+    private val keyShowSurahProgress = booleanPreferencesKey("show_surah_progress")
+    private val keyShowJuzProgressPercent = booleanPreferencesKey("show_juz_progress_percent")
+    private val keyShowJuzProgressPages = booleanPreferencesKey("show_juz_progress_pages")
+    private val keyClockColor = stringPreferencesKey("clock_color")
+    private val keySessionTimerColor = stringPreferencesKey("session_timer_color")
 
     /** The display/position settings + per-page progress read together in one pass at startup.
      *  [visitedPages] = pages opened at all; [readPages] = pages dwelt on long enough to count
@@ -38,6 +46,13 @@ class ReadingStore(private val context: Context) {
         val bigButtons: Boolean,
         val showClock: Boolean,
         val showSessionTimer: Boolean,
+        val showSurahNumber: Boolean,
+        val showSurahAyahCount: Boolean,
+        val showSurahProgress: Boolean,
+        val showJuzProgressPercent: Boolean,
+        val showJuzProgressPages: Boolean,
+        val clockColor: String,
+        val sessionTimerColor: String,
     )
 
     suspend fun settings(): Settings {
@@ -52,6 +67,13 @@ class ReadingStore(private val context: Context) {
             bigButtons = prefs[keyBigButtons] ?: false,
             showClock = prefs[keyShowClock] ?: false,
             showSessionTimer = prefs[keyShowSessionTimer] ?: false,
+            showSurahNumber = prefs[keyShowSurahNumber] ?: false,
+            showSurahAyahCount = prefs[keyShowSurahAyahCount] ?: false,
+            showSurahProgress = prefs[keyShowSurahProgress] ?: false,
+            showJuzProgressPercent = prefs[keyShowJuzProgressPercent] ?: false,
+            showJuzProgressPages = prefs[keyShowJuzProgressPages] ?: false,
+            clockColor = prefs[keyClockColor] ?: "muted",
+            sessionTimerColor = prefs[keySessionTimerColor] ?: "muted",
         )
     }
 
@@ -92,6 +114,34 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setShowSessionTimer(value: Boolean) {
         context.dataStore.edit { it[keyShowSessionTimer] = value }
+    }
+
+    suspend fun setShowSurahNumber(value: Boolean) {
+        context.dataStore.edit { it[keyShowSurahNumber] = value }
+    }
+
+    suspend fun setShowSurahAyahCount(value: Boolean) {
+        context.dataStore.edit { it[keyShowSurahAyahCount] = value }
+    }
+
+    suspend fun setShowSurahProgress(value: Boolean) {
+        context.dataStore.edit { it[keyShowSurahProgress] = value }
+    }
+
+    suspend fun setShowJuzProgressPercent(value: Boolean) {
+        context.dataStore.edit { it[keyShowJuzProgressPercent] = value }
+    }
+
+    suspend fun setShowJuzProgressPages(value: Boolean) {
+        context.dataStore.edit { it[keyShowJuzProgressPages] = value }
+    }
+
+    suspend fun setClockColor(value: String) {
+        context.dataStore.edit { it[keyClockColor] = value }
+    }
+
+    suspend fun setSessionTimerColor(value: String) {
+        context.dataStore.edit { it[keySessionTimerColor] = value }
     }
 
     suspend fun bookmarks(): Set<String> = context.dataStore.data.first()[keyBookmarks] ?: emptySet()

@@ -80,6 +80,27 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var showSessionTimer by mutableStateOf(initialSettings.showSessionTimer)
         private set
 
+    var showSurahNumber by mutableStateOf(initialSettings.showSurahNumber)
+        private set
+
+    var showSurahAyahCount by mutableStateOf(initialSettings.showSurahAyahCount)
+        private set
+
+    var showSurahProgress by mutableStateOf(initialSettings.showSurahProgress)
+        private set
+
+    var showJuzProgressPercent by mutableStateOf(initialSettings.showJuzProgressPercent)
+        private set
+
+    var showJuzProgressPages by mutableStateOf(initialSettings.showJuzProgressPages)
+        private set
+
+    var clockColor by mutableStateOf(initialSettings.clockColor)
+        private set
+
+    var sessionTimerColor by mutableStateOf(initialSettings.sessionTimerColor)
+        private set
+
     /** Start time (ms) of the current foreground reading session; 0 when none is running.
      *  Observable so the header timer updates when a new session begins. */
     var sessionStartedAt by mutableStateOf(0L)
@@ -163,6 +184,48 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         if (value == showSessionTimer) return
         showSessionTimer = value
         viewModelScope.launch { store.setShowSessionTimer(value) }
+    }
+
+    fun updateShowSurahNumber(value: Boolean) {
+        if (value == showSurahNumber) return
+        showSurahNumber = value
+        viewModelScope.launch { store.setShowSurahNumber(value) }
+    }
+
+    fun updateShowSurahAyahCount(value: Boolean) {
+        if (value == showSurahAyahCount) return
+        showSurahAyahCount = value
+        viewModelScope.launch { store.setShowSurahAyahCount(value) }
+    }
+
+    fun updateShowSurahProgress(value: Boolean) {
+        if (value == showSurahProgress) return
+        showSurahProgress = value
+        viewModelScope.launch { store.setShowSurahProgress(value) }
+    }
+
+    fun updateShowJuzProgressPercent(value: Boolean) {
+        if (value == showJuzProgressPercent) return
+        showJuzProgressPercent = value
+        viewModelScope.launch { store.setShowJuzProgressPercent(value) }
+    }
+
+    fun updateShowJuzProgressPages(value: Boolean) {
+        if (value == showJuzProgressPages) return
+        showJuzProgressPages = value
+        viewModelScope.launch { store.setShowJuzProgressPages(value) }
+    }
+
+    fun updateClockColor(value: String) {
+        if (value == clockColor) return
+        clockColor = value
+        viewModelScope.launch { store.setClockColor(value) }
+    }
+
+    fun updateSessionTimerColor(value: String) {
+        if (value == sessionTimerColor) return
+        sessionTimerColor = value
+        viewModelScope.launch { store.setSessionTimerColor(value) }
     }
 
     fun assetModel(pageNumber: Int): String = pageRepo.assetUri(pageNumber, darkTheme)
