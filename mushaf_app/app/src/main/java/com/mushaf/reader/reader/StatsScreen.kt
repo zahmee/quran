@@ -18,7 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,14 +51,18 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun StatsScreen(
     stats: FullStats?,
     sessions: List<SessionEntity>,
     onBack: () -> Unit,
+    onOpenKhatmaMap: () -> Unit,
+    onDeleteSessions: (List<SessionEntity>) -> Unit,
 ) {
     var tab by remember { mutableStateOf(0) }
+    var pendingDelete by remember { mutableStateOf<PendingStatDelete?>(null) }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -84,15 +92,34 @@ fun StatsScreen(
             }
 
             when (tab) {
-                0 -> OverviewTab(stats)
-                else -> HistoryTab(sessions)
+                0 -> OverviewTab(stats, onOpenKhatmaMap)
+                else -> HistoryTab(sessions) { sess, msg ->
+                    pendingDelete = PendingStatDelete(msg, sess)
+                }
             }
         }
+    }
+
+    pendingDelete?.let { pd ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("حذف") },
+            text = { Text(pd.message) },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteSessions(pd.sessions)
+                    pendingDelete = null
+                }) { Text("حذف", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("إلغاء") }
+            }
+        )
     }
 }
 
 @Composable
-private fun OverviewTab(stats: FullStats?) {
+private fun OverviewTab(stats: FullStats?, onOpenKhatmaMap: () -> Unit) {
     if (stats == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("جارٍ التحميل…") }
         return
@@ -104,15 +131,91 @@ private fun OverviewTab(stats: FullStats?) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        WirdCard(stats)
         StreakCard(stats.streakDays)
         TodayCard(stats)
         WeekChartCard(stats.last7Days)
         PeriodCard(stats)
         RecordsCard(stats)
-        KhatmaCard(stats)
+        KhatmaCard(stats, onOpenKhatmaMap)
         TotalsCard(stats)
         Spacer(Modifier.height(8.dp))
     }
+}
+
+/** Time-based daily wird: pick how long you have, get a page count from your own reading speed. */
+@Composable
+private fun WirdCard(stats: FullStats) {
+    var minutes by remember { mutableStateOf(10) }
+    val pages = (stats.pagesPerMinute * minutes).roundToInt().coerceAtLeast(1)
+    val from = stats.currentPage.coerceIn(1, stats.totalPagesInQuran)
+    val to = (from + pages - 1).coerceAtMost(stats.totalPagesInQuran)
+    Card {
+        SectionTitle("ورد اليوم")
+        Spacer(Modifier.height(2.dp))
+        Text(
+            "كم لديك من وقت؟",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            listOf(5, 10, 15).forEach { m ->
+                WirdChip(
+                    label = "${m.toArabicDigits()} دقائق",
+                    selected = minutes == m,
+                    onClick = { minutes = m },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "ننصحك بقراءة ${pages.toArabicDigits()} صفحة",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            "من صفحة ${from.toArabicDigits()} إلى صفحة ${to.toArabicDigits()}",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            if (stats.paceFromData)
+                "بناءً على سرعتك: ${formatPace(stats.pagesPerMinute)}"
+            else
+                "تقدير مبدئي — يتحسّن تلقائياً كلّما قرأت أكثر",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun WirdChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    ) {
+        Text(
+            label,
+            modifier = Modifier.padding(vertical = 10.dp),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+        )
+    }
+}
+
+/** Friendly pace phrasing: pages/minute when ≥1, else "صفحة كل X دقيقة" for slower reading. */
+private fun formatPace(pagesPerMinute: Double): String {
+    if (pagesPerMinute <= 0.0) return "—"
+    if (pagesPerMinute >= 1.0) return "${pagesPerMinute.roundToInt().toArabicDigits()} صفحة في الدقيقة"
+    val minutesPerPage = (1.0 / pagesPerMinute).roundToInt().coerceAtLeast(1)
+    return "صفحة كل ${minutesPerPage.toArabicDigits()} دقيقة"
 }
 
 @Composable
@@ -245,7 +348,7 @@ private fun RecordsCard(stats: FullStats) {
 }
 
 @Composable
-private fun KhatmaCard(stats: FullStats) {
+private fun KhatmaCard(stats: FullStats, onOpenKhatmaMap: () -> Unit) {
     val remaining = (stats.totalPagesInQuran - stats.currentPage).coerceAtLeast(0)
     Card {
         SectionTitle("تقدّم الختمة")
@@ -275,6 +378,24 @@ private fun KhatmaCard(stats: FullStats) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        Spacer(Modifier.height(10.dp))
+        Surface(
+            onClick = onOpenKhatmaMap,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+            contentColor = MaterialTheme.colorScheme.primary
+        ) {
+            Row(
+                modifier = Modifier.padding(vertical = 10.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Filled.GridView, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("خريطة الختمة", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            }
+        }
     }
 }
 
@@ -292,7 +413,10 @@ private fun TotalsCard(stats: FullStats) {
 }
 
 @Composable
-private fun HistoryTab(sessions: List<SessionEntity>) {
+private fun HistoryTab(
+    sessions: List<SessionEntity>,
+    onRequestDelete: (List<SessionEntity>, String) -> Unit,
+) {
     if (sessions.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("لا توجد جلسات مسجّلة بعد")
@@ -333,21 +457,37 @@ private fun HistoryTab(sessions: List<SessionEntity>) {
                     Spacer(Modifier.height(8.dp))
                     month.days.forEachIndexed { i, day ->
                         if (i > 0) HorizontalDivider(Modifier.padding(vertical = 6.dp))
-                        Text(
-                            dayFmt.format(Date(day.anchorMillis)),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            "${day.sessions.size.toArabicDigits()} جلسة  •  ${day.pages.toArabicDigits()} صفحة  •  ${formatDuration(day.durationMs)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    dayFmt.format(Date(day.anchorMillis)),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    "${day.sessions.size.toArabicDigits()} جلسة  •  ${day.pages.toArabicDigits()} صفحة  •  ${formatDuration(day.durationMs)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(
+                                onClick = { onRequestDelete(day.sessions.toList(), "حذف كل جلسات هذا اليوم؟") },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = "حذف جلسات اليوم",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
                         Spacer(Modifier.height(4.dp))
                         day.sessions.forEach { s ->
-                            StatLine(
-                                "الساعة ${timeFmt.format(Date(s.startedAt))}",
-                                "${formatDuration(s.endedAt - s.startedAt)} • ${s.pagesRead.toArabicDigits()} صفحة"
+                            SessionRow(
+                                timeLabel = "الساعة ${timeFmt.format(Date(s.startedAt))}",
+                                valueLabel = "${formatDuration(s.endedAt - s.startedAt)} • ${s.pagesRead.toArabicDigits()} صفحة",
+                                onDelete = { onRequestDelete(listOf(s), "حذف هذه الجلسة؟") }
                             )
                         }
                     }
@@ -408,6 +548,36 @@ private fun StatLine(label: String, value: String) {
         Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
     }
 }
+
+/** A single history session row with its own delete button. */
+@Composable
+private fun SessionRow(timeLabel: String, valueLabel: String, onDelete: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            timeLabel,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+        Text(valueLabel, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+            Icon(
+                Icons.Filled.Delete,
+                contentDescription = "حذف الجلسة",
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
+/** A pending deletion awaiting confirmation in the stats history. */
+private data class PendingStatDelete(val message: String, val sessions: List<SessionEntity>)
 
 // --- history grouping ---
 

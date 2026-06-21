@@ -51,6 +51,10 @@ data class FullStats(
     val totalPagesInQuran: Int,
     val bookmarkPage: Int?,
     val bookmarkPercent: Int?,
+    /** Personal reading speed (pages/minute) from past sessions; drives the time-based wird. */
+    val pagesPerMinute: Double,
+    /** False when [pagesPerMinute] is a default estimate (not enough session history yet). */
+    val paceFromData: Boolean,
 )
 
 /** Records reading sessions and produces aggregated stats. */
@@ -99,9 +103,18 @@ class StatsRepository(context: Context) {
 
     suspend fun allSessions(): List<SessionEntity> = dao.allSessions()
 
+    /** Delete specific sessions by id. */
+    suspend fun deleteSessions(ids: List<Long>) {
+        if (ids.isNotEmpty()) dao.deleteByIds(ids)
+    }
+
+    /** Delete every recorded session. */
+    suspend fun clearAllSessions() = dao.deleteAll()
+
     /** Rich, motivating stats computed in-memory from all sessions. */
     suspend fun fullStats(currentPage: Int, totalPages: Int, bookmarkPage: Int?): FullStats {
         val sessions = dao.allSessions()
+        val pace = readingPace(sessions)
         val cal = Calendar.getInstance()
         val dayMs = 86_400_000L
 
@@ -192,9 +205,35 @@ class StatsRepository(context: Context) {
             totalPagesInQuran = totalPages,
             bookmarkPage = bookmarkPage,
             bookmarkPercent = bookmarkPage?.let { percent(it, totalPages) },
+            pagesPerMinute = pace.first,
+            paceFromData = pace.second,
         )
+    }
+
+    /** Reading speed in pages/minute, estimated from sessions with a meaningful duration so
+     *  quick flips don't skew it. Returns a sensible default (and false) when history is thin. */
+    private fun readingPace(sessions: List<SessionEntity>): Pair<Double, Boolean> {
+        var totalMs = 0L
+        var totalPages = 0
+        for (s in sessions) {
+            val dur = s.endedAt - s.startedAt
+            if (dur < 20_000L || s.pagesRead <= 0) continue
+            totalMs += dur
+            totalPages += s.pagesRead
+        }
+        val minutes = totalMs / 60_000.0
+        return if (minutes >= 1.0 && totalPages > 0) {
+            (totalPages / minutes).coerceIn(0.2, 4.0) to true
+        } else {
+            DEFAULT_PACE to false
+        }
     }
 
     private fun percent(page: Int, total: Int): Int =
         if (total <= 0) 0 else (page.coerceIn(0, total) * 100 / total)
+
+    private companion object {
+        /** Gentle fallback pace (~1 page per 1.5 min) used until real sessions accumulate. */
+        const val DEFAULT_PACE = 0.7
+    }
 }

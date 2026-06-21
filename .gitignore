@@ -38,3 +38,6 @@ Thumbs.db
 #  Archived / non-source material
 # =====================================================================
 old/
+
+# External tool scratch dirs
+.codex/

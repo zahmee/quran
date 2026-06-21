@@ -20,10 +20,10 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 /** One surah in the navigation index: number, Arabic name, and the page it begins on. */
-data class SurahEntry(val number: Int, val nameAr: String, val firstPage: Int)
+data class SurahEntry(val number: Int, val nameAr: String, val firstPage: Int, val ayahCount: Int)
 
 /** One juz in the navigation index: number and the page it begins on. */
-data class JuzEntry(val number: Int, val firstPage: Int)
+data class JuzEntry(val number: Int, val firstPage: Int, val ayahCount: Int)
 
 /** Juz position for a page: juz number, the page's index within that juz, and the juz's page count. */
 data class JuzPageInfo(val juz: Int, val pageInJuz: Int, val pagesInJuz: Int)
@@ -50,15 +50,26 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     val imageWidth: Int get() = ayahData.imageWidth
     val imageHeight: Int get() = ayahData.imageHeight
 
-    val initialPage: Int =
-        runBlocking(Dispatchers.IO) { store.lastPage() }.coerceIn(1, pageCount.coerceAtLeast(1))
+    // Persisted display/position settings, read once synchronously so the first frame already
+    // reflects the user's last theme/fit choice (no flash of the default light/fitted view).
+    private val initialSettings = runBlocking(Dispatchers.IO) { store.settings() }
 
-    var darkTheme by mutableStateOf(false)
+    val initialPage: Int = initialSettings.lastPage.coerceIn(1, pageCount.coerceAtLeast(1))
+
+    var darkTheme by mutableStateOf(initialSettings.darkTheme)
         private set
 
     /** When on, the page fills the screen (width-fill + scroll on wide screens, height-stretch
      *  on tall screens); when off, the whole page is fitted and centered. */
-    var fillScreen by mutableStateOf(false)
+    var fillScreen by mutableStateOf(initialSettings.fillScreen)
+        private set
+
+    /** Ids of the header buttons the user has hidden; any id NOT in this set is shown. */
+    var hiddenButtons by mutableStateOf(initialSettings.hiddenButtons)
+        private set
+
+    /** When on, the header buttons are rendered a little larger. */
+    var bigButtons by mutableStateOf(initialSettings.bigButtons)
         private set
 
     var selectedAyah by mutableStateOf<AyahMarker?>(null)
@@ -76,20 +87,58 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var fullStats by mutableStateOf<FullStats?>(null)
         private set
 
+    /** Pages ever opened (khatma map). */
+    var visitedPagesAll by mutableStateOf(initialSettings.visitedPages)
+        private set
+
+    /** Pages dwelt on long enough to count as actually read (read ⊆ visited). */
+    var readPagesAll by mutableStateOf(initialSettings.readPages)
+        private set
+
     // Session tracking (one row per foreground period, committed on stop).
     private var sessionStart = 0L
     private var sessionStartPage = initialPage
     private val visitedPages = linkedSetOf(initialPage)
     private var lastPage = initialPage
 
+    // Per-page dwell tracking: a page becomes "read" once it stays visible this long (20s),
+    // so genuine reading counts but quick flips stay merely "visited".
+    private val readDwellMs = 20_000L
+    private var pageEnteredAt = 0L
+    private var visiblePage = initialPage
+
     init {
         viewModelScope.launch { ayahData = withContext(Dispatchers.IO) { ayahRepo.loadAll() } }
         viewModelScope.launch { bookmarks = withContext(Dispatchers.IO) { store.bookmarks() } }
     }
 
-    fun toggleTheme() { darkTheme = !darkTheme }
+    fun toggleTheme() {
+        darkTheme = !darkTheme
+        viewModelScope.launch { store.setDarkTheme(darkTheme) }
+    }
 
-    fun toggleFillScreen() { fillScreen = !fillScreen }
+    fun toggleFillScreen() {
+        fillScreen = !fillScreen
+        viewModelScope.launch { store.setFillScreen(fillScreen) }
+    }
+
+    /** Whether the header button with [id] is currently shown. */
+    fun isButtonVisible(id: String): Boolean = !hiddenButtons.contains(id)
+
+    /** Show or hide the header button with [id] and persist the choice. */
+    fun setButtonVisible(id: String, visible: Boolean) {
+        val next = if (visible) hiddenButtons - id else hiddenButtons + id
+        if (next == hiddenButtons) return
+        hiddenButtons = next
+        viewModelScope.launch { store.setHiddenButtons(next) }
+    }
+
+    /** Enable or disable the larger header buttons and persist the choice. */
+    fun updateBigButtons(value: Boolean) {
+        if (value == bigButtons) return
+        bigButtons = value
+        viewModelScope.launch { store.setBigButtons(value) }
+    }
 
     fun assetModel(pageNumber: Int): String = pageRepo.assetUri(pageNumber, darkTheme)
 
@@ -118,14 +167,51 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setLastPage(page) }
     }
 
+    /** Called when [page] becomes the visible page: records the dwell time on the page just left
+     *  (→ "read" if long enough), marks the new page visited, and persists the reading position. */
+    fun onPageVisible(page: Int) {
+        val now = System.currentTimeMillis()
+        finalizeDwell(now)
+        visiblePage = page
+        pageEnteredAt = now
+        markVisited(page)
+        saveLastPage(page)
+    }
+
+    /** Promote the currently-visible page to "read" if it has been on screen long enough. */
+    private fun finalizeDwell(now: Long) {
+        if (pageEnteredAt <= 0L) return
+        if (now - pageEnteredAt >= readDwellMs) markRead(visiblePage)
+    }
+
+    private fun markVisited(page: Int) {
+        if (visitedPagesAll.contains(page)) return
+        val next = visitedPagesAll + page
+        visitedPagesAll = next
+        viewModelScope.launch { store.setVisitedPages(next) }
+    }
+
+    private fun markRead(page: Int) {
+        if (readPagesAll.contains(page)) return
+        val next = readPagesAll + page
+        readPagesAll = next
+        viewModelScope.launch { store.setReadPages(next) }
+    }
+
     fun beginSession() {
         sessionStart = System.currentTimeMillis()
         sessionStartPage = lastPage
         visitedPages.clear()
         visitedPages.add(lastPage)
+        // Resume dwell timing for the page on screen.
+        visiblePage = lastPage
+        pageEnteredAt = sessionStart
     }
 
     fun commitSession() {
+        // Settle the current page's dwell before the app leaves the foreground.
+        finalizeDwell(System.currentTimeMillis())
+        pageEnteredAt = 0L
         if (sessionStart <= 0L) return
         val start = sessionStart
         val startPage = sessionStartPage
@@ -134,6 +220,37 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         val pages = visitedPages.size
         sessionStart = 0L
         viewModelScope.launch { statsRepo.commitSession(start, end, startPage, endPage, pages) }
+    }
+
+    /** Delete the given reading sessions, then refresh the visible stats. */
+    fun deleteSessions(toDelete: List<SessionEntity>) {
+        if (toDelete.isEmpty()) return
+        viewModelScope.launch {
+            statsRepo.deleteSessions(toDelete.map { it.id })
+            sessions = statsRepo.allSessions()
+            fullStats = statsRepo.fullStats(
+                currentPage = lastPage,
+                totalPages = pageCount,
+                bookmarkPage = bookmarkPage(),
+            )
+        }
+    }
+
+    /** Wipe ALL statistics: every session plus the khatma-map progress (visited/read pages). */
+    fun clearAllStats() {
+        viewModelScope.launch {
+            statsRepo.clearAllSessions()
+            visitedPagesAll = emptySet()
+            readPagesAll = emptySet()
+            store.setVisitedPages(emptySet())
+            store.setReadPages(emptySet())
+            sessions = statsRepo.allSessions()
+            fullStats = statsRepo.fullStats(
+                currentPage = lastPage,
+                totalPages = pageCount,
+                bookmarkPage = bookmarkPage(),
+            )
+        }
     }
 
     fun refreshStats() {
@@ -151,6 +268,8 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openStats() {
+        // Credit dwell on the page being read before the stats/khatma map are shown.
+        finalizeDwell(System.currentTimeMillis())
         viewModelScope.launch {
             sessions = statsRepo.allSessions()
             fullStats = statsRepo.fullStats(
@@ -171,7 +290,8 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
             for (m in markers) {
                 val cur = byNumber[m.surahNumber]
                 if (cur == null || m.page < cur.firstPage) {
-                    byNumber[m.surahNumber] = SurahEntry(m.surahNumber, m.surahNameAr, m.page)
+                    byNumber[m.surahNumber] =
+                        SurahEntry(m.surahNumber, m.surahNameAr, m.page, surahAyahCount(m.surahNumber))
                 }
             }
         }
@@ -180,15 +300,18 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The 30 juz in order, each mapped to the lowest page it appears on. */
     fun juzIndex(): List<JuzEntry> {
-        val byNumber = HashMap<Int, Int>()
+        val firstPage = HashMap<Int, Int>()
+        val ayahs = HashMap<Int, MutableSet<String>>()
         for (markers in ayahData.byPage.values) {
             for (m in markers) {
                 if (m.juz <= 0) continue
-                val cur = byNumber[m.juz]
-                if (cur == null || m.page < cur) byNumber[m.juz] = m.page
+                val cur = firstPage[m.juz]
+                if (cur == null || m.page < cur) firstPage[m.juz] = m.page
+                ayahs.getOrPut(m.juz) { HashSet() }.add(m.verseKey)
             }
         }
-        return byNumber.entries.sortedBy { it.key }.map { JuzEntry(it.key, it.value) }
+        return firstPage.entries.sortedBy { it.key }
+            .map { JuzEntry(it.key, it.value, ayahs[it.key]?.size ?: 0) }
     }
 
     /** Total number of ayahs in each surah (index 0 = surah 1), standard Hafs/Madinah numbering. */
@@ -210,6 +333,32 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     /** Number of ayahs in [surahNumber] (1..114); 0 if out of range. */
     fun surahAyahCount(surahNumber: Int): Int =
         surahAyahCounts.getOrElse(surahNumber - 1) { 0 }
+
+    // Page span (first..last page where it appears) per surah, built once from the loaded data.
+    private var surahPageRangesCache: Map<Int, IntRange> = emptyMap()
+
+    private fun surahPageRanges(): Map<Int, IntRange> {
+        if (surahPageRangesCache.isNotEmpty()) return surahPageRangesCache
+        val minPage = HashMap<Int, Int>()
+        val maxPage = HashMap<Int, Int>()
+        for (markers in ayahData.byPage.values) {
+            for (m in markers) {
+                minPage[m.surahNumber] = minOf(minPage[m.surahNumber] ?: m.page, m.page)
+                maxPage[m.surahNumber] = maxOf(maxPage[m.surahNumber] ?: m.page, m.page)
+            }
+        }
+        val map = minPage.keys.associateWith { minPage.getValue(it)..maxPage.getValue(it) }
+        if (map.isNotEmpty()) surahPageRangesCache = map
+        return map
+    }
+
+    /** Progress (0..100) through [surahNumber] by page position of [page]. */
+    fun surahProgressPercent(page: Int, surahNumber: Int): Int {
+        val range = surahPageRanges()[surahNumber] ?: return 0
+        val span = (range.last - range.first + 1).coerceAtLeast(1)
+        val pos = (page - range.first + 1).coerceIn(1, span)
+        return pos * 100 / span
+    }
 
     /** Juz number, current page within the juz, and total pages in the juz — derived purely from
      *  the page number using the Madinah mushaf layout: juz 1 = 21 pages (1..21), juz 2..29 =

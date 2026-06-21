@@ -40,8 +40,9 @@ fun IndexScreen(
     onJump: (Int) -> Unit,
     onAbout: () -> Unit,
     onBack: () -> Unit,
+    initialTab: Int = 0,
 ) {
-    var tab by remember { mutableStateOf(0) }
+    var tab by remember { mutableStateOf(initialTab) }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -84,7 +85,7 @@ fun IndexScreen(
                 0 -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(surahs) { s ->
                         IndexRow(
-                            title = "${s.number.toArabicDigits()}.  سورة ${s.nameAr}",
+                            title = "${s.number.toArabicDigits()}.  سورة ${s.nameAr} (${s.ayahCount.toArabicDigits()} آية)",
                             page = s.firstPage,
                             onClick = { onJump(s.firstPage) }
                         )
@@ -93,7 +94,7 @@ fun IndexScreen(
                 else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(juzs) { j ->
                         IndexRow(
-                            title = "الجزء ${j.number.toArabicDigits()}",
+                            title = "الجزء ${j.number.toArabicDigits()} (${j.ayahCount.toArabicDigits()} آية)",
                             page = j.firstPage,
                             onClick = { onJump(j.firstPage) }
                         )

@@ -28,7 +28,7 @@ import com.mushaf.reader.data.AyahMarker
 import kotlin.math.min
 
 private val BookmarkColor = Color(0xFFD4A017) // amber: persistent bookmark highlight
-private val SelectionColor = Color(0xFF1F7A5A) // green: transient tap selection
+private val SelectionColor = Color(0xFF1F7A5A) // green: transient long-press selection
 
 /**
  * A single mushaf page.
@@ -43,7 +43,7 @@ private val SelectionColor = Color(0xFF1F7A5A) // green: transient tap selection
  *   (height only) to fill top-to-bottom; the full width stays visible (no side cropping), the
  *   glyphs just get a little taller.
  *
- * Bookmarked ayahs stay highlighted (amber); a tapped ayah is highlighted (green).
+ * Bookmarked ayahs stay highlighted (amber); a long-pressed ayah is highlighted (green).
  */
 @Composable
 fun ZoomablePage(
@@ -125,7 +125,7 @@ private fun WholePage(
             .fillMaxSize()
             .pointerInput(model, markers, fitScale, offsetX, offsetY) {
                 detectTapGestures(
-                    onTap = { tap ->
+                    onLongPress = { tap ->
                         if (markers.isEmpty() || fitScale <= 0f) {
                             onEmptyTap()
                         } else {
@@ -177,7 +177,7 @@ private fun StretchedPage(
             .fillMaxSize()
             .pointerInput(model, markers, fitScale, offsetX, stretch) {
                 detectTapGestures(
-                    onTap = { tap ->
+                    onLongPress = { tap ->
                         if (markers.isEmpty() || fitScale <= 0f) {
                             onEmptyTap()
                         } else {
@@ -233,7 +233,7 @@ private fun FilledWidthPage(
             .fillMaxSize()
             .pointerInput(model, markers, scale) {
                 detectTapGestures(
-                    onTap = { tap ->
+                    onLongPress = { tap ->
                         if (markers.isEmpty() || scale <= 0f) {
                             onEmptyTap()
                         } else {

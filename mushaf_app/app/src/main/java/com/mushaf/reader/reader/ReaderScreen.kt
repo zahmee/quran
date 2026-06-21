@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -71,6 +72,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -99,9 +101,12 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
     val scope = rememberCoroutineScope()
     var showGoTo by remember { mutableStateOf(false) }
     var showStatsScreen by remember { mutableStateOf(false) }
+    var showKhatmaMap by remember { mutableStateOf(false) }
     var showIndex by remember { mutableStateOf(false) }
+    var indexTab by remember { mutableStateOf(0) }
     var showSearch by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     var headerVisible by remember { mutableStateOf(true) }
     val selected = viewModel.selectedAyah
 
@@ -110,18 +115,21 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
     }
 
     BackHandler(enabled = showStatsScreen) { showStatsScreen = false }
+    // Registered after stats so Back from the map returns to the stats screen it opened from.
+    BackHandler(enabled = showKhatmaMap) { showKhatmaMap = false }
     BackHandler(enabled = showIndex) { showIndex = false }
     BackHandler(enabled = showSearch) { showSearch = false }
     // Registered after showIndex so Back from About returns to the index it was opened from.
     BackHandler(enabled = showAbout) { showAbout = false }
+    BackHandler(enabled = showSettings) { showSettings = false }
     // When the header is hidden, Back brings it back instead of leaving the app.
-    BackHandler(enabled = !showStatsScreen && !showIndex && !showSearch && !showAbout && !headerVisible) {
+    BackHandler(enabled = !showStatsScreen && !showIndex && !showSearch && !showAbout && !showSettings && !headerVisible) {
         headerVisible = true
     }
 
     LaunchedEffect(pagerState.currentPage) {
         viewModel.clearSelection()
-        viewModel.saveLastPage(pagerState.currentPage + 1)
+        viewModel.onPageVisible(pagerState.currentPage + 1)
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -141,13 +149,21 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                         surahNumber = pageInfo?.surahNumber,
                         surah = pageInfo?.surahNameAr,
                         ayahCount = pageInfo?.let { viewModel.surahAyahCount(it.surahNumber) },
+                        surahPercent = pageInfo?.let { viewModel.surahProgressPercent(currentPage, it.surahNumber) },
                         juz = juzInfo.juz,
                         pageInJuz = juzInfo.pageInJuz,
                         pagesInJuz = juzInfo.pagesInJuz,
+                        juzPercent = juzInfo.pageInJuz * 100 / juzInfo.pagesInJuz,
                         dark = viewModel.darkTheme,
                         hasBookmark = viewModel.bookmarks.isNotEmpty(),
                         fillScreen = viewModel.fillScreen,
-                        onOpenIndex = { showIndex = true },
+                        bigButtons = viewModel.bigButtons,
+                        isVisible = { id -> viewModel.isButtonVisible(id) },
+                        onOpenSettings = { showSettings = true },
+                        onOpenIndex = { tab ->
+                            indexTab = tab
+                            showIndex = true
+                        },
                         onOpenSearch = { showSearch = true },
                         onToggleFillScreen = { viewModel.toggleFillScreen() },
                         onHideHeader = { headerVisible = false },
@@ -200,7 +216,25 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
             StatsScreen(
                 stats = viewModel.fullStats,
                 sessions = viewModel.sessions,
-                onBack = { showStatsScreen = false }
+                onBack = { showStatsScreen = false },
+                onOpenKhatmaMap = { showKhatmaMap = true },
+                onDeleteSessions = { viewModel.deleteSessions(it) }
+            )
+        }
+
+        if (showKhatmaMap) {
+            KhatmaMapScreen(
+                totalPages = pageCount,
+                readPages = viewModel.readPagesAll,
+                visitedPages = viewModel.visitedPagesAll,
+                bookmarkPage = viewModel.bookmarkJumpPage(),
+                currentPage = pagerState.currentPage + 1,
+                onJump = { page ->
+                    showKhatmaMap = false
+                    showStatsScreen = false
+                    jumpToPage(page)
+                },
+                onBack = { showKhatmaMap = false }
             )
         }
 
@@ -211,6 +245,7 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
             IndexScreen(
                 surahs = surahs,
                 juzs = juzs,
+                initialTab = indexTab,
                 onJump = { page ->
                     showIndex = false
                     jumpToPage(page)
@@ -222,6 +257,17 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
 
         if (showAbout) {
             AboutScreen(onBack = { showAbout = false })
+        }
+
+        if (showSettings) {
+            SettingsScreen(
+                isVisible = { id -> viewModel.isButtonVisible(id) },
+                onToggle = { id, v -> viewModel.setButtonVisible(id, v) },
+                bigButtons = viewModel.bigButtons,
+                onBigButtonsChange = { viewModel.updateBigButtons(it) },
+                onClearAllStats = { viewModel.clearAllStats() },
+                onBack = { showSettings = false }
+            )
         }
 
         if (showSearch) {
@@ -293,13 +339,18 @@ private fun ReaderHeader(
     surahNumber: Int?,
     surah: String?,
     ayahCount: Int?,
+    surahPercent: Int?,
     juz: Int,
     pageInJuz: Int,
     pagesInJuz: Int,
+    juzPercent: Int,
     dark: Boolean,
     hasBookmark: Boolean,
     fillScreen: Boolean,
-    onOpenIndex: () -> Unit,
+    bigButtons: Boolean,
+    isVisible: (String) -> Boolean,
+    onOpenSettings: () -> Unit,
+    onOpenIndex: (Int) -> Unit,
     onOpenSearch: () -> Unit,
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
@@ -315,6 +366,12 @@ private fun ReaderHeader(
     // below fills it with corner buttons; the center is left clear for a punch-hole/notch.
     val topInset = WindowInsets.statusBars.union(WindowInsets.displayCutout)
         .asPaddingValues().calculateTopPadding()
+
+    // "Bigger buttons" setting bumps the header icons up a notch (and the bookmark in the info row).
+    val btnSize = if (bigButtons) 40.dp else 32.dp
+    val iconSize = if (bigButtons) 24.dp else 20.dp
+    val bookmarkBtnSize = if (bigButtons) 34.dp else 28.dp
+    val bookmarkIconSize = if (bigButtons) 22.dp else 18.dp
 
     Surface(
         color = headerColor,
@@ -333,71 +390,61 @@ private fun ReaderHeader(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(maxOf(topInset - 6.dp, 32.dp))
+                    .height(maxOf(topInset - 6.dp, btnSize))
             ) {
-                // Start corner (top-right in RTL): index, theme, fill-screen.
+                // Start corner (top-right in RTL): theme, settings, fill-screen.
                 Row(
                     modifier = Modifier.align(Alignment.TopStart),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onOpenIndex, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.MenuBook,
-                            contentDescription = "فهرس السور والأجزاء",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    IconButton(onClick = onToggleTheme, modifier = Modifier.size(32.dp)) {
+                    if (isVisible("theme")) IconButton(onClick = onToggleTheme, modifier = Modifier.size(btnSize)) {
                         Icon(
                             imageVector = if (dark) Icons.Filled.LightMode else Icons.Filled.DarkMode,
                             contentDescription = "تبديل الوضع",
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(iconSize)
                         )
                     }
-                    IconButton(onClick = onToggleFillScreen, modifier = Modifier.size(32.dp)) {
+                    // App settings — always shown so it can never hide itself away.
+                    IconButton(onClick = onOpenSettings, modifier = Modifier.size(btnSize)) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = "إعدادات",
+                            modifier = Modifier.size(iconSize)
+                        )
+                    }
+                    if (isVisible("fill")) IconButton(onClick = onToggleFillScreen, modifier = Modifier.size(btnSize)) {
                         Icon(
                             imageVector = if (fillScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
                             contentDescription = if (fillScreen) "عرض الصفحة كاملة" else "ملء الشاشة",
                             tint = if (fillScreen) MaterialTheme.colorScheme.primary else LocalContentColor.current,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(iconSize)
                         )
                     }
                 }
-                // End corner (top-left in RTL): stats, bookmark, hide, search (search at the corner).
+                // End corner (top-left in RTL): stats, search, hide (hide at the corner).
                 Row(
                     modifier = Modifier.align(Alignment.TopEnd),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onStats, modifier = Modifier.size(32.dp)) {
+                    if (isVisible("stats")) IconButton(onClick = onStats, modifier = Modifier.size(btnSize)) {
                         Icon(
                             imageVector = Icons.Filled.BarChart,
                             contentDescription = "إحصائيات القراءة",
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(iconSize)
                         )
                     }
-                    IconButton(
-                        onClick = onBookmarkJump,
-                        enabled = hasBookmark,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Bookmark,
-                            contentDescription = "الذهاب إلى الإشارة المرجعية",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    IconButton(onClick = onHideHeader, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            imageVector = Icons.Filled.KeyboardArrowUp,
-                            contentDescription = "إخفاء الشريط العلوي وملء الشاشة",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    IconButton(onClick = onOpenSearch, modifier = Modifier.size(32.dp)) {
+                    if (isVisible("search")) IconButton(onClick = onOpenSearch, modifier = Modifier.size(btnSize)) {
                         Icon(
                             imageVector = Icons.Filled.Search,
                             contentDescription = "بحث",
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(iconSize)
+                        )
+                    }
+                    if (isVisible("hide")) IconButton(onClick = onHideHeader, modifier = Modifier.size(btnSize)) {
+                        Icon(
+                            imageVector = Icons.Filled.KeyboardArrowUp,
+                            contentDescription = "إخفاء الشريط العلوي وملء الشاشة",
+                            modifier = Modifier.size(iconSize)
                         )
                     }
                 }
@@ -414,34 +461,76 @@ private fun ReaderHeader(
                         if (surahNumber != null) append("${surahNumber.toArabicDigits()} ")
                         append(surah)
                         if (ayahCount != null && ayahCount > 0) append(" (${ayahCount.toArabicDigits()})")
+                        if (surahPercent != null) append(" ${surahPercent.toArabicDigits()}٪")
                     }
                     Text(
                         text = surahLabel,
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier
                             .align(Alignment.CenterStart)
-                            .padding(start = 4.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onOpenIndex(0) }
+                            .padding(horizontal = 4.dp, vertical = 3.dp)
                     )
                 }
 
-                Text(
-                    text = page.toArabicDigits(),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .clip(RoundedCornerShape(6.dp))
-                        .clickable { onPageClick() }
-                        .padding(horizontal = 16.dp, vertical = 3.dp)
-                )
+                // Center: the open-book index icon sitting just before (to the right of, in RTL)
+                // the page number.
+                Row(
+                    modifier = Modifier.align(Alignment.Center),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isVisible("index")) IconButton(
+                        onClick = { onOpenIndex(0) },
+                        modifier = Modifier.size(bookmarkBtnSize)
+                    ) {
+                        // Mirrors to reflect the current page's side of the spread (RTL mushaf).
+                        val onRightPage = page % 2 == 0
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                            contentDescription = "فهرس السور والأجزاء",
+                            modifier = Modifier
+                                .size(bookmarkIconSize)
+                                .graphicsLayer { scaleX = if (onRightPage) -1f else 1f }
+                        )
+                    }
+                    Text(
+                        text = page.toArabicDigits(),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onPageClick() }
+                            .padding(horizontal = 12.dp, vertical = 3.dp)
+                    )
+                }
 
-                Text(
-                    text = "الجزء ${juz.toArabicDigits()} (${pageInJuz.toArabicDigits()}/${pagesInJuz.toArabicDigits()})",
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 4.dp)
-                )
+                // Juz position (end) with the bookmark-jump button just before it.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                ) {
+                    if (isVisible("bookmark")) IconButton(
+                        onClick = onBookmarkJump,
+                        enabled = hasBookmark,
+                        modifier = Modifier.size(bookmarkBtnSize)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Bookmark,
+                            contentDescription = "الذهاب إلى الإشارة المرجعية",
+                            modifier = Modifier.size(bookmarkIconSize)
+                        )
+                    }
+                    Text(
+                        text = "الجزء ${juz.toArabicDigits()} (${pageInJuz.toArabicDigits()}/${pagesInJuz.toArabicDigits()}) ${juzPercent.toArabicDigits()}٪",
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onOpenIndex(1) }
+                            .padding(horizontal = 4.dp, vertical = 3.dp)
+                    )
+                }
             }
         }
     }
