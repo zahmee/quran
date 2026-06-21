@@ -72,6 +72,19 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var bigButtons by mutableStateOf(initialSettings.bigButtons)
         private set
 
+    /** When on, a live wall-clock (red) shows in the header. */
+    var showClock by mutableStateOf(initialSettings.showClock)
+        private set
+
+    /** When on, the current reading-session duration (green) shows in the header. */
+    var showSessionTimer by mutableStateOf(initialSettings.showSessionTimer)
+        private set
+
+    /** Start time (ms) of the current foreground reading session; 0 when none is running.
+     *  Observable so the header timer updates when a new session begins. */
+    var sessionStartedAt by mutableStateOf(0L)
+        private set
+
     var selectedAyah by mutableStateOf<AyahMarker?>(null)
         private set
 
@@ -140,6 +153,18 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setBigButtons(value) }
     }
 
+    fun updateShowClock(value: Boolean) {
+        if (value == showClock) return
+        showClock = value
+        viewModelScope.launch { store.setShowClock(value) }
+    }
+
+    fun updateShowSessionTimer(value: Boolean) {
+        if (value == showSessionTimer) return
+        showSessionTimer = value
+        viewModelScope.launch { store.setShowSessionTimer(value) }
+    }
+
     fun assetModel(pageNumber: Int): String = pageRepo.assetUri(pageNumber, darkTheme)
 
     fun markersForPage(pageNumber: Int): List<AyahMarker> = ayahData.byPage[pageNumber].orEmpty()
@@ -200,6 +225,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     fun beginSession() {
         sessionStart = System.currentTimeMillis()
+        sessionStartedAt = sessionStart
         sessionStartPage = lastPage
         visitedPages.clear()
         visitedPages.add(lastPage)

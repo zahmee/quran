@@ -44,6 +44,10 @@ fun SettingsScreen(
     onToggle: (String, Boolean) -> Unit,
     bigButtons: Boolean,
     onBigButtonsChange: (Boolean) -> Unit,
+    showClock: Boolean,
+    onShowClockChange: (Boolean) -> Unit,
+    showSessionTimer: Boolean,
+    onShowSessionTimerChange: (Boolean) -> Unit,
     onClearAllStats: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -129,6 +133,31 @@ fun SettingsScreen(
                         label = "تكبير الأزرار",
                         checked = bigButtons,
                         onCheckedChange = onBigButtonsChange
+                    )
+                }
+
+                Card {
+                    Text(
+                        text = "عناصر إضافية في الرأس",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "إظهار الساعة (بالأحمر) ومدة الجلسة الحالية (بالأخضر) في رأس الصفحة.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    ToggleRow(
+                        label = "عرض الساعة",
+                        checked = showClock,
+                        onCheckedChange = onShowClockChange
+                    )
+                    ToggleRow(
+                        label = "عرض مدة الجلسة الحالية",
+                        checked = showSessionTimer,
+                        onCheckedChange = onShowSessionTimerChange
                     )
                 }
 

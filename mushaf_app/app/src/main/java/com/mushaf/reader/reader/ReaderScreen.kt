@@ -88,7 +88,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.mushaf.reader.data.AyahMarker
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Calendar
 import kotlin.math.roundToInt
 
 @Composable
@@ -158,6 +160,9 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                         hasBookmark = viewModel.bookmarks.isNotEmpty(),
                         fillScreen = viewModel.fillScreen,
                         bigButtons = viewModel.bigButtons,
+                        showClock = viewModel.showClock,
+                        showSessionTimer = viewModel.showSessionTimer,
+                        sessionStartedAt = viewModel.sessionStartedAt,
                         isVisible = { id -> viewModel.isButtonVisible(id) },
                         onOpenSettings = { showSettings = true },
                         onOpenIndex = { tab ->
@@ -265,6 +270,10 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 onToggle = { id, v -> viewModel.setButtonVisible(id, v) },
                 bigButtons = viewModel.bigButtons,
                 onBigButtonsChange = { viewModel.updateBigButtons(it) },
+                showClock = viewModel.showClock,
+                onShowClockChange = { viewModel.updateShowClock(it) },
+                showSessionTimer = viewModel.showSessionTimer,
+                onShowSessionTimerChange = { viewModel.updateShowSessionTimer(it) },
                 onClearAllStats = { viewModel.clearAllStats() },
                 onBack = { showSettings = false }
             )
@@ -348,6 +357,9 @@ private fun ReaderHeader(
     hasBookmark: Boolean,
     fillScreen: Boolean,
     bigButtons: Boolean,
+    showClock: Boolean,
+    showSessionTimer: Boolean,
+    sessionStartedAt: Long,
     isVisible: (String) -> Boolean,
     onOpenSettings: () -> Unit,
     onOpenIndex: (Int) -> Unit,
@@ -372,6 +384,15 @@ private fun ReaderHeader(
     val iconSize = if (bigButtons) 24.dp else 20.dp
     val bookmarkBtnSize = if (bigButtons) 34.dp else 28.dp
     val bookmarkIconSize = if (bigButtons) 22.dp else 18.dp
+
+    // Live ticker for the optional clock / current-session timer (only loops while one is shown).
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(showClock, showSessionTimer) {
+        while (showClock || showSessionTimer) {
+            nowMs = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
 
     Surface(
         color = headerColor,
@@ -420,12 +441,43 @@ private fun ReaderHeader(
                             modifier = Modifier.size(iconSize)
                         )
                     }
+                    // Optional live wall-clock (red), shown right after the fill-screen button.
+                    if (showClock) {
+                        Text(
+                            text = formatClock(nowMs),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFE53935),
+                            modifier = Modifier.padding(horizontal = 6.dp)
+                        )
+                    }
                 }
-                // End corner (top-left in RTL): stats, search, hide (hide at the corner).
+                // End corner (top-left in RTL): bookmark, session timer, stats, search, hide.
                 Row(
                     modifier = Modifier.align(Alignment.TopEnd),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (isVisible("bookmark")) IconButton(
+                        onClick = onBookmarkJump,
+                        enabled = hasBookmark,
+                        modifier = Modifier.size(btnSize)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Bookmark,
+                            contentDescription = "الذهاب إلى الإشارة المرجعية",
+                            modifier = Modifier.size(iconSize)
+                        )
+                    }
+                    // Optional current-session duration (green), shown before the stats button.
+                    if (showSessionTimer && sessionStartedAt > 0L) {
+                        Text(
+                            text = formatElapsed(nowMs - sessionStartedAt),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF2E9E45),
+                            modifier = Modifier.padding(horizontal = 6.dp)
+                        )
+                    }
                     if (isVisible("stats")) IconButton(onClick = onStats, modifier = Modifier.size(btnSize)) {
                         Icon(
                             imageVector = Icons.Filled.BarChart,
@@ -478,7 +530,8 @@ private fun ReaderHeader(
                 // the page number.
                 Row(
                     modifier = Modifier.align(Alignment.Center),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy((-6).dp)
                 ) {
                     if (isVisible("index")) IconButton(
                         onClick = { onOpenIndex(0) },
@@ -501,36 +554,20 @@ private fun ReaderHeader(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .clickable { onPageClick() }
-                            .padding(horizontal = 12.dp, vertical = 3.dp)
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
                     )
                 }
 
-                // Juz position (end) with the bookmark-jump button just before it.
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.align(Alignment.CenterEnd)
-                ) {
-                    if (isVisible("bookmark")) IconButton(
-                        onClick = onBookmarkJump,
-                        enabled = hasBookmark,
-                        modifier = Modifier.size(bookmarkBtnSize)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Bookmark,
-                            contentDescription = "الذهاب إلى الإشارة المرجعية",
-                            modifier = Modifier.size(bookmarkIconSize)
-                        )
-                    }
-                    Text(
-                        text = "الجزء ${juz.toArabicDigits()} (${pageInJuz.toArabicDigits()}/${pagesInJuz.toArabicDigits()}) ${juzPercent.toArabicDigits()}٪",
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { onOpenIndex(1) }
-                            .padding(horizontal = 4.dp, vertical = 3.dp)
-                    )
-                }
+                // Juz position (end).
+                Text(
+                    text = "الجزء ${juz.toArabicDigits()} (${pageInJuz.toArabicDigits()}/${pagesInJuz.toArabicDigits()}) ${juzPercent.toArabicDigits()}٪",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { onOpenIndex(1) }
+                        .padding(horizontal = 4.dp, vertical = 3.dp)
+                )
             }
         }
     }
@@ -721,3 +758,26 @@ private val arabicDigits = charArrayOf('٠', '١', '٢', '٣', '٤', '٥', '٦',
 
 fun Int.toArabicDigits(): String =
     toString().map { c -> if (c in '0'..'9') arabicDigits[c - '0'] else c }.joinToString("")
+
+fun String.toArabicDigits(): String =
+    map { c -> if (c in '0'..'9') arabicDigits[c - '0'] else c }.joinToString("")
+
+/** Current wall-clock time as h:mm (12-hour) with a ص/م suffix, in Arabic digits. */
+private fun formatClock(ms: Long): String {
+    val cal = Calendar.getInstance()
+    cal.timeInMillis = ms
+    val h = cal.get(Calendar.HOUR).let { if (it == 0) 12 else it }
+    val m = cal.get(Calendar.MINUTE)
+    val suffix = if (cal.get(Calendar.AM_PM) == Calendar.AM) "ص" else "م"
+    return "${"$h:${"%02d".format(m)}".toArabicDigits()} $suffix"
+}
+
+/** Elapsed session time as m:ss (or h:mm:ss past an hour) in Arabic digits. */
+private fun formatElapsed(ms: Long): String {
+    val totalSec = (ms / 1000L).coerceAtLeast(0)
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    val str = if (h > 0) "$h:${"%02d".format(m)}:${"%02d".format(s)}" else "$m:${"%02d".format(s)}"
+    return str.toArabicDigits()
+}

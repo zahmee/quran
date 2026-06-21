@@ -22,6 +22,8 @@ class ReadingStore(private val context: Context) {
     private val keyReadPages = stringSetPreferencesKey("read_pages")
     private val keyHiddenButtons = stringSetPreferencesKey("hidden_header_buttons")
     private val keyBigButtons = booleanPreferencesKey("big_buttons")
+    private val keyShowClock = booleanPreferencesKey("show_clock")
+    private val keyShowSessionTimer = booleanPreferencesKey("show_session_timer")
 
     /** The display/position settings + per-page progress read together in one pass at startup.
      *  [visitedPages] = pages opened at all; [readPages] = pages dwelt on long enough to count
@@ -34,6 +36,8 @@ class ReadingStore(private val context: Context) {
         val readPages: Set<Int>,
         val hiddenButtons: Set<String>,
         val bigButtons: Boolean,
+        val showClock: Boolean,
+        val showSessionTimer: Boolean,
     )
 
     suspend fun settings(): Settings {
@@ -46,6 +50,8 @@ class ReadingStore(private val context: Context) {
             readPages = prefs[keyReadPages].toIntSet(),
             hiddenButtons = prefs[keyHiddenButtons] ?: emptySet(),
             bigButtons = prefs[keyBigButtons] ?: false,
+            showClock = prefs[keyShowClock] ?: false,
+            showSessionTimer = prefs[keyShowSessionTimer] ?: false,
         )
     }
 
@@ -78,6 +84,14 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setBigButtons(value: Boolean) {
         context.dataStore.edit { it[keyBigButtons] = value }
+    }
+
+    suspend fun setShowClock(value: Boolean) {
+        context.dataStore.edit { it[keyShowClock] = value }
+    }
+
+    suspend fun setShowSessionTimer(value: Boolean) {
+        context.dataStore.edit { it[keyShowSessionTimer] = value }
     }
 
     suspend fun bookmarks(): Set<String> = context.dataStore.data.first()[keyBookmarks] ?: emptySet()

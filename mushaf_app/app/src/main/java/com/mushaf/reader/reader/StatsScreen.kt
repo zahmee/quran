@@ -1,6 +1,7 @@
 package com.mushaf.reader.reader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -427,6 +430,12 @@ private fun HistoryTab(
     val monthFmt = remember { SimpleDateFormat("MMMM yyyy", Locale("ar")) }
     val dayFmt = remember { SimpleDateFormat("EEEE d", Locale("ar")) }
     val timeFmt = remember { SimpleDateFormat("h:mm a", Locale("ar")) }
+    val todayStart = remember {
+        val c = Calendar.getInstance()
+        c.set(Calendar.HOUR_OF_DAY, 0); c.set(Calendar.MINUTE, 0)
+        c.set(Calendar.SECOND, 0); c.set(Calendar.MILLISECOND, 0)
+        c.timeInMillis
+    }
 
     Column(
         modifier = Modifier
@@ -457,44 +466,81 @@ private fun HistoryTab(
                     Spacer(Modifier.height(8.dp))
                     month.days.forEachIndexed { i, day ->
                         if (i > 0) HorizontalDivider(Modifier.padding(vertical = 6.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    dayFmt.format(Date(day.anchorMillis)),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    "${day.sessions.size.toArabicDigits()} جلسة  •  ${day.pages.toArabicDigits()} صفحة  •  ${formatDuration(day.durationMs)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            IconButton(
-                                onClick = { onRequestDelete(day.sessions.toList(), "حذف كل جلسات هذا اليوم؟") },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    Icons.Filled.Delete,
-                                    contentDescription = "حذف جلسات اليوم",
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        day.sessions.forEach { s ->
-                            SessionRow(
-                                timeLabel = "الساعة ${timeFmt.format(Date(s.startedAt))}",
-                                valueLabel = "${formatDuration(s.endedAt - s.startedAt)} • ${s.pagesRead.toArabicDigits()} صفحة",
-                                onDelete = { onRequestDelete(listOf(s), "حذف هذه الجلسة؟") }
-                            )
-                        }
+                        DaySection(
+                            day = day,
+                            isToday = day.anchorMillis >= todayStart,
+                            dayFmt = dayFmt,
+                            timeFmt = timeFmt,
+                            onRequestDelete = onRequestDelete
+                        )
                     }
                 }
             }
         }
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** One day in the history: a collapsible header (total sessions/pages/duration) over the
+ *  individual session rows. Past days start collapsed, today starts expanded. */
+@Composable
+private fun DaySection(
+    day: DayG,
+    isToday: Boolean,
+    dayFmt: SimpleDateFormat,
+    timeFmt: SimpleDateFormat,
+    onRequestDelete: (List<SessionEntity>, String) -> Unit,
+) {
+    var expanded by remember(day.anchorMillis) { mutableStateOf(isToday) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = !expanded }
+                .padding(vertical = 2.dp, horizontal = 2.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (expanded) "طيّ الجلسات" else "توسيع الجلسات",
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    dayFmt.format(Date(day.anchorMillis)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Text(
+                "${day.sessions.size.toArabicDigits()} جلسة  •  ${day.pages.toArabicDigits()} صفحة  •  ${formatDuration(day.durationMs)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp)
+            )
+        }
+        IconButton(
+            onClick = { onRequestDelete(day.sessions.toList(), "حذف كل جلسات هذا اليوم؟") },
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                Icons.Filled.Delete,
+                contentDescription = "حذف جلسات اليوم",
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+    if (expanded) {
+        Spacer(Modifier.height(4.dp))
+        day.sessions.forEach { s ->
+            SessionRow(
+                timeLabel = "الساعة ${timeFmt.format(Date(s.startedAt))}",
+                valueLabel = "${formatDuration(s.endedAt - s.startedAt)} • ${s.pagesRead.toArabicDigits()} صفحة",
+                onDelete = { onRequestDelete(listOf(s), "حذف هذه الجلسة؟") }
+            )
+        }
     }
 }
 
