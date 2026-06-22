@@ -4,6 +4,7 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
@@ -79,6 +81,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -91,6 +94,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
@@ -99,7 +104,10 @@ import com.mushaf.reader.data.AyahMarker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 @Composable
 fun ReaderScreen(viewModel: ReaderViewModel) {
@@ -866,69 +874,206 @@ private fun AyahFloatingMenu(
     val y = (if (above >= margin) above else anchor.y + gap)
         .coerceIn(margin, (boxHeightPx - menuSize.height - margin).coerceAtLeast(margin))
 
+    val ink = MaterialTheme.colorScheme.onSurface
+    val accent = MaterialTheme.colorScheme.primary
+    val hasText = ayah.textUthmani.isNotBlank()
+    val verseKeyAr = "${ayah.surahNumber.toArabicDigits()}:${ayah.ayahNumber.toArabicDigits()}"
+
     Surface(
         modifier = Modifier
             .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
             .onSizeChanged { menuSize = it }
-            .widthIn(max = 330.dp),
-        shape = RoundedCornerShape(16.dp),
+            .widthIn(max = 320.dp),
+        shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 8.dp,
-        tonalElevation = 3.dp
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.18f)),
+        shadowElevation = 10.dp,
+        tonalElevation = 2.dp
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
+        Column(modifier = Modifier.padding(start = 14.dp, end = 16.dp, top = 13.dp, bottom = 10.dp)) {
+            // Header — ornamental ayah medallion + surah identity / verse key.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                AyahMedallion(ayahNumber = ayah.ayahNumber, accent = accent, ornate = hasText)
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = ayah.surahNameAr,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = ink,
+                            maxLines = 1
+                        )
+                        if (ayah.isSajdah) SajdahBadge()
+                    }
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Text(
+                            text = verseKeyAr,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = accent,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+            // One-line verse preview (skipped on marker-less needs_review pages).
+            if (hasText) {
                 Text(
-                    text = "سورة ${ayah.surahNameAr} • آية ${ayah.ayahNumber.toArabicDigits()}",
-                    style = MaterialTheme.typography.titleSmall
+                    text = ayah.textUthmani,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = ink.copy(alpha = 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 8.dp)
                 )
-                if (ayah.isSajdah) SajdahBadge()
             }
             Text(
-                text = "صفحة ${ayah.page.toArabicDigits()}  •  الجزء ${ayah.juz.toArabicDigits()}  •  الحزب ${ayah.hizb.toArabicDigits()}  •  الربع ${ayah.rub.toArabicDigits()}",
+                text = "صفحة ${ayah.page.toArabicDigits()} • جزء ${ayah.juz.toArabicDigits()} • حزب ${ayah.hizb.toArabicDigits()}",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = ink.copy(alpha = 0.60f),
+                modifier = Modifier.padding(top = 7.dp)
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                IconButton(onClick = onBookmark, modifier = Modifier.size(42.dp)) {
-                    Icon(
-                        imageVector = if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                        contentDescription = "علامة",
-                        tint = if (bookmarked) MaterialTheme.colorScheme.primary else LocalContentColor.current
+            // Hairline tray divider, then the grouped action row.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+                    .height(1.dp)
+                    .background(ink.copy(alpha = 0.08f))
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Act-on-verse trio (leading edge): bookmark accented, copy + share neutral.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    MenuAction(
+                        icon = if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                        desc = "علامة",
+                        onClick = onBookmark,
+                        tint = if (bookmarked) BookmarkGold else ink.copy(alpha = 0.7f),
+                        bg = if (bookmarked) BookmarkGold.copy(alpha = 0.14f) else Color.Transparent
+                    )
+                    MenuAction(
+                        icon = Icons.Filled.ContentCopy,
+                        desc = "نسخ",
+                        onClick = {
+                            clipboard.setText(AnnotatedString(shareText))
+                            Toast.makeText(context, "تم نسخ الآية", Toast.LENGTH_SHORT).show()
+                        },
+                        tint = ink.copy(alpha = 0.78f)
+                    )
+                    MenuAction(
+                        icon = Icons.Filled.Share,
+                        desc = "مشاركة",
+                        onClick = {
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, shareText)
+                            }
+                            context.startActivity(Intent.createChooser(send, null))
+                        },
+                        tint = ink.copy(alpha = 0.78f)
                     )
                 }
-                IconButton(
-                    onClick = {
-                        clipboard.setText(AnnotatedString(shareText))
-                        Toast.makeText(context, "تم نسخ الآية", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.size(42.dp)
+                // Dismiss, set apart by a hairline and visually demoted.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(imageVector = Icons.Filled.ContentCopy, contentDescription = "نسخ")
-                }
-                IconButton(
-                    onClick = {
-                        val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, shareText)
-                        }
-                        context.startActivity(Intent.createChooser(send, null))
-                    },
-                    modifier = Modifier.size(42.dp)
-                ) {
-                    Icon(imageVector = Icons.Filled.Share, contentDescription = "مشاركة")
-                }
-                IconButton(onClick = onClose, modifier = Modifier.size(42.dp)) {
-                    Icon(imageVector = Icons.Filled.Close, contentDescription = "إغلاق")
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(22.dp)
+                            .background(ink.copy(alpha = 0.08f))
+                    )
+                    MenuAction(
+                        icon = Icons.Filled.Close,
+                        desc = "إغلاق",
+                        onClick = onClose,
+                        tint = ink.copy(alpha = 0.45f),
+                        size = 40.dp
+                    )
                 }
             }
         }
+    }
+}
+
+/** Amber accent used for saved bookmarks — matches ZoomablePage's persistent-bookmark band. */
+private val BookmarkGold = Color(0xFFD4A017)
+
+/** Ornamental circular ayah-number medallion echoing the mushaf's printed ayah-end circles:
+ *  two concentric green hairline rings + (when [ornate]) an 8-dot rosette, with the ayah
+ *  number centered and Ltr-isolated so multi-digit numbers never bidi-flip. */
+@Composable
+private fun AyahMedallion(ayahNumber: Int, accent: Color, ornate: Boolean) {
+    Box(modifier = Modifier.size(46.dp), contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val outer = size.minDimension / 2f
+            val ringStroke = 1.4.dp.toPx()
+            drawCircle(color = accent, radius = outer - ringStroke, style = Stroke(ringStroke))
+            val inner = outer - 6.dp.toPx()
+            drawCircle(color = accent.copy(alpha = 0.35f), radius = inner, style = Stroke(1.dp.toPx()))
+            if (ornate) {
+                val petalR = (outer - ringStroke + inner) / 2f
+                val dotR = 1.3.dp.toPx()
+                repeat(8) { i ->
+                    val a = (PI / 4.0) * i
+                    drawCircle(
+                        color = accent.copy(alpha = 0.22f),
+                        radius = dotR,
+                        center = Offset(
+                            center.x + (petalR * cos(a)).toFloat(),
+                            center.y + (petalR * sin(a)).toFloat()
+                        )
+                    )
+                }
+            }
+        }
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Text(
+                text = ayahNumber.toArabicDigits(),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.ExtraBold,
+                color = accent,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/** A single circular action target in the ayah menu (44dp default, optional tinted background). */
+@Composable
+private fun MenuAction(
+    icon: ImageVector,
+    desc: String,
+    onClick: () -> Unit,
+    tint: Color,
+    bg: Color = Color.Transparent,
+    size: Dp = 44.dp,
+) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(bg)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(imageVector = icon, contentDescription = desc, tint = tint, modifier = Modifier.size(22.dp))
     }
 }
 
