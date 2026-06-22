@@ -3,6 +3,7 @@ package com.mushaf.reader.reader
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -73,9 +74,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -86,6 +90,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
@@ -625,43 +630,181 @@ private fun ReaderHeader(
                         .align(Alignment.Center)
                         .clip(RoundedCornerShape(6.dp))
                         .clickable { onPageClick() }
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.Center
                 ) {
-                    if (isVisible("index")) {
-                        val onRightPage = page % 2 == 0
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.MenuBook,
-                            contentDescription = "إدخال رقم الصفحة",
-                            tint = contentColor,
-                            modifier = Modifier
-                                .size(iconSize)
-                                .graphicsLayer { scaleX = if (onRightPage) -1f else 1f }
-                        )
-                    }
-                    Text(
-                        text = page.toArabicDigits(),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
+                    MushafPageBadge(
+                        page = page,
+                        onRightPage = page % 2 == 0,
+                        contentColor = contentColor,
+                        quietContentColor = quietContentColor,
+                        accentColor = activeContentColor,
+                        big = bigButtons
                     )
                 }
 
-                Text(
-                    text = buildString {
-                        append("الجزء ${juz.toArabicDigits()}")
-                        if (showJuzProgressPages) append(" (${pageInJuz.toArabicDigits()}/${pagesInJuz.toArabicDigits()})")
-                        if (showJuzProgressPercent) append(" ${juzPercent.toArabicDigits()}٪")
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = quietContentColor,
-                    maxLines = 1,
+                Row(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .clip(RoundedCornerShape(6.dp))
                         .clickable { onOpenIndex(1) }
-                        .padding(horizontal = 4.dp, vertical = 3.dp)
+                        .padding(horizontal = 4.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Text(
+                        text = buildString {
+                            append("الجزء ${juz.toArabicDigits()}")
+                            if (showJuzProgressPercent) append(" ${juzPercent.toArabicDigits()}٪")
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = quietContentColor,
+                        maxLines = 1
+                    )
+                    if (showJuzProgressPages) {
+                        JuzRing(
+                            fraction = pageInJuz.toFloat() / pagesInJuz.coerceAtLeast(1),
+                            pageInJuz = pageInJuz,
+                            trackColor = quietContentColor,
+                            accentColor = activeContentColor,
+                            big = bigButtons
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Compact donut gauge for the current position within the juz: a faint full-circle track
+ *  with an accent arc swept by [fraction], drawn right→left over the top to mirror the paper
+ *  mushaf's page flow, and the current page-in-juz number centered inside. */
+@Composable
+private fun JuzRing(
+    fraction: Float,
+    pageInJuz: Int,
+    trackColor: Color,
+    accentColor: Color,
+    big: Boolean,
+) {
+    val ringSize = if (big) 24.dp else 21.dp
+    // -90f = 12 o'clock start; negative sweep travels right→left over the top as the juz advances.
+    // A small floor keeps the very first page reading as "started" rather than an empty ring.
+    val sweep = -(fraction.coerceIn(0f, 1f) * 360f).coerceAtLeast(10f)
+    Box(
+        modifier = Modifier.size(ringSize),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val stroke = 2.2.dp.toPx()
+            val inset = stroke / 2f
+            val arcSize = Size(size.width - stroke, size.height - stroke)
+            val topLeft = Offset(inset, inset)
+            drawArc(
+                color = trackColor.copy(alpha = 0.20f),
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = Stroke(width = stroke)
+            )
+            drawArc(
+                color = accentColor,
+                startAngle = -90f,
+                sweepAngle = sweep,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = Stroke(width = stroke, cap = StrokeCap.Round)
+            )
+        }
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Text(
+                text = pageInJuz.toArabicDigits(),
+                style = MaterialTheme.typography.labelSmall,
+                color = accentColor,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun MushafPageBadge(
+    page: Int,
+    onRightPage: Boolean,
+    contentColor: Color,
+    quietContentColor: Color,
+    accentColor: Color,
+    big: Boolean,
+) {
+    val badgeWidth = if (big) 58.dp else 50.dp
+    val badgeHeight = if (big) 34.dp else 29.dp
+    val pageTextStyle = if (big) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelMedium
+
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Box(
+            modifier = Modifier.size(width = badgeWidth, height = badgeHeight),
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val stroke = 1.35.dp.toPx()
+                val radius = 4.5.dp.toPx()
+                val centerX = size.width / 2f
+                val pageTop = 1.5.dp.toPx()
+                val pageHeight = size.height - pageTop * 2f
+                val halfWidth = (size.width - stroke) / 2f
+                val activeLeft = if (onRightPage) centerX else stroke / 2f
+
+                drawRoundRect(
+                    color = accentColor.copy(alpha = 0.13f),
+                    topLeft = Offset(activeLeft, pageTop),
+                    size = Size(halfWidth - stroke / 2f, pageHeight),
+                    cornerRadius = CornerRadius(radius, radius)
+                )
+                drawRoundRect(
+                    color = quietContentColor.copy(alpha = 0.46f),
+                    topLeft = Offset(stroke / 2f, pageTop),
+                    size = Size(size.width - stroke, pageHeight),
+                    cornerRadius = CornerRadius(radius, radius),
+                    style = Stroke(width = stroke)
+                )
+                drawLine(
+                    color = quietContentColor.copy(alpha = 0.62f),
+                    start = Offset(centerX, pageTop + 1.dp.toPx()),
+                    end = Offset(centerX, size.height - pageTop - 1.dp.toPx()),
+                    strokeWidth = stroke
+                )
+                drawLine(
+                    color = quietContentColor.copy(alpha = 0.22f),
+                    start = Offset(centerX - 3.dp.toPx(), pageTop + 3.dp.toPx()),
+                    end = Offset(centerX - 3.dp.toPx(), size.height - pageTop - 4.dp.toPx()),
+                    strokeWidth = stroke / 1.6f
+                )
+                drawLine(
+                    color = quietContentColor.copy(alpha = 0.22f),
+                    start = Offset(centerX + 3.dp.toPx(), pageTop + 3.dp.toPx()),
+                    end = Offset(centerX + 3.dp.toPx(), size.height - pageTop - 4.dp.toPx()),
+                    strokeWidth = stroke / 1.6f
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 4.dp),
+                contentAlignment = if (onRightPage) Alignment.CenterEnd else Alignment.CenterStart,
+            ) {
+                Text(
+                    text = page.toArabicDigits(),
+                    style = pageTextStyle,
+                    color = contentColor,
+                    fontWeight = FontWeight.ExtraBold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    modifier = Modifier.widthIn(min = 18.dp)
                 )
             }
         }
