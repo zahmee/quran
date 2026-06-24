@@ -1,11 +1,15 @@
 package com.mushaf.reader.reader
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +23,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.absoluteOffset
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -85,6 +91,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -220,11 +227,11 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 )
             }
 
-            // When the header is hidden, a small floating button restores it.
+            // When the header is hidden, a small draggable button restores it (and shows the page).
             if (!headerVisible) {
                 ShowHeaderButton(
-                    onClick = { headerVisible = true },
-                    modifier = Modifier.align(Alignment.TopEnd)
+                    page = pagerState.currentPage + 1,
+                    onClick = { headerVisible = true }
                 )
             }
         }
@@ -432,9 +439,14 @@ private fun ReaderHeader(
     val btnSize = if (bigButtons) 40.dp else 32.dp
     val iconSize = if (bigButtons) 24.dp else 20.dp
 
+    // Landscape, or an unfolded foldable's wide inner screen, has room to collapse the two header
+    // rows into one. A portrait phone or a folded/cover screen (narrow) keeps the two-row layout.
+    val configuration = LocalConfiguration.current
+    val singleRow = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+        configuration.screenWidthDp >= 600
+
     // Live ticker for the optional clock / current-session timer (only loops while one is shown).
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
-    var showMoreMenu by remember { mutableStateOf(false) }
     LaunchedEffect(showClock, showSessionTimer) {
         while (showClock || showSessionTimer) {
             nowMs = System.currentTimeMillis()
@@ -447,6 +459,120 @@ private fun ReaderHeader(
         contentColor = contentColor,
         shadowElevation = 1.dp
     ) {
+        if (singleRow) {
+            // One-row header for wide screens. Padded fully clear of the camera cutout — the top
+            // band in portrait, a side edge in landscape — so no control sits under the punch-hole.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                    .height(btnSize)
+            ) {
+                // Start group: settings · optional clock · surah identity.
+                Row(
+                    modifier = Modifier.align(Alignment.CenterStart),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onOpenSettings, modifier = Modifier.size(btnSize)) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = "إعدادات",
+                            tint = quietContentColor,
+                            modifier = Modifier.size(iconSize)
+                        )
+                    }
+                    if (showClock) {
+                        Text(
+                            text = formatClock(nowMs),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = clockTextColor,
+                            modifier = Modifier.padding(horizontal = 6.dp)
+                        )
+                    }
+                    if (surah != null) {
+                        SurahChip(
+                            surah = surah,
+                            surahNumber = surahNumber,
+                            ayahCount = ayahCount,
+                            surahPercent = surahPercent,
+                            showSurahNumber = showSurahNumber,
+                            showSurahAyahCount = showSurahAyahCount,
+                            showSurahProgress = showSurahProgress,
+                            color = quietContentColor,
+                            modifier = Modifier.widthIn(max = 160.dp),
+                            onClick = { onOpenIndex(0) }
+                        )
+                    }
+                }
+                // Center: page badge, kept off the cutout by the box's inset padding above.
+                PageChip(
+                    page = page,
+                    contentColor = contentColor,
+                    quietContentColor = quietContentColor,
+                    accentColor = activeContentColor,
+                    big = bigButtons,
+                    modifier = Modifier.align(Alignment.Center),
+                    onClick = onPageClick
+                )
+                // End group: juz position · optional session timer · hide · overflow menu.
+                Row(
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    JuzChip(
+                        juz = juz,
+                        juzPercent = juzPercent,
+                        pageInJuz = pageInJuz,
+                        pagesInJuz = pagesInJuz,
+                        showJuzProgressPercent = showJuzProgressPercent,
+                        showJuzProgressPages = showJuzProgressPages,
+                        color = quietContentColor,
+                        accentColor = activeContentColor,
+                        big = bigButtons,
+                        onClick = { onOpenIndex(1) }
+                    )
+                    if (showSessionTimer && sessionStartedAt > 0L) {
+                        Text(
+                            text = formatElapsed(nowMs - sessionStartedAt),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = sessionTimerTextColor,
+                            modifier = Modifier.padding(horizontal = 6.dp)
+                        )
+                    }
+                    if (isVisible("hide")) {
+                        IconButton(onClick = onHideHeader, modifier = Modifier.size(btnSize)) {
+                            Icon(
+                                imageVector = Icons.Filled.KeyboardArrowUp,
+                                contentDescription = "إخفاء الشريط العلوي وملء الشاشة",
+                                tint = quietContentColor,
+                                modifier = Modifier.size(iconSize)
+                            )
+                        }
+                    }
+                    HeaderMoreMenu(
+                        btnSize = btnSize,
+                        iconSize = iconSize,
+                        tint = quietContentColor,
+                        activeContentColor = activeContentColor,
+                        quietContentColor = quietContentColor,
+                        hasBookmark = hasBookmark,
+                        fillScreen = fillScreen,
+                        dark = dark,
+                        isVisible = isVisible,
+                        onOpenSearch = onOpenSearch,
+                        onBookmarkJump = onBookmarkJump,
+                        onStats = onStats,
+                        onOpenIndex = onOpenIndex,
+                        onToggleFillScreen = onToggleFillScreen,
+                        onToggleTheme = onToggleTheme
+                    )
+                }
+            }
+        } else {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -509,99 +635,23 @@ private fun ReaderHeader(
                             modifier = Modifier.size(iconSize)
                         )
                     }
-                    Box {
-                        IconButton(onClick = { showMoreMenu = true }, modifier = Modifier.size(btnSize)) {
-                            Icon(
-                                imageVector = Icons.Filled.MoreVert,
-                                contentDescription = "المزيد",
-                                tint = quietContentColor,
-                                modifier = Modifier.size(iconSize)
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showMoreMenu,
-                            onDismissRequest = { showMoreMenu = false }
-                        ) {
-                            if (isVisible("search")) {
-                                DropdownMenuItem(
-                                    text = { Text("البحث") },
-                                    leadingIcon = { Icon(imageVector = Icons.Filled.Search, contentDescription = null) },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        onOpenSearch()
-                                    }
-                                )
-                            }
-                            if (isVisible("bookmark")) {
-                                DropdownMenuItem(
-                                    text = { Text("العلامة المرجعية") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Filled.Bookmark,
-                                            contentDescription = null,
-                                            tint = if (hasBookmark) LocalContentColor.current else quietContentColor
-                                        )
-                                    },
-                                    enabled = hasBookmark,
-                                    onClick = {
-                                        showMoreMenu = false
-                                        onBookmarkJump()
-                                    }
-                                )
-                            }
-                            if (isVisible("stats")) {
-                                DropdownMenuItem(
-                                    text = { Text("إحصائيات القراءة") },
-                                    leadingIcon = { Icon(imageVector = Icons.Filled.BarChart, contentDescription = null) },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        onStats()
-                                    }
-                                )
-                            }
-                            if (isVisible("index")) {
-                                DropdownMenuItem(
-                                    text = { Text("الفهرس") },
-                                    leadingIcon = { Icon(imageVector = Icons.AutoMirrored.Filled.MenuBook, contentDescription = null) },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        onOpenIndex(0)
-                                    }
-                                )
-                            }
-                            if (isVisible("fill")) {
-                                DropdownMenuItem(
-                                    text = { Text(if (fillScreen) "عرض الصفحة كاملة" else "ملء الصفحة") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = if (fillScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
-                                            contentDescription = null,
-                                            tint = if (fillScreen) activeContentColor else LocalContentColor.current
-                                        )
-                                    },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        onToggleFillScreen()
-                                    }
-                                )
-                            }
-                            if (isVisible("theme")) {
-                                DropdownMenuItem(
-                                    text = { Text(if (dark) "الوضع الفاتح" else "الوضع الليلي") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = if (dark) Icons.Filled.LightMode else Icons.Filled.DarkMode,
-                                            contentDescription = null
-                                        )
-                                    },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        onToggleTheme()
-                                    }
-                                )
-                            }
-                        }
-                    }
+                    HeaderMoreMenu(
+                        btnSize = btnSize,
+                        iconSize = iconSize,
+                        tint = quietContentColor,
+                        activeContentColor = activeContentColor,
+                        quietContentColor = quietContentColor,
+                        hasBookmark = hasBookmark,
+                        fillScreen = fillScreen,
+                        dark = dark,
+                        isVisible = isVisible,
+                        onOpenSearch = onOpenSearch,
+                        onBookmarkJump = onBookmarkJump,
+                        onStats = onStats,
+                        onOpenIndex = onOpenIndex,
+                        onToggleFillScreen = onToggleFillScreen,
+                        onToggleTheme = onToggleTheme
+                    )
                 }
             }
 
@@ -612,75 +662,274 @@ private fun ReaderHeader(
                     .padding(horizontal = 8.dp, vertical = 2.dp)
             ) {
                 if (surah != null) {
-                    val surahLabel = buildString {
-                        if (showSurahNumber && surahNumber != null) append("${surahNumber.toArabicDigits()} ")
-                        append(surah)
-                        if (showSurahAyahCount && ayahCount != null && ayahCount > 0) {
-                            append(" (${ayahCount.toArabicDigits()})")
-                        }
-                        if (showSurahProgress && surahPercent != null) append(" ${surahPercent.toArabicDigits()}٪")
-                    }
-                    Text(
-                        text = surahLabel,
-                        style = MaterialTheme.typography.labelMedium,
+                    SurahChip(
+                        surah = surah,
+                        surahNumber = surahNumber,
+                        ayahCount = ayahCount,
+                        surahPercent = surahPercent,
+                        showSurahNumber = showSurahNumber,
+                        showSurahAyahCount = showSurahAyahCount,
+                        showSurahProgress = showSurahProgress,
                         color = quietContentColor,
-                        maxLines = 1,
-                        modifier = Modifier
-                            .align(Alignment.CenterStart)
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { onOpenIndex(0) }
-                            .padding(horizontal = 4.dp, vertical = 3.dp)
+                        modifier = Modifier.align(Alignment.CenterStart),
+                        onClick = { onOpenIndex(0) }
                     )
                 }
 
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .clip(RoundedCornerShape(6.dp))
-                        .clickable { onPageClick() }
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    MushafPageBadge(
-                        page = page,
-                        onRightPage = page % 2 == 0,
-                        contentColor = contentColor,
-                        quietContentColor = quietContentColor,
-                        accentColor = activeContentColor,
-                        big = bigButtons
-                    )
-                }
+                PageChip(
+                    page = page,
+                    contentColor = contentColor,
+                    quietContentColor = quietContentColor,
+                    accentColor = activeContentColor,
+                    big = bigButtons,
+                    modifier = Modifier.align(Alignment.Center),
+                    onClick = onPageClick
+                )
 
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .clip(RoundedCornerShape(6.dp))
-                        .clickable { onOpenIndex(1) }
-                        .padding(horizontal = 4.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Text(
-                        text = buildString {
-                            append("الجزء ${juz.toArabicDigits()}")
-                            if (showJuzProgressPercent) append(" ${juzPercent.toArabicDigits()}٪")
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = quietContentColor,
-                        maxLines = 1
-                    )
-                    if (showJuzProgressPages) {
-                        JuzRing(
-                            fraction = pageInJuz.toFloat() / pagesInJuz.coerceAtLeast(1),
-                            pageInJuz = pageInJuz,
-                            trackColor = quietContentColor,
-                            accentColor = activeContentColor,
-                            big = bigButtons
-                        )
-                    }
-                }
+                JuzChip(
+                    juz = juz,
+                    juzPercent = juzPercent,
+                    pageInJuz = pageInJuz,
+                    pagesInJuz = pagesInJuz,
+                    showJuzProgressPercent = showJuzProgressPercent,
+                    showJuzProgressPages = showJuzProgressPages,
+                    color = quietContentColor,
+                    accentColor = activeContentColor,
+                    big = bigButtons,
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                    onClick = { onOpenIndex(1) }
+                )
             }
+        }
+        }
+    }
+}
+
+/** Overflow ("more") menu shared by both header layouts: the secondary reading actions live
+ *  behind a single button so the strip stays uncluttered. Owns its own open/closed state. */
+@Composable
+private fun HeaderMoreMenu(
+    btnSize: Dp,
+    iconSize: Dp,
+    tint: Color,
+    activeContentColor: Color,
+    quietContentColor: Color,
+    hasBookmark: Boolean,
+    fillScreen: Boolean,
+    dark: Boolean,
+    isVisible: (String) -> Boolean,
+    onOpenSearch: () -> Unit,
+    onBookmarkJump: () -> Unit,
+    onStats: () -> Unit,
+    onOpenIndex: (Int) -> Unit,
+    onToggleFillScreen: () -> Unit,
+    onToggleTheme: () -> Unit,
+) {
+    var showMoreMenu by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { showMoreMenu = true }, modifier = Modifier.size(btnSize)) {
+            Icon(
+                imageVector = Icons.Filled.MoreVert,
+                contentDescription = "المزيد",
+                tint = tint,
+                modifier = Modifier.size(iconSize)
+            )
+        }
+        DropdownMenu(
+            expanded = showMoreMenu,
+            onDismissRequest = { showMoreMenu = false }
+        ) {
+            if (isVisible("search")) {
+                DropdownMenuItem(
+                    text = { Text("البحث") },
+                    leadingIcon = { Icon(imageVector = Icons.Filled.Search, contentDescription = null) },
+                    onClick = {
+                        showMoreMenu = false
+                        onOpenSearch()
+                    }
+                )
+            }
+            if (isVisible("bookmark")) {
+                DropdownMenuItem(
+                    text = { Text("العلامة المرجعية") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Filled.Bookmark,
+                            contentDescription = null,
+                            tint = if (hasBookmark) LocalContentColor.current else quietContentColor
+                        )
+                    },
+                    enabled = hasBookmark,
+                    onClick = {
+                        showMoreMenu = false
+                        onBookmarkJump()
+                    }
+                )
+            }
+            if (isVisible("stats")) {
+                DropdownMenuItem(
+                    text = { Text("إحصائيات القراءة") },
+                    leadingIcon = { Icon(imageVector = Icons.Filled.BarChart, contentDescription = null) },
+                    onClick = {
+                        showMoreMenu = false
+                        onStats()
+                    }
+                )
+            }
+            if (isVisible("index")) {
+                DropdownMenuItem(
+                    text = { Text("الفهرس") },
+                    leadingIcon = { Icon(imageVector = Icons.AutoMirrored.Filled.MenuBook, contentDescription = null) },
+                    onClick = {
+                        showMoreMenu = false
+                        onOpenIndex(0)
+                    }
+                )
+            }
+            if (isVisible("fill")) {
+                DropdownMenuItem(
+                    text = { Text(if (fillScreen) "عرض الصفحة كاملة" else "ملء الصفحة") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (fillScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                            contentDescription = null,
+                            tint = if (fillScreen) activeContentColor else LocalContentColor.current
+                        )
+                    },
+                    onClick = {
+                        showMoreMenu = false
+                        onToggleFillScreen()
+                    }
+                )
+            }
+            if (isVisible("theme")) {
+                DropdownMenuItem(
+                    text = { Text(if (dark) "الوضع الفاتح" else "الوضع الليلي") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (dark) Icons.Filled.LightMode else Icons.Filled.DarkMode,
+                            contentDescription = null
+                        )
+                    },
+                    onClick = {
+                        showMoreMenu = false
+                        onToggleTheme()
+                    }
+                )
+            }
+        }
+    }
+}
+
+/** Surah identity label (number · name · ayah count · progress), tappable to open the index.
+ *  Shared by both header layouts. */
+@Composable
+private fun SurahChip(
+    surah: String,
+    surahNumber: Int?,
+    ayahCount: Int?,
+    surahPercent: Int?,
+    showSurahNumber: Boolean,
+    showSurahAyahCount: Boolean,
+    showSurahProgress: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val surahLabel = buildString {
+        if (showSurahNumber && surahNumber != null) append("${surahNumber.toArabicDigits()} ")
+        append(surah)
+        if (showSurahAyahCount && ayahCount != null && ayahCount > 0) {
+            append(" (${ayahCount.toArabicDigits()})")
+        }
+        if (showSurahProgress && surahPercent != null) append(" ${surahPercent.toArabicDigits()}٪")
+    }
+    Text(
+        text = surahLabel,
+        style = MaterialTheme.typography.labelMedium,
+        color = color,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 4.dp, vertical = 3.dp)
+    )
+}
+
+/** Two-page mushaf badge with the current page number, tappable to open the page menu.
+ *  Shared by both header layouts. */
+@Composable
+private fun PageChip(
+    page: Int,
+    contentColor: Color,
+    quietContentColor: Color,
+    accentColor: Color,
+    big: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        MushafPageBadge(
+            page = page,
+            // Paper-mushaf order: odd pages sit on the right, even pages on the left.
+            onRightPage = page % 2 == 1,
+            contentColor = contentColor,
+            quietContentColor = quietContentColor,
+            accentColor = accentColor,
+            big = big
+        )
+    }
+}
+
+/** Juz position label with an optional progress ring, tappable to open the juz index.
+ *  Shared by both header layouts. */
+@Composable
+private fun JuzChip(
+    juz: Int,
+    juzPercent: Int,
+    pageInJuz: Int,
+    pagesInJuz: Int,
+    showJuzProgressPercent: Boolean,
+    showJuzProgressPages: Boolean,
+    color: Color,
+    accentColor: Color,
+    big: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Text(
+            text = buildString {
+                append("الجزء ${juz.toArabicDigits()}")
+                if (showJuzProgressPercent) append(" ${juzPercent.toArabicDigits()}٪")
+            },
+            style = MaterialTheme.typography.labelMedium,
+            color = color,
+            maxLines = 1
+        )
+        if (showJuzProgressPages) {
+            JuzRing(
+                fraction = pageInJuz.toFloat() / pagesInJuz.coerceAtLeast(1),
+                pageInJuz = pageInJuz,
+                trackColor = color,
+                accentColor = accentColor,
+                big = big
+            )
         }
     }
 }
@@ -819,30 +1068,83 @@ private fun MushafPageBadge(
     }
 }
 
-/** Small round floating button shown (top corner) while the header is hidden; restores it. */
+/** Floating button shown while the header is hidden (full-screen reading): a small flat-topped
+ *  chip — a grabber notch over the current page number (red). Tap restores the header; the chip
+ *  can be DRAGGED anywhere on screen and keeps its spot across rotation/recompositions. */
 @Composable
 private fun ShowHeaderButton(
+    page: Int,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    Surface(
-        onClick = onClick,
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shadowElevation = 4.dp,
-        tonalElevation = 2.dp,
-        modifier = modifier
-            .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
-            .padding(8.dp)
-            .size(40.dp)
-    ) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = Icons.Filled.KeyboardArrowDown,
-                contentDescription = "إظهار الشريط العلوي",
-                modifier = Modifier.size(24.dp)
-            )
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val numberColor = Color(0xFFE53935) // same red as the optional header clock
+
+    // Position in LTR so the offset/clamp math is plain top-left-origin pixels. The chip is
+    // visually symmetric, so this only affects placement, not appearance.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val density = LocalDensity.current
+            val maxWpx = constraints.maxWidth.toFloat()
+            val maxHpx = constraints.maxHeight.toFloat()
+            // Rest position + drag floor: keep the chip below the camera / status band.
+            val topInsetPx = with(density) {
+                WindowInsets.statusBars.union(WindowInsets.displayCutout)
+                    .asPaddingValues().calculateTopPadding().toPx()
+            }
+            val edgePx = with(density) { 8.dp.toPx() }
+            var btnSize by remember { mutableStateOf(IntSize.Zero) }
+            // User-chosen position; NaN = untouched -> rests in the top-left corner. Survives rotation.
+            var posX by rememberSaveable { mutableStateOf(Float.NaN) }
+            var posY by rememberSaveable { mutableStateOf(Float.NaN) }
+            val restX = edgePx
+            val restY = topInsetPx + edgePx
+            val maxX = (maxWpx - btnSize.width).coerceAtLeast(0f)
+            val maxY = (maxHpx - btnSize.height).coerceAtLeast(0f)
+            val x = (if (posX.isNaN()) restX else posX).coerceIn(0f, maxX)
+            val y = (if (posY.isNaN()) restY else posY).coerceIn(topInsetPx, maxY)
+
+            Surface(
+                onClick = onClick,
+                shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 12.dp, bottomEnd = 12.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                contentColor = onSurface,
+                border = BorderStroke(1.dp, onSurface.copy(alpha = 0.12f)),
+                shadowElevation = 4.dp,
+                tonalElevation = 1.dp,
+                modifier = Modifier
+                    .absoluteOffset { IntOffset(x.roundToInt(), y.roundToInt()) }
+                    .onSizeChanged { btnSize = it }
+                    .pointerInput(maxWpx, maxHpx, topInsetPx) {
+                        detectDragGestures { change, drag ->
+                            change.consume()
+                            val curX = if (posX.isNaN()) restX else posX
+                            val curY = if (posY.isNaN()) restY else posY
+                            posX = (curX + drag.x).coerceIn(0f, (maxWpx - btnSize.width).coerceAtLeast(0f))
+                            posY = (curY + drag.y).coerceIn(topInsetPx, (maxHpx - btnSize.height).coerceAtLeast(0f))
+                        }
+                    }
+                    .defaultMinSize(minWidth = 40.dp, minHeight = 40.dp)
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 5.dp)
+                ) {
+                    // Small grabber notch — doubles as the "drag me" cue now the chip is movable.
+                    Box(
+                        modifier = Modifier
+                            .size(width = 12.dp, height = 2.5.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(onSurface.copy(alpha = 0.5f))
+                    )
+                    Text(
+                        text = page.toArabicDigits(),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = numberColor
+                    )
+                }
+            }
         }
     }
 }

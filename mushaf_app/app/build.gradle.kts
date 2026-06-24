@@ -23,8 +23,8 @@ android {
         applicationId = "com.mushaf.reader"
         minSdk = 24
         targetSdk = 35
-        versionCode = 28
-        versionName = "0.4.4"
+        versionCode = 30
+        versionName = "0.4.6"
     }
 
     signingConfigs {
@@ -86,4 +86,25 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     debugImplementation(libs.androidx.ui.tooling)
+}
+
+// ── Distribution: collect signed release builds the "old way" ────────────────────
+// After every release assembly, drop a versioned copy of the signed APK into the
+// parent folder (D:\new project\quran_01) named QuranAlQari-<versionName>.apk.
+// A plain task with an ad-hoc copy {} is used (not a Copy task) so the repo root is
+// not declared as a tracked task output — that would overlap the whole build tree.
+tasks.register("copyReleaseApk") {
+    description = "Copies the signed release APK to ../ as QuranAlQari-<versionName>.apk"
+    group = "distribution"
+    doLast {
+        copy {
+            from(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
+            into(rootDir.parentFile)
+            rename { "QuranAlQari-${android.defaultConfig.versionName}.apk" }
+        }
+    }
+}
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    finalizedBy("copyReleaseApk")
 }
