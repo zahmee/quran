@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -229,8 +231,11 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
 
             // When the header is hidden, a small draggable button restores it (and shows the page).
             if (!headerVisible) {
+                val hbPage = pagerState.currentPage + 1
+                val hbJuz = viewModel.juzInfoForPage(hbPage)
                 ShowHeaderButton(
-                    page = pagerState.currentPage + 1,
+                    page = hbPage,
+                    juzFraction = hbJuz.pageInJuz.toFloat() / hbJuz.pagesInJuz.coerceAtLeast(1),
                     onClick = { headerVisible = true }
                 )
             }
@@ -281,6 +286,7 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 surahs = surahs,
                 juzs = juzs,
                 initialTab = indexTab,
+                currentPage = pagerState.currentPage + 1,
                 onJump = { page ->
                     showIndex = false
                     jumpToPage(page)
@@ -1074,10 +1080,12 @@ private fun MushafPageBadge(
 @Composable
 private fun ShowHeaderButton(
     page: Int,
+    juzFraction: Float,
     onClick: () -> Unit,
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val numberColor = Color(0xFFE53935) // same red as the optional header clock
+    val juzBarColor = Color(0xFF1E88E5) // blue reading-level bar for the current juz
 
     // Position in LTR so the offset/clamp math is plain top-left-origin pixels. The chip is
     // visually symmetric, so this only affects placement, not appearance.
@@ -1128,7 +1136,9 @@ private fun ShowHeaderButton(
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(2.dp),
-                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 5.dp)
+                    modifier = Modifier
+                        .width(IntrinsicSize.Min) // hug the page number so fillMaxWidth bar can't widen the chip
+                        .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 5.dp)
                 ) {
                     // Small grabber notch — doubles as the "drag me" cue now the chip is movable.
                     Box(
@@ -1143,6 +1153,24 @@ private fun ShowHeaderButton(
                         fontWeight = FontWeight.ExtraBold,
                         color = numberColor
                     )
+                    // Thin blue bar under the page number: reading level within the current juz.
+                    // Fills from the right (mushaf reading direction), spans the number's width.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(juzBarColor.copy(alpha = 0.22f)),
+                        contentAlignment = Alignment.CenterEnd
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(juzFraction.coerceIn(0f, 1f))
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(50))
+                                .background(juzBarColor)
+                        )
+                    }
                 }
             }
         }
