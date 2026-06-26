@@ -101,6 +101,27 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var sessionTimerColor by mutableStateOf(initialSettings.sessionTimerColor)
         private set
 
+    /** Full-screen restore-header chip: show the page number, and its color. */
+    var showButtonPage by mutableStateOf(initialSettings.showButtonPage)
+        private set
+
+    var buttonPageColor by mutableStateOf(initialSettings.buttonPageColor)
+        private set
+
+    /** Full-screen restore-header chip: show the juz-progress bar, and its color. */
+    var showButtonJuzBar by mutableStateOf(initialSettings.showButtonJuzBar)
+        private set
+
+    var buttonJuzBarColor by mutableStateOf(initialSettings.buttonJuzBarColor)
+        private set
+
+    /** Thin juz-progress bar pinned to the bottom of the page, and its color. */
+    var showBottomJuzBar by mutableStateOf(initialSettings.showBottomJuzBar)
+        private set
+
+    var bottomJuzBarColor by mutableStateOf(initialSettings.bottomJuzBarColor)
+        private set
+
     /** Start time (ms) of the current foreground reading session; 0 when none is running.
      *  Observable so the header timer updates when a new session begins. */
     var sessionStartedAt by mutableStateOf(0L)
@@ -110,6 +131,10 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     var bookmarks by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /** Second, independent bookmark (different colour); behaves exactly like the first. */
+    var bookmarks2 by mutableStateOf<Set<String>>(emptySet())
         private set
 
     var stats by mutableStateOf<ReadingStats?>(null)
@@ -144,6 +169,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch { ayahData = withContext(Dispatchers.IO) { ayahRepo.loadAll() } }
         viewModelScope.launch { bookmarks = withContext(Dispatchers.IO) { store.bookmarks() } }
+        viewModelScope.launch { bookmarks2 = withContext(Dispatchers.IO) { store.bookmarks2() } }
     }
 
     fun toggleTheme() {
@@ -228,6 +254,42 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setSessionTimerColor(value) }
     }
 
+    fun updateShowButtonPage(value: Boolean) {
+        if (value == showButtonPage) return
+        showButtonPage = value
+        viewModelScope.launch { store.setShowButtonPage(value) }
+    }
+
+    fun updateButtonPageColor(value: String) {
+        if (value == buttonPageColor) return
+        buttonPageColor = value
+        viewModelScope.launch { store.setButtonPageColor(value) }
+    }
+
+    fun updateShowButtonJuzBar(value: Boolean) {
+        if (value == showButtonJuzBar) return
+        showButtonJuzBar = value
+        viewModelScope.launch { store.setShowButtonJuzBar(value) }
+    }
+
+    fun updateButtonJuzBarColor(value: String) {
+        if (value == buttonJuzBarColor) return
+        buttonJuzBarColor = value
+        viewModelScope.launch { store.setButtonJuzBarColor(value) }
+    }
+
+    fun updateShowBottomJuzBar(value: Boolean) {
+        if (value == showBottomJuzBar) return
+        showBottomJuzBar = value
+        viewModelScope.launch { store.setShowBottomJuzBar(value) }
+    }
+
+    fun updateBottomJuzBarColor(value: String) {
+        if (value == bottomJuzBarColor) return
+        bottomJuzBarColor = value
+        viewModelScope.launch { store.setBottomJuzBarColor(value) }
+    }
+
     fun assetModel(pageNumber: Int): String = pageRepo.assetUri(pageNumber, darkTheme)
 
     fun markersForPage(pageNumber: Int): List<AyahMarker> = ayahData.byPage[pageNumber].orEmpty()
@@ -248,6 +310,17 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     private fun bookmarkPage(): Int? = bookmarks.firstOrNull()?.let { ayahData.keyToPage[it] }
 
     fun bookmarkJumpPage(): Int? = bookmarkPage()
+
+    fun isBookmarked2(verseKey: String): Boolean = bookmarks2.contains(verseKey)
+
+    /** Second bookmark: same single-slot behaviour as the first, stored separately. */
+    fun toggleBookmark2(ayah: AyahMarker) {
+        val next = if (bookmarks2.contains(ayah.verseKey)) emptySet() else setOf(ayah.verseKey)
+        bookmarks2 = next
+        viewModelScope.launch { store.setBookmarks2(next) }
+    }
+
+    fun bookmark2JumpPage(): Int? = bookmarks2.firstOrNull()?.let { ayahData.keyToPage[it] }
 
     fun saveLastPage(page: Int) {
         lastPage = page

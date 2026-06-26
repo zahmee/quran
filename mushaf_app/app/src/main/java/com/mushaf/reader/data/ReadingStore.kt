@@ -17,6 +17,7 @@ class ReadingStore(private val context: Context) {
 
     private val keyLastPage = intPreferencesKey("last_page")
     private val keyBookmarks = stringSetPreferencesKey("bookmarks")
+    private val keyBookmarks2 = stringSetPreferencesKey("bookmarks2")
     private val keyDarkTheme = booleanPreferencesKey("dark_theme")
     private val keyFillScreen = booleanPreferencesKey("fill_screen")
     private val keyVisitedPages = stringSetPreferencesKey("visited_pages")
@@ -32,6 +33,13 @@ class ReadingStore(private val context: Context) {
     private val keyShowJuzProgressPages = booleanPreferencesKey("show_juz_progress_pages")
     private val keyClockColor = stringPreferencesKey("clock_color")
     private val keySessionTimerColor = stringPreferencesKey("session_timer_color")
+    // Full-screen restore-header chip + bottom-of-page juz bar.
+    private val keyShowButtonPage = booleanPreferencesKey("show_button_page")
+    private val keyButtonPageColor = stringPreferencesKey("button_page_color")
+    private val keyShowButtonJuzBar = booleanPreferencesKey("show_button_juz_bar")
+    private val keyButtonJuzBarColor = stringPreferencesKey("button_juz_bar_color")
+    private val keyShowBottomJuzBar = booleanPreferencesKey("show_bottom_juz_bar")
+    private val keyBottomJuzBarColor = stringPreferencesKey("bottom_juz_bar_color")
 
     /** The display/position settings + per-page progress read together in one pass at startup.
      *  [visitedPages] = pages opened at all; [readPages] = pages dwelt on long enough to count
@@ -53,6 +61,12 @@ class ReadingStore(private val context: Context) {
         val showJuzProgressPages: Boolean,
         val clockColor: String,
         val sessionTimerColor: String,
+        val showButtonPage: Boolean,
+        val buttonPageColor: String,
+        val showButtonJuzBar: Boolean,
+        val buttonJuzBarColor: String,
+        val showBottomJuzBar: Boolean,
+        val bottomJuzBarColor: String,
     )
 
     suspend fun settings(): Settings {
@@ -74,6 +88,12 @@ class ReadingStore(private val context: Context) {
             showJuzProgressPages = prefs[keyShowJuzProgressPages] ?: false,
             clockColor = prefs[keyClockColor] ?: "muted",
             sessionTimerColor = prefs[keySessionTimerColor] ?: "muted",
+            showButtonPage = prefs[keyShowButtonPage] ?: true,
+            buttonPageColor = prefs[keyButtonPageColor] ?: "red",
+            showButtonJuzBar = prefs[keyShowButtonJuzBar] ?: true,
+            buttonJuzBarColor = prefs[keyButtonJuzBarColor] ?: "blue",
+            showBottomJuzBar = prefs[keyShowBottomJuzBar] ?: false,
+            bottomJuzBarColor = prefs[keyBottomJuzBarColor] ?: "blue",
         )
     }
 
@@ -144,9 +164,39 @@ class ReadingStore(private val context: Context) {
         context.dataStore.edit { it[keySessionTimerColor] = value }
     }
 
+    suspend fun setShowButtonPage(value: Boolean) {
+        context.dataStore.edit { it[keyShowButtonPage] = value }
+    }
+
+    suspend fun setButtonPageColor(value: String) {
+        context.dataStore.edit { it[keyButtonPageColor] = value }
+    }
+
+    suspend fun setShowButtonJuzBar(value: Boolean) {
+        context.dataStore.edit { it[keyShowButtonJuzBar] = value }
+    }
+
+    suspend fun setButtonJuzBarColor(value: String) {
+        context.dataStore.edit { it[keyButtonJuzBarColor] = value }
+    }
+
+    suspend fun setShowBottomJuzBar(value: Boolean) {
+        context.dataStore.edit { it[keyShowBottomJuzBar] = value }
+    }
+
+    suspend fun setBottomJuzBarColor(value: String) {
+        context.dataStore.edit { it[keyBottomJuzBarColor] = value }
+    }
+
     suspend fun bookmarks(): Set<String> = context.dataStore.data.first()[keyBookmarks] ?: emptySet()
 
     suspend fun setBookmarks(values: Set<String>) {
         context.dataStore.edit { it[keyBookmarks] = values }
+    }
+
+    suspend fun bookmarks2(): Set<String> = context.dataStore.data.first()[keyBookmarks2] ?: emptySet()
+
+    suspend fun setBookmarks2(values: Set<String>) {
+        context.dataStore.edit { it[keyBookmarks2] = values }
     }
 }

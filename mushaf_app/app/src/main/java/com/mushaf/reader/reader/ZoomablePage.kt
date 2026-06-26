@@ -27,7 +27,8 @@ import coil3.compose.AsyncImage
 import com.mushaf.reader.data.AyahMarker
 import kotlin.math.min
 
-private val BookmarkColor = Color(0xFFD4A017) // amber: persistent bookmark highlight
+private val BookmarkColor = Color(0xFFD4A017) // amber: persistent bookmark #1 highlight
+private val BookmarkColor2 = Color(0xFF7E57C2) // violet: persistent bookmark #2 highlight
 private val SelectionColor = Color(0xFF1F7A5A) // green: transient long-press selection
 
 /**
@@ -53,6 +54,7 @@ fun ZoomablePage(
     imageHeight: Int,
     selectedAyah: AyahMarker?,
     bookmarkedKeys: Set<String>,
+    bookmarkedKeys2: Set<String>,
     onSelectAyah: (AyahMarker, Offset) -> Unit,
     onEmptyTap: () -> Unit,
     fillScreen: Boolean = false,
@@ -61,6 +63,10 @@ fun ZoomablePage(
     val bookmarked = remember(markers, bookmarkedKeys) {
         if (bookmarkedKeys.isEmpty()) emptyList()
         else markers.filter { bookmarkedKeys.contains(it.verseKey) }
+    }
+    val bookmarked2 = remember(markers, bookmarkedKeys2) {
+        if (bookmarkedKeys2.isEmpty()) emptyList()
+        else markers.filter { bookmarkedKeys2.contains(it.verseKey) }
     }
 
     BoxWithConstraints(
@@ -81,17 +87,17 @@ fun ZoomablePage(
         when {
             !fillScreen -> WholePage(
                 model, markers, fitScale, wPx, hPx, imgW, imgH,
-                bookmarked, highlight, onSelectAyah, onEmptyTap
+                bookmarked, bookmarked2, highlight, onSelectAyah, onEmptyTap
             )
 
             widthConstrained -> StretchedPage(
                 model, markers, fitScale, wPx, hPx, imgW, imgH,
-                bookmarked, highlight, onSelectAyah, onEmptyTap
+                bookmarked, bookmarked2, highlight, onSelectAyah, onEmptyTap
             )
 
             else -> FilledWidthPage(
                 model, markers, wPx, imgW, imgH,
-                bookmarked, highlight, onSelectAyah, onEmptyTap
+                bookmarked, bookmarked2, highlight, onSelectAyah, onEmptyTap
             )
         }
     }
@@ -108,6 +114,7 @@ private fun WholePage(
     imgW: Float,
     imgH: Float,
     bookmarked: List<AyahMarker>,
+    bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
     onSelectAyah: (AyahMarker, Offset) -> Unit,
     onEmptyTap: () -> Unit,
@@ -144,6 +151,7 @@ private fun WholePage(
             model = model,
             baseScale = fitScale,
             bookmarked = bookmarked,
+            bookmarked2 = bookmarked2,
             highlight = highlight
         )
     }
@@ -160,6 +168,7 @@ private fun StretchedPage(
     imgW: Float,
     imgH: Float,
     bookmarked: List<AyahMarker>,
+    bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
     onSelectAyah: (AyahMarker, Offset) -> Unit,
     onEmptyTap: () -> Unit,
@@ -202,6 +211,7 @@ private fun StretchedPage(
             model = model,
             baseScale = fitScale,
             bookmarked = bookmarked,
+            bookmarked2 = bookmarked2,
             highlight = highlight
         )
     }
@@ -216,6 +226,7 @@ private fun FilledWidthPage(
     imgW: Float,
     imgH: Float,
     bookmarked: List<AyahMarker>,
+    bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
     onSelectAyah: (AyahMarker, Offset) -> Unit,
     onEmptyTap: () -> Unit,
@@ -256,6 +267,7 @@ private fun FilledWidthPage(
                 model = model,
                 baseScale = scale,
                 bookmarked = bookmarked,
+                bookmarked2 = bookmarked2,
                 highlight = highlight
             )
         }
@@ -278,6 +290,7 @@ private fun PageContent(
     model: String,
     baseScale: Float,
     bookmarked: List<AyahMarker>,
+    bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
 ) {
     Box(modifier = modifier) {
@@ -288,7 +301,7 @@ private fun PageContent(
             modifier = Modifier.fillMaxSize()
         )
 
-        if (bookmarked.isNotEmpty() || highlight != null) {
+        if (bookmarked.isNotEmpty() || bookmarked2.isNotEmpty() || highlight != null) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val corner = CornerRadius(8f, 8f)
                 val bm = BookmarkColor.copy(alpha = 0.22f)
@@ -296,6 +309,17 @@ private fun PageContent(
                     m.rects.forEach { r ->
                         drawRoundRect(
                             color = bm,
+                            topLeft = Offset(r.x * baseScale, r.y * baseScale),
+                            size = Size(r.w * baseScale, r.h * baseScale),
+                            cornerRadius = corner
+                        )
+                    }
+                }
+                val bm2 = BookmarkColor2.copy(alpha = 0.22f)
+                bookmarked2.forEach { m ->
+                    m.rects.forEach { r ->
+                        drawRoundRect(
+                            color = bm2,
                             topLeft = Offset(r.x * baseScale, r.y * baseScale),
                             size = Size(r.w * baseScale, r.h * baseScale),
                             cornerRadius = corner

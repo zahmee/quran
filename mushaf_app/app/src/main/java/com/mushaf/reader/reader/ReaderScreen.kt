@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -183,6 +184,7 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                         juzPercent = juzInfo.pageInJuz * 100 / juzInfo.pagesInJuz,
                         dark = viewModel.darkTheme,
                         hasBookmark = viewModel.bookmarks.isNotEmpty(),
+                        hasBookmark2 = viewModel.bookmarks2.isNotEmpty(),
                         fillScreen = viewModel.fillScreen,
                         bigButtons = viewModel.bigButtons,
                         showClock = viewModel.showClock,
@@ -207,6 +209,11 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                         onToggleTheme = { viewModel.toggleTheme() },
                         onBookmarkJump = {
                             viewModel.bookmarkJumpPage()?.let { p ->
+                                scope.launch { pagerState.scrollToPage((p - 1).coerceIn(0, pageCount - 1)) }
+                            }
+                        },
+                        onBookmark2Jump = {
+                            viewModel.bookmark2JumpPage()?.let { p ->
                                 scope.launch { pagerState.scrollToPage((p - 1).coerceIn(0, pageCount - 1)) }
                             }
                         },
@@ -236,7 +243,22 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 ShowHeaderButton(
                     page = hbPage,
                     juzFraction = hbJuz.pageInJuz.toFloat() / hbJuz.pagesInJuz.coerceAtLeast(1),
+                    showPage = viewModel.showButtonPage,
+                    pageColorId = viewModel.buttonPageColor,
+                    showJuzBar = viewModel.showButtonJuzBar,
+                    juzBarColorId = viewModel.buttonJuzBarColor,
                     onClick = { headerVisible = true }
+                )
+            }
+
+            // Optional thin juz-progress bar pinned to the bottom of the page.
+            if (viewModel.showBottomJuzBar) {
+                val bbPage = pagerState.currentPage + 1
+                val bbJuz = viewModel.juzInfoForPage(bbPage)
+                BottomJuzBar(
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    fraction = bbJuz.pageInJuz.toFloat() / bbJuz.pagesInJuz.coerceAtLeast(1),
+                    colorId = viewModel.bottomJuzBarColor
                 )
             }
         }
@@ -320,6 +342,18 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 onClockColorChange = { viewModel.updateClockColor(it) },
                 sessionTimerColor = viewModel.sessionTimerColor,
                 onSessionTimerColorChange = { viewModel.updateSessionTimerColor(it) },
+                showButtonPage = viewModel.showButtonPage,
+                onShowButtonPageChange = { viewModel.updateShowButtonPage(it) },
+                buttonPageColor = viewModel.buttonPageColor,
+                onButtonPageColorChange = { viewModel.updateButtonPageColor(it) },
+                showButtonJuzBar = viewModel.showButtonJuzBar,
+                onShowButtonJuzBarChange = { viewModel.updateShowButtonJuzBar(it) },
+                buttonJuzBarColor = viewModel.buttonJuzBarColor,
+                onButtonJuzBarColorChange = { viewModel.updateButtonJuzBarColor(it) },
+                showBottomJuzBar = viewModel.showBottomJuzBar,
+                onShowBottomJuzBarChange = { viewModel.updateShowBottomJuzBar(it) },
+                bottomJuzBarColor = viewModel.bottomJuzBarColor,
+                onBottomJuzBarColorChange = { viewModel.updateBottomJuzBarColor(it) },
                 onAbout = { showAbout = true },
                 onClearAllStats = { viewModel.clearAllStats() },
                 onBack = { showSettings = false }
@@ -369,7 +403,8 @@ private fun ReaderPager(
                 imageWidth = viewModel.imageWidth,
                 imageHeight = viewModel.imageHeight,
                 selectedAyah = selected,
-                bookmarkedKeys = viewModel.bookmarks,
+                bookmarkedKeys = if (viewModel.isButtonVisible("bookmark")) viewModel.bookmarks else emptySet(),
+                bookmarkedKeys2 = if (viewModel.isButtonVisible("bookmark2")) viewModel.bookmarks2 else emptySet(),
                 onSelectAyah = { m, off ->
                     viewModel.selectAyah(if (viewModel.selectedAyah == m) null else m)
                     anchor = off
@@ -387,6 +422,10 @@ private fun ReaderPager(
                 boxHeightPx = boxH,
                 bookmarked = viewModel.isBookmarked(selected.verseKey),
                 onBookmark = { viewModel.toggleBookmark(selected) },
+                showBookmark = viewModel.isButtonVisible("bookmark"),
+                bookmarked2 = viewModel.isBookmarked2(selected.verseKey),
+                onBookmark2 = { viewModel.toggleBookmark2(selected) },
+                showBookmark2 = viewModel.isButtonVisible("bookmark2"),
                 onClose = { viewModel.clearSelection() }
             )
         }
@@ -406,6 +445,7 @@ private fun ReaderHeader(
     juzPercent: Int,
     dark: Boolean,
     hasBookmark: Boolean,
+    hasBookmark2: Boolean,
     fillScreen: Boolean,
     bigButtons: Boolean,
     showClock: Boolean,
@@ -426,6 +466,7 @@ private fun ReaderHeader(
     onHideHeader: () -> Unit,
     onToggleTheme: () -> Unit,
     onBookmarkJump: () -> Unit,
+    onBookmark2Jump: () -> Unit,
     onStats: () -> Unit,
     onPageClick: () -> Unit,
 ) {
@@ -566,11 +607,13 @@ private fun ReaderHeader(
                         activeContentColor = activeContentColor,
                         quietContentColor = quietContentColor,
                         hasBookmark = hasBookmark,
+                        hasBookmark2 = hasBookmark2,
                         fillScreen = fillScreen,
                         dark = dark,
                         isVisible = isVisible,
                         onOpenSearch = onOpenSearch,
                         onBookmarkJump = onBookmarkJump,
+                        onBookmark2Jump = onBookmark2Jump,
                         onStats = onStats,
                         onOpenIndex = onOpenIndex,
                         onToggleFillScreen = onToggleFillScreen,
@@ -648,11 +691,13 @@ private fun ReaderHeader(
                         activeContentColor = activeContentColor,
                         quietContentColor = quietContentColor,
                         hasBookmark = hasBookmark,
+                        hasBookmark2 = hasBookmark2,
                         fillScreen = fillScreen,
                         dark = dark,
                         isVisible = isVisible,
                         onOpenSearch = onOpenSearch,
                         onBookmarkJump = onBookmarkJump,
+                        onBookmark2Jump = onBookmark2Jump,
                         onStats = onStats,
                         onOpenIndex = onOpenIndex,
                         onToggleFillScreen = onToggleFillScreen,
@@ -721,11 +766,13 @@ private fun HeaderMoreMenu(
     activeContentColor: Color,
     quietContentColor: Color,
     hasBookmark: Boolean,
+    hasBookmark2: Boolean,
     fillScreen: Boolean,
     dark: Boolean,
     isVisible: (String) -> Boolean,
     onOpenSearch: () -> Unit,
     onBookmarkJump: () -> Unit,
+    onBookmark2Jump: () -> Unit,
     onStats: () -> Unit,
     onOpenIndex: (Int) -> Unit,
     onToggleFillScreen: () -> Unit,
@@ -762,13 +809,30 @@ private fun HeaderMoreMenu(
                         Icon(
                             imageVector = Icons.Filled.Bookmark,
                             contentDescription = null,
-                            tint = if (hasBookmark) LocalContentColor.current else quietContentColor
+                            tint = if (hasBookmark) BookmarkGold else quietContentColor
                         )
                     },
                     enabled = hasBookmark,
                     onClick = {
                         showMoreMenu = false
                         onBookmarkJump()
+                    }
+                )
+            }
+            if (isVisible("bookmark2")) {
+                DropdownMenuItem(
+                    text = { Text("العلامة المرجعية الثانية") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Filled.Bookmark,
+                            contentDescription = null,
+                            tint = if (hasBookmark2) BookmarkViolet else quietContentColor
+                        )
+                    },
+                    enabled = hasBookmark2,
+                    onClick = {
+                        showMoreMenu = false
+                        onBookmark2Jump()
                     }
                 )
             }
@@ -1081,11 +1145,16 @@ private fun MushafPageBadge(
 private fun ShowHeaderButton(
     page: Int,
     juzFraction: Float,
+    showPage: Boolean,
+    pageColorId: String,
+    showJuzBar: Boolean,
+    juzBarColorId: String,
     onClick: () -> Unit,
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
-    val numberColor = Color(0xFFE53935) // same red as the optional header clock
-    val juzBarColor = Color(0xFF1E88E5) // blue reading-level bar for the current juz
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val numberColor = headerStatusColor(pageColorId, muted) // default "red"
+    val juzBarColor = headerStatusColor(juzBarColorId, muted) // default "blue"
 
     // Position in LTR so the offset/clamp math is plain top-left-origin pixels. The chip is
     // visually symmetric, so this only affects placement, not appearance.
@@ -1147,32 +1216,62 @@ private fun ShowHeaderButton(
                             .clip(RoundedCornerShape(50))
                             .background(onSurface.copy(alpha = 0.5f))
                     )
-                    Text(
-                        text = page.toArabicDigits(),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = numberColor
-                    )
-                    // Thin blue bar under the page number: reading level within the current juz.
-                    // Fills from the right (mushaf reading direction), spans the number's width.
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(3.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(juzBarColor.copy(alpha = 0.22f)),
-                        contentAlignment = Alignment.CenterEnd
-                    ) {
+                    if (showPage) {
+                        Text(
+                            text = page.toArabicDigits(),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = numberColor
+                        )
+                    }
+                    if (showJuzBar) {
+                        // Thin bar under the page number: reading level within the current juz.
+                        // Fills from the right (mushaf reading direction), spans the number's width.
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(juzFraction.coerceIn(0f, 1f))
-                                .fillMaxHeight()
+                                .widthIn(min = 26.dp) // stay visible even when the page number is hidden
+                                .fillMaxWidth()
+                                .height(3.dp)
                                 .clip(RoundedCornerShape(50))
-                                .background(juzBarColor)
-                        )
+                                .background(juzBarColor.copy(alpha = 0.22f)),
+                            contentAlignment = Alignment.CenterEnd
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(juzFraction.coerceIn(0f, 1f))
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(50))
+                                    .background(juzBarColor)
+                            )
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/** A thin juz-progress bar pinned to the bottom of the page (optional, off by default).
+ *  Fills from the right (mushaf reading direction) by the page's position within its juz. */
+@Composable
+private fun BottomJuzBar(modifier: Modifier, fraction: Float, colorId: String) {
+    val barColor = headerStatusColor(colorId, MaterialTheme.colorScheme.onSurfaceVariant)
+    // Wrap in LTR so CenterEnd reliably means the right edge regardless of the screen's RTL.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .height(4.dp)
+                .background(barColor.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.CenterEnd
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .background(barColor)
+            )
         }
     }
 }
@@ -1186,6 +1285,10 @@ private fun AyahFloatingMenu(
     boxHeightPx: Int,
     bookmarked: Boolean,
     onBookmark: () -> Unit,
+    showBookmark: Boolean,
+    bookmarked2: Boolean,
+    onBookmark2: () -> Unit,
+    showBookmark2: Boolean,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -1289,13 +1392,27 @@ private fun AyahFloatingMenu(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    MenuAction(
-                        icon = if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                        desc = "علامة",
-                        onClick = onBookmark,
-                        tint = if (bookmarked) BookmarkGold else ink.copy(alpha = 0.7f),
-                        bg = if (bookmarked) BookmarkGold.copy(alpha = 0.14f) else Color.Transparent
-                    )
+                    // Each bookmark keeps its colour identity even when unset, so the user can
+                    // tell the gold bookmark from the violet one before tapping. Only the
+                    // bookmarks enabled in settings appear here.
+                    if (showBookmark) {
+                        MenuAction(
+                            icon = if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                            desc = "علامة",
+                            onClick = onBookmark,
+                            tint = BookmarkGold,
+                            bg = if (bookmarked) BookmarkGold.copy(alpha = 0.14f) else Color.Transparent
+                        )
+                    }
+                    if (showBookmark2) {
+                        MenuAction(
+                            icon = if (bookmarked2) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                            desc = "علامة ثانية",
+                            onClick = onBookmark2,
+                            tint = BookmarkViolet,
+                            bg = if (bookmarked2) BookmarkViolet.copy(alpha = 0.14f) else Color.Transparent
+                        )
+                    }
                     MenuAction(
                         icon = Icons.Filled.ContentCopy,
                         desc = "نسخ",
@@ -1344,6 +1461,9 @@ private fun AyahFloatingMenu(
 
 /** Amber accent used for saved bookmarks — matches ZoomablePage's persistent-bookmark band. */
 private val BookmarkGold = Color(0xFFD4A017)
+
+/** Violet accent for the second bookmark — matches ZoomablePage's BookmarkColor2 band. */
+private val BookmarkViolet = Color(0xFF7E57C2)
 
 /** Ornamental circular ayah-number medallion echoing the mushaf's printed ayah-end circles:
  *  two concentric green hairline rings + (when [ornate]) an 8-dot rosette, with the ayah

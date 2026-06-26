@@ -43,6 +43,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -82,15 +84,29 @@ fun SettingsScreen(
     onClockColorChange: (String) -> Unit,
     sessionTimerColor: String,
     onSessionTimerColorChange: (String) -> Unit,
+    showButtonPage: Boolean,
+    onShowButtonPageChange: (Boolean) -> Unit,
+    buttonPageColor: String,
+    onButtonPageColorChange: (String) -> Unit,
+    showButtonJuzBar: Boolean,
+    onShowButtonJuzBarChange: (Boolean) -> Unit,
+    buttonJuzBarColor: String,
+    onButtonJuzBarColorChange: (String) -> Unit,
+    showBottomJuzBar: Boolean,
+    onShowBottomJuzBarChange: (Boolean) -> Unit,
+    bottomJuzBarColor: String,
+    onBottomJuzBarColorChange: (String) -> Unit,
     onAbout: () -> Unit,
     onClearAllStats: () -> Unit,
     onBack: () -> Unit,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
+    var tab by remember { mutableStateOf(0) }
 
     val moreMenuControls = listOf(
         HeaderControl("search", "البحث", "أول خيار داخل قائمة المزيد.", Icons.Outlined.Search),
-        HeaderControl("bookmark", "العلامة المرجعية", "الانتقال إلى آخر فاصل محفوظ.", Icons.Outlined.BookmarkBorder),
+        HeaderControl("bookmark", "العلامة المرجعية", "الانتقال إلى الفاصل الذهبي المحفوظ.", Icons.Outlined.BookmarkBorder),
+        HeaderControl("bookmark2", "العلامة المرجعية الثانية", "الانتقال إلى الفاصل البنفسجي المحفوظ.", Icons.Outlined.BookmarkBorder),
         HeaderControl("stats", "إحصائيات القراءة", "متابعة القراءة والختمة والجلسات.", Icons.Outlined.QueryStats),
         HeaderControl("index", "الفهرس", "فتح السور والأجزاء من القائمة.", Icons.AutoMirrored.Outlined.MenuBook),
         HeaderControl("fill", "ملء الصفحة", "تكبير صفحة المصحف من قائمة المزيد.", Icons.Outlined.WidthFull),
@@ -118,15 +134,10 @@ fun SettingsScreen(
                 }
             }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                SettingsHero()
+            SettingsTabs(tab = tab, onTab = { tab = it })
 
+            when (tab) {
+                0 -> SettingsTabScroll {
                 SettingsPanel(
                     title = "رأس الصفحة الجديد",
                     body = "الزر الثابت للإعدادات، زر الإخفاء، الوقت، ومدة الجلسة.",
@@ -182,6 +193,52 @@ fun SettingsScreen(
                 }
 
                 SettingsPanel(
+                    title = "زر إظهار رأس الصفحة",
+                    body = "الزر العائم في وضع كامل الشاشة، وشريط تقدم الجزء أسفل الصفحة.",
+                    icon = Icons.Outlined.WidthFull
+                ) {
+                    ToggleSettingRow(
+                        icon = Icons.AutoMirrored.Outlined.MenuBook,
+                        title = "عرض رقم الصفحة في الزر",
+                        body = "إظهار رقم الصفحة الحالية داخل زر إظهار الرأس.",
+                        checked = showButtonPage,
+                        onCheckedChange = onShowButtonPageChange
+                    )
+                    ColorChoiceRow(
+                        title = "لون رقم الصفحة",
+                        selected = buttonPageColor,
+                        onSelected = onButtonPageColorChange
+                    )
+                    SoftDivider()
+                    ToggleSettingRow(
+                        icon = Icons.Outlined.QueryStats,
+                        title = "عرض تقدم الجزء في الزر",
+                        body = "شريط صغير أسفل رقم الصفحة يعرض موضعك في الجزء.",
+                        checked = showButtonJuzBar,
+                        onCheckedChange = onShowButtonJuzBarChange
+                    )
+                    ColorChoiceRow(
+                        title = "لون شريط الجزء في الزر",
+                        selected = buttonJuzBarColor,
+                        onSelected = onButtonJuzBarColorChange
+                    )
+                    SoftDivider()
+                    ToggleSettingRow(
+                        icon = Icons.Outlined.WidthFull,
+                        title = "شريط تقدم الجزء أسفل الصفحة",
+                        body = "شريط رفيع ثابت في أسفل الصفحة يعرض تقدمك في الجزء الحالي.",
+                        checked = showBottomJuzBar,
+                        onCheckedChange = onShowBottomJuzBarChange
+                    )
+                    ColorChoiceRow(
+                        title = "لون الشريط السفلي",
+                        selected = bottomJuzBarColor,
+                        onSelected = onBottomJuzBarColorChange
+                    )
+                }
+                }
+                1 -> SettingsTabScroll {
+                SettingsPanel(
                     title = "قائمة المزيد",
                     body = "هذه العناصر تظهر داخل زر النقاط الثلاث في رأس الصفحة.",
                     icon = Icons.Filled.MoreVert
@@ -199,7 +256,8 @@ fun SettingsScreen(
                         if (index != moreMenuControls.lastIndex) SoftDivider()
                     }
                 }
-
+                }
+                2 -> SettingsTabScroll {
                 SettingsPanel(
                     title = "معلومات رأس الصفحة",
                     body = "تفاصيل السورة والجزء في السطر الهادئ أسفل الأزرار.",
@@ -245,7 +303,8 @@ fun SettingsScreen(
                         onCheckedChange = onShowJuzProgressPagesChange
                     )
                 }
-
+                }
+                else -> SettingsTabScroll {
                 SettingsPanel(
                     title = "معلومات التطبيق",
                     body = "مصدر المصحف، الخصوصية، الجهة المطوّرة، وطرق التواصل.",
@@ -261,6 +320,7 @@ fun SettingsScreen(
 
                 DangerPanel(onClear = { confirmClear = true })
                 Spacer(Modifier.height(8.dp))
+                }
             }
         }
     }
@@ -283,6 +343,40 @@ fun SettingsScreen(
             }
         )
     }
+}
+
+/** Top category tabs that split the settings into short, focused sections. */
+@Composable
+private fun SettingsTabs(tab: Int, onTab: (Int) -> Unit) {
+    val titles = listOf("الواجهة", "القائمة", "المعلومات", "التطبيق")
+    TabRow(selectedTabIndex = tab) {
+        titles.forEachIndexed { i, title ->
+            Tab(
+                selected = tab == i,
+                onClick = { onTab(i) },
+                text = {
+                    Text(
+                        text = title,
+                        maxLines = 1,
+                        fontWeight = if (tab == i) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
+            )
+        }
+    }
+}
+
+/** Scroll container shared by every tab so each section scrolls on its own. */
+@Composable
+private fun SettingsTabScroll(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        content = content
+    )
 }
 
 private data class HeaderControl(
@@ -361,32 +455,6 @@ private fun StatusPill(text: String) {
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
         )
-    }
-}
-
-@Composable
-private fun SettingsHero() {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                text = "تخصيص تجربة القراءة",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "اجعل شاشة المصحف هادئة ومناسبة لطريقتك في القراءة.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
     }
 }
 
