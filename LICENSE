@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Quran Al-Qari
+Copyright (c) 2026 Quran Al-Qari contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,11 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-NOTE: This license applies to the SOURCE CODE of this project only.
-The bundled Mushaf ("ممتاز") page images under
-`mushaf_app/app/src/main/assets/pages/` and the Qur'anic text/coordinate data
-are NOT covered by this MIT license and remain subject to the rights of their
-respective owners. Do not redistribute them unless you hold the necessary rights.

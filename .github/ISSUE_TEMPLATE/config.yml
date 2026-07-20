@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: بلاغ أمني خاص
+    url: https://cdit.co/contact.html
+    about: لا تنشر الثغرات في Issue عامة؛ ارجع إلى SECURITY.md.

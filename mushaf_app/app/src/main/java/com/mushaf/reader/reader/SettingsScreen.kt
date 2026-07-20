@@ -3,6 +3,7 @@ package com.mushaf.reader.reader
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
@@ -30,17 +33,22 @@ import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.WatchLater
+import androidx.compose.material.icons.outlined.VerticalSplit
 import androidx.compose.material.icons.outlined.WidthFull
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -66,6 +74,8 @@ fun SettingsScreen(
     onToggle: (String, Boolean) -> Unit,
     bigButtons: Boolean,
     onBigButtonsChange: (Boolean) -> Unit,
+    verticalPaging: Boolean,
+    onVerticalPagingChange: (Boolean) -> Unit,
     showClock: Boolean,
     onShowClockChange: (Boolean) -> Unit,
     showSessionTimer: Boolean,
@@ -88,19 +98,20 @@ fun SettingsScreen(
     onShowButtonPageChange: (Boolean) -> Unit,
     buttonPageColor: String,
     onButtonPageColorChange: (String) -> Unit,
-    showButtonJuzBar: Boolean,
-    onShowButtonJuzBarChange: (Boolean) -> Unit,
-    buttonJuzBarColor: String,
-    onButtonJuzBarColorChange: (String) -> Unit,
     showBottomJuzBar: Boolean,
     onShowBottomJuzBarChange: (Boolean) -> Unit,
     bottomJuzBarColor: String,
     onBottomJuzBarColorChange: (String) -> Unit,
+    showPageSideIndicator: Boolean,
+    onShowPageSideIndicatorChange: (Boolean) -> Unit,
+    pageSideIndicatorColor: String,
+    onPageSideIndicatorColorChange: (String) -> Unit,
     onAbout: () -> Unit,
     onClearAllStats: () -> Unit,
     onBack: () -> Unit,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
+    var confirmText by remember { mutableStateOf("") }
     var tab by remember { mutableStateOf(0) }
 
     val moreMenuControls = listOf(
@@ -138,6 +149,20 @@ fun SettingsScreen(
 
             when (tab) {
                 0 -> SettingsTabScroll {
+                SettingsPanel(
+                    title = "تصفّح الصفحات",
+                    body = "اتجاه تقليب صفحات المصحف.",
+                    icon = Icons.Outlined.SwapVert
+                ) {
+                    ToggleSettingRow(
+                        icon = Icons.Outlined.SwapVert,
+                        title = "تصفّح رأسي",
+                        body = "تقليب الصفحات بالسحب لأعلى وأسفل بدل اليمين واليسار.",
+                        checked = verticalPaging,
+                        onCheckedChange = onVerticalPagingChange
+                    )
+                }
+
                 SettingsPanel(
                     title = "رأس الصفحة الجديد",
                     body = "الزر الثابت للإعدادات، زر الإخفاء، الوقت، ومدة الجلسة.",
@@ -211,19 +236,6 @@ fun SettingsScreen(
                     )
                     SoftDivider()
                     ToggleSettingRow(
-                        icon = Icons.Outlined.QueryStats,
-                        title = "عرض تقدم الجزء في الزر",
-                        body = "شريط صغير أسفل رقم الصفحة يعرض موضعك في الجزء.",
-                        checked = showButtonJuzBar,
-                        onCheckedChange = onShowButtonJuzBarChange
-                    )
-                    ColorChoiceRow(
-                        title = "لون شريط الجزء في الزر",
-                        selected = buttonJuzBarColor,
-                        onSelected = onButtonJuzBarColorChange
-                    )
-                    SoftDivider()
-                    ToggleSettingRow(
                         icon = Icons.Outlined.WidthFull,
                         title = "شريط تقدم الجزء أسفل الصفحة",
                         body = "شريط رفيع ثابت في أسفل الصفحة يعرض تقدمك في الجزء الحالي.",
@@ -234,6 +246,19 @@ fun SettingsScreen(
                         title = "لون الشريط السفلي",
                         selected = bottomJuzBarColor,
                         onSelected = onBottomJuzBarColorChange
+                    )
+                    SoftDivider()
+                    ToggleSettingRow(
+                        icon = Icons.Outlined.VerticalSplit,
+                        title = "إشارة اتجاه الصفحة",
+                        body = "شريط صغير على حافة الشاشة في وضع ملء الشاشة: على اليمين للصفحة اليمنى، وعلى اليسار للصفحة اليسرى.",
+                        checked = showPageSideIndicator,
+                        onCheckedChange = onShowPageSideIndicatorChange
+                    )
+                    ColorChoiceRow(
+                        title = "لون الإشارة",
+                        selected = pageSideIndicatorColor,
+                        onSelected = onPageSideIndicatorColorChange
                     )
                 }
                 }
@@ -326,20 +351,45 @@ fun SettingsScreen(
     }
 
     if (confirmClear) {
+        val canClear = confirmText.trim() == "مسح"
         AlertDialog(
-            onDismissRequest = { confirmClear = false },
-            title = { Text("مسح كل الإحصائيات") },
-            text = { Text("سيتم حذف جميع جلسات القراءة وتقدّم الختمة نهائياً. لا يمكن التراجع عن هذا الإجراء.") },
+            onDismissRequest = { confirmClear = false; confirmText = "" },
+            title = { Text("مسح سجل القراءة") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("سيُحذف سجل الجلسات وتقدّم الختمة الحالية نهائياً. لا يمكن التراجع. سجل الختمات المحفوظة لن يتأثر.")
+                    Text(
+                        "للتأكيد، اكتب كلمة «مسح» في الحقل:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = confirmText,
+                        onValueChange = { confirmText = it },
+                        singleLine = true,
+                        isError = confirmText.isNotEmpty() && !canClear,
+                        placeholder = { Text("مسح") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    confirmClear = false
-                    onClearAllStats()
-                }) {
-                    Text("مسح", color = MaterialTheme.colorScheme.error)
+                TextButton(
+                    enabled = canClear,
+                    onClick = {
+                        confirmClear = false
+                        confirmText = ""
+                        onClearAllStats()
+                    }
+                ) {
+                    Text(
+                        "مسح نهائي",
+                        color = if (canClear) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmClear = false }) { Text("إلغاء") }
+                TextButton(onClick = { confirmClear = false; confirmText = "" }) { Text("إلغاء") }
             }
         )
     }
@@ -555,6 +605,9 @@ private fun ActionRow(icon: ImageVector, title: String, body: String, onClick: (
     }
 }
 
+/** Color picker rendered as a compact dropdown menu (label on one side, an anchored pill that
+ *  opens the full list of colors). Same signature as before, so every color setting in the screen
+ *  becomes a dropdown at once. */
 @Composable
 private fun ColorChoiceRow(
     title: String,
@@ -568,54 +621,76 @@ private fun ColorChoiceRow(
         HeaderColorChoice("gold", "ذهبي", Color(0xFFC28A16)),
         HeaderColorChoice("blue", "أزرق", Color(0xFF2F6FE4)),
     )
-    Column(
+    val current = choices.firstOrNull { it.id == selected } ?: choices.first()
+    var expanded by remember { mutableStateOf(false) }
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 2.dp, bottom = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
             text = title,
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
         )
-        listOf(choices.take(3), choices.drop(3)).forEach { rowChoices ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowChoices.forEach { choice ->
-                    ColorChoiceChip(choice, selected == choice.id) { onSelected(choice.id) }
+        Box {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = current.color.copy(alpha = 0.14f),
+                border = BorderStroke(1.dp, current.color.copy(alpha = 0.6f)),
+                modifier = Modifier.clickable { expanded = true }
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(modifier = Modifier.size(12.dp), shape = CircleShape, color = current.color) {}
+                    Text(
+                        text = current.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = current.color
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.ArrowDropDown,
+                        contentDescription = "اختيار اللون",
+                        tint = current.color
+                    )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun ColorChoiceChip(choice: HeaderColorChoice, checked: Boolean, onClick: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = if (checked) choice.color.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (checked) choice.color else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
-        ),
-        modifier = Modifier.clickable(onClick = onClick)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Surface(
-                modifier = Modifier.size(12.dp),
-                shape = CircleShape,
-                color = choice.color
-            ) {}
-            Text(
-                text = choice.label,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (checked) choice.color else MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                choices.forEach { choice ->
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Surface(modifier = Modifier.size(14.dp), shape = CircleShape, color = choice.color) {}
+                                Text(
+                                    text = choice.label,
+                                    color = if (choice.id == selected) choice.color
+                                    else MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = if (choice.id == selected) FontWeight.SemiBold
+                                    else FontWeight.Normal
+                                )
+                            }
+                        },
+                        trailingIcon = if (choice.id == selected) {
+                            { Icon(Icons.Filled.Check, contentDescription = null, tint = choice.color) }
+                        } else null,
+                        onClick = {
+                            expanded = false
+                            onSelected(choice.id)
+                        }
+                    )
+                }
+            }
         }
     }
 }
@@ -653,12 +728,12 @@ private fun DangerPanel(onClear: () -> Unit) {
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = "بيانات القراءة",
+                        text = "سجل القراءة",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "إدارة جلسات القراءة وتقدّم الختمة المحفوظة على جهازك.",
+                        text = "سجل الجلسات محفوظ دائماً. المسح نهائي ويتطلب تأكيداً بكتابة كلمة «مسح». سجل الختمات لا يتأثر.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -681,7 +756,7 @@ private fun DangerPanel(onClear: () -> Unit) {
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("مسح كل الإحصائيات", fontWeight = FontWeight.SemiBold)
+                Text("مسح سجل القراءة", fontWeight = FontWeight.SemiBold)
             }
         }
     }

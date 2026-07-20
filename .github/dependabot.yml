@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /mushaf_app
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Riyadh
+    open-pull-requests-limit: 5
+    labels: [dependencies, android]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: Asia/Riyadh
+    labels: [dependencies, ci]

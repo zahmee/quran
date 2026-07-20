@@ -1,14 +1,14 @@
 [versions]
-agp = "8.7.3"
+agp = "8.12.3"
 kotlin = "2.0.21"
-coreKtx = "1.15.0"
-lifecycle = "2.8.7"
-activityCompose = "1.9.3"
-composeBom = "2024.12.01"
-navigationCompose = "2.8.5"
+coreKtx = "1.17.0"
+lifecycle = "2.10.0"
+activityCompose = "1.12.4"
+composeBom = "2026.06.01"
+navigationCompose = "2.9.8"
 coil = "3.0.4"
-datastore = "1.1.1"
-room = "2.6.1"
+datastore = "1.2.1"
+room = "2.8.4"
 ksp = "2.0.21-1.0.28"
 
 [libraries]

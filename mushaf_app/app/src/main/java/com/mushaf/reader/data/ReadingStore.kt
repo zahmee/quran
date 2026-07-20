@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -36,10 +37,15 @@ class ReadingStore(private val context: Context) {
     // Full-screen restore-header chip + bottom-of-page juz bar.
     private val keyShowButtonPage = booleanPreferencesKey("show_button_page")
     private val keyButtonPageColor = stringPreferencesKey("button_page_color")
-    private val keyShowButtonJuzBar = booleanPreferencesKey("show_button_juz_bar")
-    private val keyButtonJuzBarColor = stringPreferencesKey("button_juz_bar_color")
     private val keyShowBottomJuzBar = booleanPreferencesKey("show_bottom_juz_bar")
     private val keyBottomJuzBarColor = stringPreferencesKey("bottom_juz_bar_color")
+    // Full-screen edge marker for the current page's side (right vs left of the spread).
+    private val keyShowPageSideIndicator = booleanPreferencesKey("show_page_side_indicator")
+    private val keyPageSideIndicatorColor = stringPreferencesKey("page_side_indicator_color")
+    // When the current (in-progress) khatma cycle began, epoch millis; 0 = not initialised yet.
+    private val keyKhatmaStartedAt = longPreferencesKey("khatma_started_at")
+    // Page turning direction: false = horizontal (default), true = vertical (up/down).
+    private val keyVerticalPaging = booleanPreferencesKey("vertical_paging")
 
     /** The display/position settings + per-page progress read together in one pass at startup.
      *  [visitedPages] = pages opened at all; [readPages] = pages dwelt on long enough to count
@@ -63,10 +69,12 @@ class ReadingStore(private val context: Context) {
         val sessionTimerColor: String,
         val showButtonPage: Boolean,
         val buttonPageColor: String,
-        val showButtonJuzBar: Boolean,
-        val buttonJuzBarColor: String,
         val showBottomJuzBar: Boolean,
         val bottomJuzBarColor: String,
+        val showPageSideIndicator: Boolean,
+        val pageSideIndicatorColor: String,
+        val khatmaStartedAt: Long,
+        val verticalPaging: Boolean,
     )
 
     suspend fun settings(): Settings {
@@ -90,10 +98,12 @@ class ReadingStore(private val context: Context) {
             sessionTimerColor = prefs[keySessionTimerColor] ?: "muted",
             showButtonPage = prefs[keyShowButtonPage] ?: true,
             buttonPageColor = prefs[keyButtonPageColor] ?: "red",
-            showButtonJuzBar = prefs[keyShowButtonJuzBar] ?: true,
-            buttonJuzBarColor = prefs[keyButtonJuzBarColor] ?: "blue",
             showBottomJuzBar = prefs[keyShowBottomJuzBar] ?: false,
             bottomJuzBarColor = prefs[keyBottomJuzBarColor] ?: "blue",
+            showPageSideIndicator = prefs[keyShowPageSideIndicator] ?: true,
+            pageSideIndicatorColor = prefs[keyPageSideIndicatorColor] ?: "green",
+            khatmaStartedAt = prefs[keyKhatmaStartedAt] ?: 0L,
+            verticalPaging = prefs[keyVerticalPaging] ?: false,
         )
     }
 
@@ -172,20 +182,28 @@ class ReadingStore(private val context: Context) {
         context.dataStore.edit { it[keyButtonPageColor] = value }
     }
 
-    suspend fun setShowButtonJuzBar(value: Boolean) {
-        context.dataStore.edit { it[keyShowButtonJuzBar] = value }
-    }
-
-    suspend fun setButtonJuzBarColor(value: String) {
-        context.dataStore.edit { it[keyButtonJuzBarColor] = value }
-    }
-
     suspend fun setShowBottomJuzBar(value: Boolean) {
         context.dataStore.edit { it[keyShowBottomJuzBar] = value }
     }
 
     suspend fun setBottomJuzBarColor(value: String) {
         context.dataStore.edit { it[keyBottomJuzBarColor] = value }
+    }
+
+    suspend fun setShowPageSideIndicator(value: Boolean) {
+        context.dataStore.edit { it[keyShowPageSideIndicator] = value }
+    }
+
+    suspend fun setPageSideIndicatorColor(value: String) {
+        context.dataStore.edit { it[keyPageSideIndicatorColor] = value }
+    }
+
+    suspend fun setKhatmaStartedAt(value: Long) {
+        context.dataStore.edit { it[keyKhatmaStartedAt] = value }
+    }
+
+    suspend fun setVerticalPaging(value: Boolean) {
+        context.dataStore.edit { it[keyVerticalPaging] = value }
     }
 
     suspend fun bookmarks(): Set<String> = context.dataStore.data.first()[keyBookmarks] ?: emptySet()

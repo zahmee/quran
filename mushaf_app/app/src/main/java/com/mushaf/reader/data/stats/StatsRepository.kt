@@ -46,6 +46,10 @@ data class FullStats(
     val totalPages: Int,
     val totalDurationMs: Long,
     val last7Days: List<DayStat>,
+    /** One entry per day of the current month (for the month chart). */
+    val monthDays: List<DayStat>,
+    /** Pages read per month of the current year (12 entries, Jan..Dec). */
+    val yearMonthPages: List<Int>,
     val khatmaPercent: Int,
     val currentPage: Int,
     val totalPagesInQuran: Int,
@@ -61,6 +65,7 @@ data class FullStats(
 class StatsRepository(context: Context) {
 
     private val dao = AppDatabase.get(context).sessionDao()
+    private val khatmaDao = AppDatabase.get(context).khatmaDao()
 
     suspend fun commitSession(
         startedAt: Long,
@@ -102,6 +107,22 @@ class StatsRepository(context: Context) {
     }
 
     suspend fun allSessions(): List<SessionEntity> = dao.allSessions()
+
+    /** Archive a completed khatma. This table is never cleared from the UI. */
+    suspend fun saveKhatma(completedAt: Long, startedAt: Long, durationDays: Int, pagesRead: Int) {
+        khatmaDao.insert(
+            KhatmaEntity(
+                completedAt = completedAt,
+                startedAt = startedAt,
+                durationDays = durationDays,
+                pagesRead = pagesRead,
+            )
+        )
+    }
+
+    suspend fun allKhatmas(): List<KhatmaEntity> = khatmaDao.all()
+
+    suspend fun khatmaCount(): Int = khatmaDao.count()
 
     /** Delete specific sessions by id. */
     suspend fun deleteSessions(ids: List<Long>) {
@@ -160,15 +181,30 @@ class StatsRepository(context: Context) {
         var monthPages = 0
         var monthDuration = 0L
         var yearPages = 0
+        val yearMonthPages = IntArray(12)
         for ((k, a) in byDay) {
             cal.timeInMillis = k
             if (cal.get(Calendar.YEAR) == curYear) {
                 yearPages += a.pages
+                yearMonthPages[cal.get(Calendar.MONTH)] += a.pages
                 if (cal.get(Calendar.MONTH) == curMonth) {
                     monthPages += a.pages
                     monthDuration += a.durationMs
                 }
             }
+        }
+
+        // One DayStat per day of the current month (for the month chart).
+        val mc = Calendar.getInstance()
+        mc.timeInMillis = now
+        val daysInMonth = mc.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val monthDays = ArrayList<DayStat>(daysInMonth)
+        for (d in 1..daysInMonth) {
+            mc.set(Calendar.DAY_OF_MONTH, d)
+            mc.set(Calendar.HOUR_OF_DAY, 0); mc.set(Calendar.MINUTE, 0)
+            mc.set(Calendar.SECOND, 0); mc.set(Calendar.MILLISECOND, 0)
+            val a = byDay[mc.timeInMillis]
+            monthDays.add(DayStat(mc.timeInMillis, a?.pages ?: 0, a?.durationMs ?: 0L, a?.sessions ?: 0))
         }
 
         // Streak: consecutive days with activity, counting back from today (or yesterday).
@@ -200,6 +236,8 @@ class StatsRepository(context: Context) {
             totalPages = sessions.sumOf { it.pagesRead },
             totalDurationMs = sessions.sumOf { (it.endedAt - it.startedAt).coerceAtLeast(0) },
             last7Days = last7,
+            monthDays = monthDays,
+            yearMonthPages = yearMonthPages.toList(),
             khatmaPercent = percent(bookmarkPage ?: currentPage, totalPages),
             currentPage = currentPage,
             totalPagesInQuran = totalPages,

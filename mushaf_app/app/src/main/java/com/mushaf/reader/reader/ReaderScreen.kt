@@ -38,7 +38,9 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerScope
 import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -232,22 +234,26 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                     viewModel = viewModel,
                     pagerState = pagerState,
                     selected = selected,
-                    fillScreen = viewModel.fillScreen
+                    fillScreen = viewModel.fillScreen,
+                    verticalPaging = viewModel.verticalPaging
                 )
             }
 
             // When the header is hidden, a small draggable button restores it (and shows the page).
             if (!headerVisible) {
-                val hbPage = pagerState.currentPage + 1
-                val hbJuz = viewModel.juzInfoForPage(hbPage)
                 ShowHeaderButton(
-                    page = hbPage,
-                    juzFraction = hbJuz.pageInJuz.toFloat() / hbJuz.pagesInJuz.coerceAtLeast(1),
+                    page = pagerState.currentPage + 1,
                     showPage = viewModel.showButtonPage,
                     pageColorId = viewModel.buttonPageColor,
-                    showJuzBar = viewModel.showButtonJuzBar,
-                    juzBarColorId = viewModel.buttonJuzBarColor,
                     onClick = { headerVisible = true }
+                )
+            }
+
+            // Full-screen only: a small edge bar marks whether the page sits on the right or left.
+            if (!headerVisible && viewModel.showPageSideIndicator) {
+                PageSideIndicator(
+                    page = pagerState.currentPage + 1,
+                    colorId = viewModel.pageSideIndicatorColor
                 )
             }
 
@@ -278,9 +284,12 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
             StatsScreen(
                 stats = viewModel.fullStats,
                 sessions = viewModel.sessions,
+                khatmas = viewModel.khatmas,
+                khatmaStartedAt = viewModel.khatmaStartedAt,
+                onCompleteKhatma = { viewModel.completeKhatma() },
+                onResetKhatma = { viewModel.resetKhatmaProgress() },
                 onBack = { showStatsScreen = false },
                 onOpenKhatmaMap = { showKhatmaMap = true },
-                onDeleteSessions = { viewModel.deleteSessions(it) }
             )
         }
 
@@ -291,6 +300,7 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 visitedPages = viewModel.visitedPagesAll,
                 bookmarkPage = viewModel.bookmarkJumpPage(),
                 currentPage = pagerState.currentPage + 1,
+                onToggleRead = { viewModel.togglePageRead(it) },
                 onJump = { page ->
                     showKhatmaMap = false
                     showStatsScreen = false
@@ -324,6 +334,8 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 onToggle = { id, v -> viewModel.setButtonVisible(id, v) },
                 bigButtons = viewModel.bigButtons,
                 onBigButtonsChange = { viewModel.updateBigButtons(it) },
+                verticalPaging = viewModel.verticalPaging,
+                onVerticalPagingChange = { viewModel.updateVerticalPaging(it) },
                 showClock = viewModel.showClock,
                 onShowClockChange = { viewModel.updateShowClock(it) },
                 showSessionTimer = viewModel.showSessionTimer,
@@ -346,14 +358,14 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 onShowButtonPageChange = { viewModel.updateShowButtonPage(it) },
                 buttonPageColor = viewModel.buttonPageColor,
                 onButtonPageColorChange = { viewModel.updateButtonPageColor(it) },
-                showButtonJuzBar = viewModel.showButtonJuzBar,
-                onShowButtonJuzBarChange = { viewModel.updateShowButtonJuzBar(it) },
-                buttonJuzBarColor = viewModel.buttonJuzBarColor,
-                onButtonJuzBarColorChange = { viewModel.updateButtonJuzBarColor(it) },
                 showBottomJuzBar = viewModel.showBottomJuzBar,
                 onShowBottomJuzBarChange = { viewModel.updateShowBottomJuzBar(it) },
                 bottomJuzBarColor = viewModel.bottomJuzBarColor,
                 onBottomJuzBarColorChange = { viewModel.updateBottomJuzBarColor(it) },
+                showPageSideIndicator = viewModel.showPageSideIndicator,
+                onShowPageSideIndicatorChange = { viewModel.updateShowPageSideIndicator(it) },
+                pageSideIndicatorColor = viewModel.pageSideIndicatorColor,
+                onPageSideIndicatorColorChange = { viewModel.updatePageSideIndicatorColor(it) },
                 onAbout = { showAbout = true },
                 onClearAllStats = { viewModel.clearAllStats() },
                 onBack = { showSettings = false }
@@ -384,6 +396,7 @@ private fun ReaderPager(
     pagerState: PagerState,
     selected: AyahMarker?,
     fillScreen: Boolean,
+    verticalPaging: Boolean,
 ) {
     var anchor by remember { mutableStateOf(Offset.Zero) }
 
@@ -391,11 +404,8 @@ private fun ReaderPager(
         val boxW = constraints.maxWidth
         val boxH = constraints.maxHeight
 
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize(),
-            beyondViewportPageCount = 1
-        ) { index ->
+        // Same page content for both orientations; only the pager axis differs.
+        val pageContent: @Composable PagerScope.(Int) -> Unit = { index ->
             val pageNumber = index + 1
             ZoomablePage(
                 model = viewModel.assetModel(pageNumber),
@@ -411,6 +421,22 @@ private fun ReaderPager(
                 },
                 onEmptyTap = { },
                 fillScreen = fillScreen
+            )
+        }
+
+        if (verticalPaging) {
+            VerticalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = 1,
+                pageContent = pageContent,
+            )
+        } else {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = 1,
+                pageContent = pageContent,
             )
         }
 
@@ -1138,112 +1164,81 @@ private fun MushafPageBadge(
     }
 }
 
-/** Floating button shown while the header is hidden (full-screen reading): a small flat-topped
- *  chip — a grabber notch over the current page number (red). Tap restores the header; the chip
- *  can be DRAGGED anywhere on screen and keeps its spot across rotation/recompositions. */
+/** Floating button shown while the header is hidden (full-screen reading): a small chip hugging the
+ *  LEFT screen edge — a grabber notch over the current page number (red). Tap restores the header;
+ *  the chip slides UP/DOWN along that edge and keeps its spot across rotation/recompositions. */
 @Composable
 private fun ShowHeaderButton(
     page: Int,
-    juzFraction: Float,
     showPage: Boolean,
     pageColorId: String,
-    showJuzBar: Boolean,
-    juzBarColorId: String,
     onClick: () -> Unit,
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val numberColor = headerStatusColor(pageColorId, muted) // default "red"
-    val juzBarColor = headerStatusColor(juzBarColorId, muted) // default "blue"
 
-    // Position in LTR so the offset/clamp math is plain top-left-origin pixels. The chip is
-    // visually symmetric, so this only affects placement, not appearance.
+    // Position in LTR so the offset math is plain top-left-origin pixels.
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val density = LocalDensity.current
-            val maxWpx = constraints.maxWidth.toFloat()
             val maxHpx = constraints.maxHeight.toFloat()
-            // Rest position + drag floor: keep the chip below the camera / status band.
+            // Drag floor: keep the chip below the camera / status band.
             val topInsetPx = with(density) {
                 WindowInsets.statusBars.union(WindowInsets.displayCutout)
                     .asPaddingValues().calculateTopPadding().toPx()
             }
-            val edgePx = with(density) { 8.dp.toPx() }
             var btnSize by remember { mutableStateOf(IntSize.Zero) }
-            // User-chosen position; NaN = untouched -> rests in the top-left corner. Survives rotation.
-            var posX by rememberSaveable { mutableStateOf(Float.NaN) }
+            // User-chosen vertical spot; NaN = untouched -> rests just below the top inset. The chip
+            // stays flush to the LEFT edge (x = 0) and slides UP/DOWN only. Survives rotation.
             var posY by rememberSaveable { mutableStateOf(Float.NaN) }
-            val restX = edgePx
-            val restY = topInsetPx + edgePx
-            val maxX = (maxWpx - btnSize.width).coerceAtLeast(0f)
             val maxY = (maxHpx - btnSize.height).coerceAtLeast(0f)
-            val x = (if (posX.isNaN()) restX else posX).coerceIn(0f, maxX)
-            val y = (if (posY.isNaN()) restY else posY).coerceIn(topInsetPx, maxY)
+            val y = (if (posY.isNaN()) topInsetPx else posY).coerceIn(topInsetPx, maxY)
 
+            // Plain Surface + Modifier.clickable (NOT Surface(onClick=…)) so it does NOT get wrapped
+            // in the 48.dp minimumInteractiveComponentSize, which would center the smaller visible
+            // chip inside a 48.dp touch box and push it ~9.dp off the edge. This keeps it 100% flush.
             Surface(
-                onClick = onClick,
-                shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 12.dp, bottomEnd = 12.dp),
+                shape = RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = 11.dp, bottomEnd = 11.dp),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
                 contentColor = onSurface,
                 border = BorderStroke(1.dp, onSurface.copy(alpha = 0.12f)),
                 shadowElevation = 4.dp,
                 tonalElevation = 1.dp,
                 modifier = Modifier
-                    .absoluteOffset { IntOffset(x.roundToInt(), y.roundToInt()) }
+                    .absoluteOffset { IntOffset(0, y.roundToInt()) }
                     .onSizeChanged { btnSize = it }
-                    .pointerInput(maxWpx, maxHpx, topInsetPx) {
+                    .pointerInput(maxHpx, topInsetPx) {
                         detectDragGestures { change, drag ->
                             change.consume()
-                            val curX = if (posX.isNaN()) restX else posX
-                            val curY = if (posY.isNaN()) restY else posY
-                            posX = (curX + drag.x).coerceIn(0f, (maxWpx - btnSize.width).coerceAtLeast(0f))
+                            val curY = if (posY.isNaN()) topInsetPx else posY
                             posY = (curY + drag.y).coerceIn(topInsetPx, (maxHpx - btnSize.height).coerceAtLeast(0f))
                         }
                     }
-                    .defaultMinSize(minWidth = 40.dp, minHeight = 40.dp)
+                    .clickable(onClick = onClick)
+                    .defaultMinSize(minWidth = 30.dp, minHeight = 30.dp)
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier
-                        .width(IntrinsicSize.Min) // hug the page number so fillMaxWidth bar can't widen the chip
-                        .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 5.dp)
+                        .width(IntrinsicSize.Min) // hug the page number so the chip stays compact
+                        .padding(start = 5.dp, end = 7.dp, top = 3.dp, bottom = 4.dp)
                 ) {
-                    // Small grabber notch — doubles as the "drag me" cue now the chip is movable.
+                    // Small grabber notch — the "drag me up/down" cue.
                     Box(
                         modifier = Modifier
-                            .size(width = 12.dp, height = 2.5.dp)
+                            .size(width = 11.dp, height = 2.5.dp)
                             .clip(RoundedCornerShape(50))
                             .background(onSurface.copy(alpha = 0.5f))
                     )
                     if (showPage) {
                         Text(
                             text = page.toArabicDigits(),
-                            style = MaterialTheme.typography.titleSmall,
+                            style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.ExtraBold,
                             color = numberColor
                         )
-                    }
-                    if (showJuzBar) {
-                        // Thin bar under the page number: reading level within the current juz.
-                        // Fills from the right (mushaf reading direction), spans the number's width.
-                        Box(
-                            modifier = Modifier
-                                .widthIn(min = 26.dp) // stay visible even when the page number is hidden
-                                .fillMaxWidth()
-                                .height(3.dp)
-                                .clip(RoundedCornerShape(50))
-                                .background(juzBarColor.copy(alpha = 0.22f)),
-                            contentAlignment = Alignment.CenterEnd
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(juzFraction.coerceIn(0f, 1f))
-                                    .fillMaxHeight()
-                                    .clip(RoundedCornerShape(50))
-                                    .background(juzBarColor)
-                            )
-                        }
                     }
                 }
             }
@@ -1271,6 +1266,32 @@ private fun BottomJuzBar(modifier: Modifier, fraction: Float, colorId: String) {
                     .fillMaxWidth(fraction.coerceIn(0f, 1f))
                     .fillMaxHeight()
                     .background(barColor)
+            )
+        }
+    }
+}
+
+/** Full-screen-only edge marker for the current page's side of the spread: a small rounded bar
+ *  flush to the RIGHT edge for a right-side (odd) page, and to the LEFT edge for a left-side
+ *  (even) page — matching the MushafPageBadge parity. Vertically centered. */
+@Composable
+private fun PageSideIndicator(page: Int, colorId: String) {
+    val color = headerStatusColor(colorId, MaterialTheme.colorScheme.onSurfaceVariant)
+    val onRight = page % 2 == 1 // odd pages sit on the right of the paper mushaf
+    // Wrap in LTR so CenterStart/CenterEnd mean plain left/right regardless of the reader's RTL.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = if (onRight) Alignment.CenterEnd else Alignment.CenterStart
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(width = 4.dp, height = 40.dp)
+                    .clip(
+                        if (onRight) RoundedCornerShape(topStart = 3.dp, bottomStart = 3.dp)
+                        else RoundedCornerShape(topEnd = 3.dp, bottomEnd = 3.dp)
+                    )
+                    .background(color.copy(alpha = 0.72f))
             )
         }
     }

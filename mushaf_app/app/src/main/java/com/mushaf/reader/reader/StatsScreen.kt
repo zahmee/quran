@@ -1,12 +1,15 @@
 package com.mushaf.reader.reader
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,11 +29,14 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -55,8 +61,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mushaf.reader.data.stats.DayStat
 import com.mushaf.reader.data.stats.FullStats
+import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.SessionEntity
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -68,39 +76,77 @@ import kotlin.math.roundToInt
 fun StatsScreen(
     stats: FullStats?,
     sessions: List<SessionEntity>,
+    khatmas: List<KhatmaEntity>,
+    khatmaStartedAt: Long,
+    onCompleteKhatma: () -> Unit,
+    onResetKhatma: () -> Unit,
     onBack: () -> Unit,
     onOpenKhatmaMap: () -> Unit,
-    onDeleteSessions: (List<SessionEntity>) -> Unit,
 ) {
     var tab by remember { mutableStateOf(0) }
-    var pendingDelete by remember { mutableStateOf<PendingStatDelete?>(null) }
+    var pendingComplete by remember { mutableStateOf(false) }
+    var pendingReset by remember { mutableStateOf(false) }
     val colors = statsPalette()
 
     Surface(modifier = Modifier.fillMaxSize(), color = colors.page) {
         Column(modifier = Modifier.fillMaxSize()) {
             StatsTopBar(tab = tab, onTabChange = { tab = it }, onBack = onBack, colors = colors)
             when (tab) {
-                0 -> OverviewTab(stats, onOpenKhatmaMap, colors)
-                else -> HistoryTab(sessions, colors) { sess, msg ->
-                    pendingDelete = PendingStatDelete(msg, sess)
-                }
+                0 -> OverviewTab(
+                    stats = stats,
+                    khatmas = khatmas,
+                    khatmaStartedAt = khatmaStartedAt,
+                    onOpenKhatmaMap = onOpenKhatmaMap,
+                    onCompleteKhatma = { pendingComplete = true },
+                    onResetKhatma = { pendingReset = true },
+                    colors = colors,
+                )
+                1 -> CalendarTab(sessions, colors)
+                else -> HistoryTab(sessions, colors)
             }
         }
     }
 
-    pendingDelete?.let { pd ->
+    if (pendingComplete) {
         AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            title = { Text("حذف") },
-            text = { Text(pd.message) },
+            onDismissRequest = { pendingComplete = false },
+            title = { Text("تسجيل ختمة") },
+            text = {
+                val now = System.currentTimeMillis()
+                Text(
+                    "سيُسجَّل إتمام الختمة بتاريخ اليوم:\n" +
+                        "${HijriDate.hijri(now)}\n${HijriDate.gregorian(now)}\n\n" +
+                        "ثم تبدأ ختمة جديدة تلقائياً. سجل الجلسات لا يتأثر."
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    onDeleteSessions(pd.sessions)
-                    pendingDelete = null
-                }) { Text("حذف", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = { pendingComplete = false; onCompleteKhatma() }) {
+                    Text("حفظ الختمة", color = colors.primary)
+                }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("إلغاء") }
+                TextButton(onClick = { pendingComplete = false }) { Text("إلغاء") }
+            }
+        )
+    }
+
+    if (pendingReset) {
+        AlertDialog(
+            onDismissRequest = { pendingReset = false },
+            title = { Text("بدء ختمة جديدة") },
+            text = {
+                Text(
+                    "سيُمسح تقدّمك في الصفحات والأجزاء للختمة الحالية لتبدأ من جديد. " +
+                        "سجل الختمات المحفوظة وسجل الجلسات لن يتأثرا."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { pendingReset = false; onResetKhatma() }) {
+                    Text("بدء جديدة", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingReset = false }) { Text("إلغاء") }
             }
         )
     }
@@ -155,7 +201,8 @@ private fun SegmentedTabs(tab: Int, onTabChange: (Int) -> Unit, colors: StatsCol
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         TabPill("ملخص", selected = tab == 0, colors = colors, modifier = Modifier.weight(1f)) { onTabChange(0) }
-        TabPill("السجل", selected = tab == 1, colors = colors, modifier = Modifier.weight(1f)) { onTabChange(1) }
+        TabPill("التقويم", selected = tab == 1, colors = colors, modifier = Modifier.weight(1f)) { onTabChange(1) }
+        TabPill("السجل", selected = tab == 2, colors = colors, modifier = Modifier.weight(1f)) { onTabChange(2) }
     }
 }
 
@@ -186,7 +233,15 @@ private fun TabPill(
 }
 
 @Composable
-private fun OverviewTab(stats: FullStats?, onOpenKhatmaMap: () -> Unit, colors: StatsColors) {
+private fun OverviewTab(
+    stats: FullStats?,
+    khatmas: List<KhatmaEntity>,
+    khatmaStartedAt: Long,
+    onOpenKhatmaMap: () -> Unit,
+    onCompleteKhatma: () -> Unit,
+    onResetKhatma: () -> Unit,
+    colors: StatsColors,
+) {
     if (stats == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("جار التحميل...", color = colors.muted)
@@ -201,8 +256,9 @@ private fun OverviewTab(stats: FullStats?, onOpenKhatmaMap: () -> Unit, colors: 
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         ReadingHero(stats, onOpenKhatmaMap, colors)
+        KhatmaJournalCard(khatmas, khatmaStartedAt, onCompleteKhatma, onResetKhatma, colors)
         TodayStrip(stats, colors)
-        WeekChartCard(stats.last7Days, colors)
+        PeriodChartCard(stats, colors)
         WirdPlanner(stats, colors)
         RhythmCard(stats, colors)
         RecordsAndTotals(stats, colors)
@@ -319,6 +375,159 @@ private fun ProgressTrack(progress: Float, colors: StatsColors) {
 }
 
 @Composable
+private fun KhatmaJournalCard(
+    khatmas: List<KhatmaEntity>,
+    khatmaStartedAt: Long,
+    onCompleteKhatma: () -> Unit,
+    onResetKhatma: () -> Unit,
+    colors: StatsColors,
+) {
+    val elapsedDays = ((System.currentTimeMillis() - khatmaStartedAt).coerceAtLeast(0L) / 86_400_000L).toInt()
+    StatsCard(colors) {
+        SectionHeader("سجل الختمات", "احفظ ختمتك، أو ابدأ من جديد", colors)
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(colors.tile)
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            IconBubble(Icons.AutoMirrored.Filled.MenuBook, colors)
+            Column(Modifier.weight(1f)) {
+                Text("الختمة الحالية", style = MaterialTheme.typography.labelMedium, color = colors.muted)
+                Text(
+                    "بدأت ${HijriDate.hijri(khatmaStartedAt)}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.ink,
+                )
+                Text(
+                    "منذ ${khatmaElapsedLabel(elapsedDays)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.muted,
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            JournalButton("أتممت الختمة", Icons.Filled.CheckCircle, filled = true, colors, Modifier.weight(1f), onCompleteKhatma)
+            JournalButton("بدء ختمة جديدة", Icons.Filled.Refresh, filled = false, colors, Modifier.weight(1f), onResetKhatma)
+        }
+        if (khatmas.isNotEmpty()) {
+            Spacer(Modifier.height(14.dp))
+            HorizontalDivider(color = colors.divider)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "الختمات المحفوظة (${khatmas.size.toArabicDigits()})",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = colors.ink,
+            )
+            Spacer(Modifier.height(8.dp))
+            khatmas.forEachIndexed { i, k ->
+                KhatmaLogRow(ordinal = khatmas.size - i, khatma = k, colors = colors)
+                if (i != khatmas.lastIndex) Spacer(Modifier.height(8.dp))
+            }
+        } else {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "لم تُسجَّل ختمات بعد — أول ختمة تنتظرك.",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.muted,
+            )
+        }
+    }
+}
+
+@Composable
+private fun JournalButton(
+    label: String,
+    icon: ImageVector,
+    filled: Boolean,
+    colors: StatsColors,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = if (filled) colors.primary else Color.Transparent,
+        contentColor = if (filled) colors.onPrimary else colors.primary,
+        border = if (filled) null else BorderStroke(1.dp, colors.primary.copy(alpha = 0.5f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(vertical = 11.dp, horizontal = 6.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun KhatmaLogRow(ordinal: Int, khatma: KhatmaEntity, colors: StatsColors) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.subtle)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier.size(34.dp).clip(CircleShape).background(colors.tile),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                ordinal.toArabicDigits(),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = colors.primary,
+            )
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                HijriDate.hijri(khatma.completedAt),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = colors.ink,
+            )
+            Text(
+                HijriDate.gregorian(khatma.completedAt),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.muted,
+            )
+        }
+        Text(
+            khatmaElapsedLabel(khatma.durationDays),
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.primary,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(colors.tile)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+}
+
+/** Arabic-friendly day count: "يوم واحد", "يومان", "٥ أيام", "٤٢ يوماً". */
+private fun khatmaElapsedLabel(days: Int): String = when {
+    days <= 0 -> "أقل من يوم"
+    days == 1 -> "يوم واحد"
+    days == 2 -> "يومان"
+    days <= 10 -> "${days.toArabicDigits()} أيام"
+    else -> "${days.toArabicDigits()} يوماً"
+}
+
+@Composable
 private fun TodayStrip(stats: FullStats, colors: StatsColors) {
     val diff = stats.todayPages - stats.weekAvgPages
     val compare = when {
@@ -367,53 +576,138 @@ private fun MetricTile(icon: ImageVector, label: String, value: String, modifier
 }
 
 @Composable
-private fun WeekChartCard(days: List<DayStat>, colors: StatsColors) {
+private fun PeriodChartCard(stats: FullStats, colors: StatsColors) {
+    var period by remember { mutableStateOf(0) } // 0 = week, 1 = month, 2 = year
     val dayShort = remember { SimpleDateFormat("EEE", Locale("ar")) }
-    val max = (days.maxOfOrNull { it.pages } ?: 0).coerceAtLeast(1)
+    val monthShort = remember {
+        arrayOf("ينا", "فبر", "مار", "أبر", "ماي", "يون", "يول", "أغس", "سبت", "أكت", "نوف", "ديس")
+    }
+
+    val bars: List<BarItem>
+    val total: Int
+    val avgLabel: String
+    val avgValue: String
+    when (period) {
+        0 -> {
+            bars = stats.last7Days.mapIndexed { i, d ->
+                BarItem(dayShort.format(Date(d.dayStartMillis)), d.pages, i == stats.last7Days.lastIndex, true)
+            }
+            total = stats.last7Days.sumOf { it.pages }
+            avgLabel = "متوسط يومي"
+            avgValue = (total / 7).toArabicDigits()
+        }
+        1 -> {
+            val today = Calendar.getInstance().get(Calendar.DAY_OF_MONTH)
+            val lastDay = stats.monthDays.size
+            bars = stats.monthDays.mapIndexed { i, d ->
+                val dayNum = i + 1
+                val show = dayNum == 1 || dayNum % 5 == 0 || dayNum == lastDay
+                BarItem(dayNum.toArabicDigits(), d.pages, dayNum == today, show)
+            }
+            total = stats.monthDays.sumOf { it.pages }
+            val activeDays = stats.monthDays.count { it.pages > 0 }.coerceAtLeast(1)
+            avgLabel = "متوسط يوم القراءة"
+            avgValue = (total / activeDays).toArabicDigits()
+        }
+        else -> {
+            val curMonth = Calendar.getInstance().get(Calendar.MONTH)
+            bars = stats.yearMonthPages.mapIndexed { i, p -> BarItem(monthShort[i], p, i == curMonth, true) }
+            total = stats.yearMonthPages.sum()
+            val activeMonths = stats.yearMonthPages.count { it > 0 }.coerceAtLeast(1)
+            avgLabel = "متوسط الشهر"
+            avgValue = (total / activeMonths).toArabicDigits()
+        }
+    }
+    val best = bars.maxOfOrNull { it.value } ?: 0
+
     StatsCard(colors = colors) {
-        SectionHeader("آخر ٧ أيام", "الصفحات المسجلة يومياً", colors)
+        SectionHeader("مقدار القراءة", "الصفحات المقروءة حسب المدة", colors)
+        Spacer(Modifier.height(12.dp))
+        PeriodSwitch(period, { period = it }, colors)
         Spacer(Modifier.height(14.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(154.dp),
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-            verticalAlignment = Alignment.Bottom
-        ) {
-            days.forEachIndexed { index, day ->
-                val isToday = index == days.lastIndex
-                val barHeight = (day.pages.toFloat() / max * 96f).dp + if (day.pages > 0) 10.dp else 4.dp
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Bottom
-                ) {
-                    Text(day.pages.toArabicDigits(), style = MaterialTheme.typography.labelSmall, color = colors.ink)
+        PeriodBars(bars, colors)
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            MiniTotal("المجموع", total.toArabicDigits(), Modifier.weight(1f), colors)
+            MiniTotal(avgLabel, avgValue, Modifier.weight(1f), colors)
+            MiniTotal("الأفضل", best.toArabicDigits(), Modifier.weight(1f), colors)
+        }
+    }
+}
+
+private data class BarItem(val label: String, val value: Int, val highlighted: Boolean, val showLabel: Boolean)
+
+@Composable
+private fun PeriodSwitch(period: Int, onChange: (Int) -> Unit, colors: StatsColors) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.track)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        listOf("أسبوع", "شهر", "سنة").forEachIndexed { i, label ->
+            val selected = period == i
+            Surface(
+                onClick = { onChange(i) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(11.dp),
+                color = if (selected) colors.card else Color.Transparent,
+                contentColor = if (selected) colors.primary else colors.muted,
+                shadowElevation = if (selected) 1.dp else 0.dp,
+            ) {
+                Text(
+                    label,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PeriodBars(bars: List<BarItem>, colors: StatsColors) {
+    val max = (bars.maxOfOrNull { it.value } ?: 0).coerceAtLeast(1)
+    val many = bars.size > 12
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(150.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (many) 2.dp else 6.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        bars.forEach { b ->
+            val barHeight = (b.value.toFloat() / max * 92f).dp + if (b.value > 0) 8.dp else 3.dp
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Bottom,
+            ) {
+                if (!many) {
+                    Text(b.value.toArabicDigits(), style = MaterialTheme.typography.labelSmall, color = colors.ink, maxLines = 1)
                     Spacer(Modifier.height(4.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(112.dp),
-                        contentAlignment = Alignment.BottomCenter
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .fillMaxHeight()
-                                .clip(RoundedCornerShape(100.dp))
-                                .background(colors.track)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(barHeight)
-                                .clip(RoundedCornerShape(100.dp))
-                                .background(if (isToday) colors.primary else colors.secondary)
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(dayShort.format(Date(day.dayStartMillis)), style = MaterialTheme.typography.labelSmall, color = colors.muted)
                 }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(108.dp),
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    Box(Modifier.fillMaxWidth().fillMaxHeight().clip(RoundedCornerShape(100.dp)).background(colors.track))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(barHeight)
+                            .clip(RoundedCornerShape(100.dp))
+                            .background(if (b.highlighted) colors.primary else colors.secondary)
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(if (b.showLabel) b.label else "", style = MaterialTheme.typography.labelSmall, color = colors.muted, maxLines = 1)
             }
         }
     }
@@ -533,10 +827,219 @@ private fun MiniTotal(label: String, value: String, modifier: Modifier, colors: 
 }
 
 @Composable
+private fun CalendarTab(sessions: List<SessionEntity>, colors: StatsColors) {
+    val byDay = remember(sessions) {
+        val m = HashMap<Long, DayG>()
+        val c = Calendar.getInstance()
+        for (s in sessions) {
+            c.timeInMillis = s.startedAt
+            c.set(Calendar.HOUR_OF_DAY, 0); c.set(Calendar.MINUTE, 0)
+            c.set(Calendar.SECOND, 0); c.set(Calendar.MILLISECOND, 0)
+            m.getOrPut(c.timeInMillis) { DayG(c.timeInMillis) }.sessions.add(s)
+        }
+        m
+    }
+    var monthOffset by remember { mutableStateOf(0) }
+    var selectedDay by remember { mutableStateOf<Long?>(null) }
+    val dayFmt = remember { SimpleDateFormat("EEEE d", Locale("ar")) }
+    val timeFmt = remember { SimpleDateFormat("h:mm a", Locale("ar")) }
+    val todayAnchor = remember {
+        Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+
+    val base = remember(monthOffset) {
+        Calendar.getInstance().apply {
+            add(Calendar.MONTH, monthOffset)
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+    }
+    val firstMillis = base.timeInMillis
+    val daysInMonth = base.getActualMaximum(Calendar.DAY_OF_MONTH)
+    val firstCol = base.get(Calendar.DAY_OF_WEEK) % 7 // Saturday = 0
+    val dayAnchors = remember(monthOffset) {
+        val c = base.clone() as Calendar
+        (1..daysInMonth).map { d -> c.set(Calendar.DAY_OF_MONTH, d); c.timeInMillis }
+    }
+    val monthMax = (dayAnchors.maxOfOrNull { byDay[it]?.pages ?: 0 } ?: 0).coerceAtLeast(1)
+    val monthTotal = dayAnchors.sumOf { byDay[it]?.pages ?: 0 }
+    val activeDays = dayAnchors.count { (byDay[it]?.pages ?: 0) > 0 }
+    val bestDay = dayAnchors.maxOfOrNull { byDay[it]?.pages ?: 0 } ?: 0
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        StatsCard(colors) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                IconButton(onClick = { monthOffset -= 1; selectedDay = null }) {
+                    Icon(Icons.Filled.ChevronRight, contentDescription = "الشهر السابق", tint = colors.ink)
+                }
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(HijriDate.gregorianMonthYear(firstMillis), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = colors.ink)
+                    Text(HijriDate.hijriMonthYear(firstMillis + 14L * 86_400_000L), style = MaterialTheme.typography.labelSmall, color = colors.muted)
+                }
+                val canNext = monthOffset < 0
+                IconButton(onClick = { if (canNext) { monthOffset += 1; selectedDay = null } }, enabled = canNext) {
+                    Icon(Icons.Filled.ChevronLeft, contentDescription = "الشهر التالي", tint = if (canNext) colors.ink else colors.muted)
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                listOf("س", "ح", "ن", "ث", "ر", "خ", "ج").forEach {
+                    Text(it, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall, color = colors.muted)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            val totalCells = firstCol + daysInMonth
+            val rows = (totalCells + 6) / 7
+            for (r in 0 until rows) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    for (col in 0 until 7) {
+                        val dayNum = r * 7 + col - firstCol + 1
+                        if (dayNum in 1..daysInMonth) {
+                            val anchor = dayAnchors[dayNum - 1]
+                            CalendarCell(
+                                modifier = Modifier.weight(1f),
+                                dayNum = dayNum,
+                                pages = byDay[anchor]?.pages ?: 0,
+                                max = monthMax,
+                                isToday = anchor == todayAnchor,
+                                selected = selectedDay == anchor,
+                                colors = colors,
+                                onClick = { selectedDay = if (selectedDay == anchor) null else anchor },
+                            )
+                        } else {
+                            Spacer(Modifier.weight(1f).aspectRatio(1f))
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            CalendarLegend(colors)
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                MiniTotal("صفحات الشهر", monthTotal.toArabicDigits(), Modifier.weight(1f), colors)
+                MiniTotal("أيام القراءة", activeDays.toArabicDigits(), Modifier.weight(1f), colors)
+                MiniTotal("أفضل يوم", bestDay.toArabicDigits(), Modifier.weight(1f), colors)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "النقر على يوم يعرض جلساته",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.muted,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+            )
+        }
+
+        selectedDay?.let { sel ->
+            val day = byDay[sel]
+            StatsCard(colors) {
+                Text(dayFmt.format(Date(sel)), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = colors.ink)
+                Spacer(Modifier.height(8.dp))
+                if (day == null || day.sessions.isEmpty()) {
+                    Text("لا جلسات في هذا اليوم.", style = MaterialTheme.typography.bodyMedium, color = colors.muted)
+                } else {
+                    Text(
+                        "${day.sessions.size.toArabicDigits()} جلسة • ${day.pages.toArabicDigits()} صفحة • ${formatDuration(day.durationMs)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.muted,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    day.sessions.sortedBy { it.startedAt }.forEach { s ->
+                        SessionRow(
+                            timeLabel = "الساعة ${timeFmt.format(Date(s.startedAt))}",
+                            valueLabel = "${formatDuration(s.endedAt - s.startedAt)} • ${s.pagesRead.toArabicDigits()} صفحة",
+                            colors = colors,
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun CalendarCell(
+    modifier: Modifier,
+    dayNum: Int,
+    pages: Int,
+    max: Int,
+    isToday: Boolean,
+    selected: Boolean,
+    colors: StatsColors,
+    onClick: () -> Unit,
+) {
+    val ratio = if (max > 0) pages.toFloat() / max else 0f
+    val bg = when {
+        pages <= 0 -> colors.track.copy(alpha = 0.5f)
+        ratio <= 0.33f -> colors.primary.copy(alpha = 0.28f)
+        ratio <= 0.66f -> colors.primary.copy(alpha = 0.55f)
+        ratio <= 0.85f -> colors.primary.copy(alpha = 0.8f)
+        else -> colors.primary
+    }
+    val fg = when {
+        pages <= 0 -> colors.muted
+        ratio > 0.55f -> colors.onPrimary
+        else -> colors.ink
+    }
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .padding(2.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .then(
+                when {
+                    isToday -> Modifier.border(1.5.dp, colors.warm, RoundedCornerShape(8.dp))
+                    selected -> Modifier.border(1.5.dp, colors.primary, RoundedCornerShape(8.dp))
+                    else -> Modifier
+                }
+            )
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(dayNum.toArabicDigits(), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = fg)
+            if (pages > 0) Text(pages.toArabicDigits(), fontSize = 9.sp, lineHeight = 10.sp, color = fg)
+        }
+    }
+}
+
+@Composable
+private fun CalendarLegend(colors: StatsColors) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Spacer(Modifier.weight(1f))
+        Text("أقل", style = MaterialTheme.typography.labelSmall, color = colors.muted)
+        listOf(
+            colors.track.copy(alpha = 0.5f),
+            colors.primary.copy(alpha = 0.28f),
+            colors.primary.copy(alpha = 0.55f),
+            colors.primary.copy(alpha = 0.8f),
+            colors.primary,
+        ).forEach {
+            Box(Modifier.size(14.dp).clip(RoundedCornerShape(4.dp)).background(it))
+        }
+        Text("أكثر", style = MaterialTheme.typography.labelSmall, color = colors.muted)
+        Spacer(Modifier.weight(1f))
+    }
+}
+
+@Composable
 private fun HistoryTab(
     sessions: List<SessionEntity>,
     colors: StatsColors,
-    onRequestDelete: (List<SessionEntity>, String) -> Unit,
 ) {
     if (sessions.isEmpty()) {
         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -588,7 +1091,6 @@ private fun HistoryTab(
                             dayFmt = dayFmt,
                             timeFmt = timeFmt,
                             colors = colors,
-                            onRequestDelete = onRequestDelete
                         )
                     }
                 }
@@ -605,40 +1107,31 @@ private fun DaySection(
     dayFmt: SimpleDateFormat,
     timeFmt: SimpleDateFormat,
     colors: StatsColors,
-    onRequestDelete: (List<SessionEntity>, String) -> Unit,
 ) {
     var expanded by remember(day.anchorMillis) { mutableStateOf(isToday) }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        IconButton(
-            onClick = { onRequestDelete(day.sessions.toList(), "حذف كل جلسات هذا اليوم؟") },
-            modifier = Modifier.size(36.dp)
-        ) {
-            Icon(Icons.Filled.Delete, contentDescription = "حذف جلسات اليوم", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-        }
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .clip(RoundedCornerShape(16.dp))
-                .clickable { expanded = !expanded }
-                .background(colors.tile)
-                .padding(12.dp),
-            horizontalAlignment = Alignment.Start,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(dayFmt.format(Date(day.anchorMillis)), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = colors.ink)
-                Icon(
-                    imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                    contentDescription = if (expanded) "طي الجلسات" else "توسيع الجلسات",
-                    tint = colors.muted,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Text(
-                "${day.sessions.size.toArabicDigits()} جلسة • ${day.pages.toArabicDigits()} صفحة • ${formatDuration(day.durationMs)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.muted,
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable { expanded = !expanded }
+            .background(colors.tile)
+            .padding(12.dp),
+        horizontalAlignment = Alignment.Start,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(dayFmt.format(Date(day.anchorMillis)), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = colors.ink)
+            Icon(
+                imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = if (expanded) "طي الجلسات" else "توسيع الجلسات",
+                tint = colors.muted,
+                modifier = Modifier.size(20.dp)
             )
         }
+        Text(
+            "${day.sessions.size.toArabicDigits()} جلسة • ${day.pages.toArabicDigits()} صفحة • ${formatDuration(day.durationMs)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.muted,
+        )
     }
     if (expanded) {
         Spacer(Modifier.height(8.dp))
@@ -647,35 +1140,24 @@ private fun DaySection(
                 timeLabel = "الساعة ${timeFmt.format(Date(s.startedAt))}",
                 valueLabel = "${formatDuration(s.endedAt - s.startedAt)} • ${s.pagesRead.toArabicDigits()} صفحة",
                 colors = colors,
-                onDelete = { onRequestDelete(listOf(s), "حذف هذه الجلسة؟") }
             )
         }
     }
 }
 
 @Composable
-private fun SessionRow(timeLabel: String, valueLabel: String, colors: StatsColors, onDelete: () -> Unit) {
-    Row(
+private fun SessionRow(timeLabel: String, valueLabel: String, colors: StatsColors) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 4.dp, top = 3.dp, bottom = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(start = 4.dp, top = 3.dp, bottom = 3.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.subtle)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        horizontalAlignment = Alignment.Start,
     ) {
-        IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
-            Icon(Icons.Filled.Delete, contentDescription = "حذف الجلسة", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-        }
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .clip(RoundedCornerShape(14.dp))
-                .background(colors.subtle)
-                .padding(horizontal = 12.dp, vertical = 9.dp),
-            horizontalAlignment = Alignment.Start,
-        ) {
-            Text(valueLabel, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = colors.ink)
-            Text(timeLabel, style = MaterialTheme.typography.labelSmall, color = colors.muted)
-        }
+        Text(valueLabel, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = colors.ink)
+        Text(timeLabel, style = MaterialTheme.typography.labelSmall, color = colors.muted)
     }
 }
 
@@ -817,8 +1299,6 @@ private fun formatPace(pagesPerMinute: Double): String {
     val minutesPerPage = (1.0 / pagesPerMinute).roundToInt().coerceAtLeast(1)
     return "صفحة كل ${minutesPerPage.toArabicDigits()} دقيقة"
 }
-
-private data class PendingStatDelete(val message: String, val sessions: List<SessionEntity>)
 
 private class DayG(val anchorMillis: Long) {
     val sessions = mutableListOf<SessionEntity>()

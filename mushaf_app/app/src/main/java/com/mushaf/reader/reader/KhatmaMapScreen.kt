@@ -1,8 +1,10 @@
 package com.mushaf.reader.reader
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,6 +68,7 @@ fun KhatmaMapScreen(
     visitedPages: Set<Int>,
     bookmarkPage: Int?,
     currentPage: Int,
+    onToggleRead: (Int) -> Unit,
     onJump: (Int) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -135,6 +138,7 @@ fun KhatmaMapScreen(
                             expanded = expanded,
                             colors = colors,
                             onExpandedChange = { expandedJuzOverrides[section.number] = it },
+                            onToggleRead = onToggleRead,
                             onJump = onJump,
                         )
                     }
@@ -153,6 +157,7 @@ fun KhatmaMapScreen(
                     currentPage = currentPage,
                     colors = colors,
                     modifier = Modifier.weight(1f),
+                    onToggleRead = onToggleRead,
                     onJump = onJump,
                 )
             }
@@ -424,6 +429,7 @@ private fun PagesOnlyContent(
     currentPage: Int,
     colors: KhatmaColors,
     modifier: Modifier = Modifier,
+    onToggleRead: (Int) -> Unit,
     onJump: (Int) -> Unit,
 ) {
     Column(
@@ -459,7 +465,8 @@ private fun PagesOnlyContent(
                     state = pageState(page, readPages, visitedPages, bookmarkPage),
                     isCurrent = page == currentPage,
                     colors = colors,
-                    onClick = { onJump(page) },
+                    onToggleRead = { onToggleRead(page) },
+                    onJump = { onJump(page) },
                 )
             }
         }
@@ -574,6 +581,7 @@ private fun JuzCard(
     expanded: Boolean,
     colors: KhatmaColors,
     onExpandedChange: (Boolean) -> Unit,
+    onToggleRead: (Int) -> Unit,
     onJump: (Int) -> Unit,
 ) {
     val readInSection = section.pages.count { it in readPages }
@@ -632,7 +640,8 @@ private fun JuzCard(
                                 isCurrent = page == currentPage,
                                 colors = colors,
                                 modifier = Modifier.weight(1f),
-                                onClick = { onJump(page) },
+                                onToggleRead = { onToggleRead(page) },
+                                onJump = { onJump(page) },
                             )
                         }
                         repeat(JuzPageColumns - row.size) {
@@ -696,6 +705,7 @@ private fun SectionProgress(read: Int, visited: Int, total: Int, colors: KhatmaC
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PageCell(
     page: Int,
@@ -703,7 +713,8 @@ private fun PageCell(
     isCurrent: Boolean,
     colors: KhatmaColors,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit,
+    onToggleRead: () -> Unit,
+    onJump: () -> Unit,
 ) {
     val background = when (state) {
         PageState.Read -> colors.read
@@ -726,7 +737,7 @@ private fun PageCell(
                 if (isCurrent) Modifier.border(2.dp, colors.currentBorder, RoundedCornerShape(7.dp))
                 else Modifier.border(1.dp, colors.cellBorder, RoundedCornerShape(7.dp))
             )
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onToggleRead, onLongClick = onJump),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -740,13 +751,15 @@ private fun PageCell(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CompactPageCell(
     page: Int,
     state: PageState,
     isCurrent: Boolean,
     colors: KhatmaColors,
-    onClick: () -> Unit,
+    onToggleRead: () -> Unit,
+    onJump: () -> Unit,
 ) {
     val background = when (state) {
         PageState.Read -> colors.read
@@ -770,7 +783,7 @@ private fun CompactPageCell(
                 if (isCurrent) Modifier.border(2.dp, colors.currentBorder, RoundedCornerShape(5.dp))
                 else Modifier.border(1.dp, colors.cellBorder, RoundedCornerShape(5.dp))
             )
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onToggleRead, onLongClick = onJump),
         contentAlignment = Alignment.Center,
     ) {
         Text(

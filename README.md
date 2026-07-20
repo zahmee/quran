@@ -1,86 +1,140 @@
-# قرآن القارئ — Quran Al-Qari
+<div align="center" dir="rtl">
 
-تطبيق أندرويد لقراءة المصحف الشريف، مبني على صور صفحات المصحف مع طبقة إحداثيات للآيات
-تتيح اختيار الآية وتظليلها، إضافةً إلى فهرس للسور والأجزاء، وبحث في النص، وإحصائيات قراءة.
+![غلاف مشروع قرآن القارئ](docs/assets/quran-al-qari-hero.png)
 
-An Android Mushaf (Qur'an) reader built on page images with an ayah-coordinate
-overlay for tap-to-select/highlight, plus a surah/juz index, full-text search,
-bookmarks, and reading statistics.
+# قرآن القارئ
 
----
+**مصحف أندرويد مفتوح المصدر، يعمل بالكامل دون إنترنت ومن غير إعلانات.**
 
-## ✨ Features
+[![Android CI](https://github.com/zahmee/quran/actions/workflows/android.yml/badge.svg)](https://github.com/zahmee/quran/actions/workflows/android.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-1f7a5a.svg)](LICENSE)
+[![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android&logoColor=white)](mushaf_app)
+[![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)](mushaf_app/app/src/main/java)
 
-- 📖 Page-image Mushaf with right-to-left, paper-like page turning (all 604 pages).
-- 👆 Tap an ayah to select and highlight the whole verse across its lines.
-- 🔎 Search the Qur'anic text and surah names (diacritic-insensitive); also jumps
-  by verse key like `2:255`.
-- 🗂️ Surah & Juz navigation index.
-- 🔖 Bookmark with persistent highlight.
-- 📊 Reading statistics: streak, daily/weekly progress, khatma %, history.
-- 🌙 Light/dark themes (separate image sets) and a distraction-free full-screen mode.
+[صفحة المشروع](https://zahmee.github.io/quran/) · [سياسة الخصوصية](https://zahmee.github.io/quran/privacy-policy.html) · [المساهمة](CONTRIBUTING.md)
 
-## 🛠️ Tech stack
+</div>
 
-- Kotlin + Jetpack Compose (Material 3)
-- Coil 3 (asset image loading)
-- Room (reading-session stats) + DataStore (preferences/bookmarks)
-- AGP 8.7.3 · Kotlin 2.0.21 · compileSdk 35 · minSdk 24
+## نظرة عامة
 
-## 📁 Project layout
+يعرض التطبيق صفحات المصحف الكاملة بطبقة إحداثيات تجعل كل آية قابلة للتحديد والتظليل.
+ويجمع بين تجربة القراءة الهادئة والبحث السريع ومتابعة الورد والختمات، مع حفظ كل البيانات
+محليًا على جهاز المستخدم.
 
-```
-quran_01/
-├─ mushaf_app/                      # the Android app (Gradle project)
-│  └─ app/src/main/
-│     ├─ java/com/mushaf/reader/    # Compose UI + ViewModel + data layer
-│     └─ assets/                    # page images + ayah_regions.json
-├─ build_ayah_regions.py            # offline: builds assets/data/ayah_regions.json
-├─ quran_pages_complete_text_coordinates.{json,csv}   # source ayah data
-└─ quran_pages_complete_table_schema.md               # data schema docs
-```
+## الصور
 
-## 🚀 Build & run
+<div align="center">
+  <img src="publishing/screenshots/01_reader_fatihah.png" width="23%" alt="واجهة القراءة">
+  <img src="publishing/screenshots/03_index_surahs.png" width="23%" alt="فهرس السور">
+  <img src="publishing/screenshots/05_search_results.png" width="23%" alt="البحث في القرآن">
+  <img src="publishing/screenshots/06_stats.png" width="23%" alt="إحصائيات القراءة">
+</div>
+
+> لقطات توضيحية؛ قد تختلف تفاصيل الواجهة مع الإصدارات الأحدث.
+
+## المميزات
+
+- **مصحف كامل:** جميع الصفحات الـ 604 بصور واضحة وتقليب من اليمين إلى اليسار.
+- **تفاعل مع الآية:** تحديد الآية وتظليل أسطرها، مع النسخ والمشاركة.
+- **بحث مرن:** بالنص أو اسم السورة من غير حساسية للتشكيل، أو بمفتاح مثل `2:255`.
+- **تنقّل سريع:** فهرس السور والأجزاء والانتقال إلى أي صفحة.
+- **علامتان مرجعيتان:** لحفظ موضعين مستقلين والعودة إليهما بسرعة.
+- **متابعة الختمة:** خريطة الصفحات المقروءة، سجل الختمات، وتواريخ هجرية وميلادية.
+- **إحصائيات محلية:** الوقت والصفحات والجلسات وسلسلة أيام القراءة.
+- **قراءة مرنة:** تمرير أفقي أو عمودي، وضع ليلي، ملء الشاشة، وتخصيص أزرار الرأس.
+- **خصوصية أولًا:** لا حسابات ولا إعلانات ولا تحليلات؛ التطبيق لا يطلب إذن الإنترنت.
+
+## التقنيات
+
+- Kotlin + Jetpack Compose + Material 3
+- Room لإحصائيات القراءة، وDataStore للتفضيلات والعلامات
+- Coil 3 لتحميل صور الصفحات من أصول التطبيق
+- Android Gradle Plugin 8.12.3 · Kotlin 2.0.21 · `compileSdk/targetSdk 36` · `minSdk 24`
+
+## البدء السريع
+
+### المتطلبات
+
+- JDK 17
+- Android SDK 36
+- Android Studio حديث، أو أدوات Android SDK من سطر الأوامر
+
+### البناء
 
 ```bash
-cd mushaf_app
+git clone https://github.com/zahmee/quran.git
+cd quran/mushaf_app
 
-# Debug APK (no signing key required)
+# Linux / macOS
 ./gradlew :app:assembleDebug
 
-# Install on a connected device/emulator
-./gradlew :app:installDebug
+# Windows
+gradlew.bat :app:assembleDebug
 ```
 
-### Release signing
+ستجد حزمة التجربة في:
+`mushaf_app/app/build/outputs/apk/debug/app-debug.apk`.
 
-Release builds are signed using credentials in `mushaf_app/keystore.properties`,
-which is **gitignored** and not part of this repository. To build a signed release:
+### الفحص المحلي
 
-1. Copy the template and fill in your own key details:
-   ```bash
-   cp mushaf_app/keystore.properties.sample mushaf_app/keystore.properties
-   ```
-2. Place your keystore (e.g. `release.jks`) next to it and set `storeFile` accordingly.
-3. Build:
-   ```bash
-   ./gradlew :app:assembleRelease
-   ```
+```bash
+./gradlew :app:assembleDebug :app:lintDebug
+```
 
-Without `keystore.properties` the release task still runs but produces an **unsigned** APK.
+ينفّذ GitHub Actions الأمر نفسه تلقائيًا عند كل Pull Request أو دفع إلى `main`.
 
-## 🔧 Regenerating ayah data
+## بناء إصدار موقّع
 
-`ayah_regions.json` (the per-ayah highlight regions) is generated offline:
+1. انسخ `mushaf_app/keystore.properties.sample` إلى `mushaf_app/keystore.properties`.
+2. ضع ملف التوقيع وحدّث القيم. هذه الملفات مستبعدة من Git.
+3. نفّذ `./gradlew :app:assembleRelease`.
+
+من غير بيانات التوقيع يُبنى ملف Release غير موقّع. لا تضع مفاتيح التوقيع أو كلمات المرور في المستودع.
+
+## بنية المستودع
+
+```text
+quran/
+├─ .github/                         # CI وقوالب المساهمة
+├─ docs/                            # موقع GitHub Pages وسياسة الخصوصية
+├─ mushaf_app/                      # مشروع Android / Gradle
+│  └─ app/src/main/
+│     ├─ java/com/mushaf/reader/    # الواجهة والبيانات
+│     └─ assets/                    # صفحات المصحف وإحداثيات الآيات
+├─ publishing/                      # صور ونصوص المتجر
+└─ build_ayah_regions.py            # توليد ayah_regions.json
+```
+
+## بيانات الآيات
+
+لإعادة توليد طبقة مناطق الآيات:
 
 ```bash
 python build_ayah_regions.py
 ```
 
-## 📜 License
+يكتب السكربت الناتج إلى
+`mushaf_app/app/src/main/assets/data/ayah_regions.json`. راجع
+[`quran_pages_complete_table_schema.md`](quran_pages_complete_table_schema.md) لتفاصيل المخطط.
 
-Source code is licensed under the [MIT License](LICENSE).
+## المساهمة والأمان
 
-> ⚠️ The bundled Mushaf ("ممتاز") page images and the Qur'anic text/coordinate
-> data are **not** covered by the MIT license and remain the property of their
-> respective owners. Do not redistribute them unless you hold the necessary rights.
+نرحب بإصلاح الأخطاء وتحسين الواجهة والتوثيق. اقرأ [`CONTRIBUTING.md`](CONTRIBUTING.md) قبل فتح Pull Request،
+وأبلغ عن الثغرات بشكل خاص وفق [`SECURITY.md`](SECURITY.md).
+
+## الرخصة والمحتوى
+
+شفرة المشروع والأصول الأصلية متاحة للجميع بموجب [رخصة MIT](LICENSE).
+
+> **تنبيه المحتوى:** صور صفحات المصحف والنص القرآني وبيانات الإحداثيات ليست مملوكة بالضرورة للمشروع
+> ولا يمنح MIT حق إعادة توزيعها. اقرأ [`NOTICE.md`](NOTICE.md) قبل إعادة نشر نسخة مع المحتوى المضمّن.
+
+---
+
+### English
+
+Quran Al-Qari is an open-source, offline-first Android Mushaf reader built with Kotlin and Jetpack
+Compose. It provides all 604 page images, interactive ayah highlighting, full-text search, two
+bookmarks, reading statistics, khatma tracking, light/dark themes, and horizontal or vertical paging.
+The source code is MIT-licensed; bundled Mushaf imagery and Qur'anic datasets are subject to their
+original rights. See [`NOTICE.md`](NOTICE.md).

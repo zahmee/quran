@@ -17,14 +17,14 @@ val keystoreProperties = Properties().apply {
 
 android {
     namespace = "com.mushaf.reader"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.mushaf.reader"
         minSdk = 24
-        targetSdk = 35
-        versionCode = 32
-        versionName = "0.4.8"
+        targetSdk = 36
+        versionCode = 35
+        versionName = "0.5.1"
     }
 
     signingConfigs {

@@ -1,0 +1,54 @@
+name: بلاغ عن خطأ
+description: أبلغ عن مشكلة يمكن إعادة إنتاجها
+title: "[Bug]: "
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        شكرًا لمساعدتنا. لا تنشر ثغرة أمنية هنا؛ اتبع `SECURITY.md`.
+  - type: input
+    id: version
+    attributes:
+      label: إصدار التطبيق
+      placeholder: "مثال: 0.5.1"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: الجهاز وإصدار Android
+      placeholder: "مثال: Pixel 8, Android 16"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: وصف المشكلة
+      description: ما الذي حدث؟ وما الذي كنت تتوقعه؟
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: خطوات إعادة الإنتاج
+      placeholder: |
+        1. افتح...
+        2. اضغط...
+        3. لاحظ...
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: لقطات أو سجلات
+      description: أضف صورة أو فيديو أو سجلًا بعد إزالة أي بيانات حساسة.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: التحقق
+      options:
+        - label: بحثت عن بلاغ مماثل.
+          required: true
+        - label: هذا البلاغ ليس عن ثغرة أمنية.
+          required: true

@@ -11,6 +11,7 @@ import com.mushaf.reader.data.AyahRepository
 import com.mushaf.reader.data.PageRepository
 import com.mushaf.reader.data.ReadingStore
 import com.mushaf.reader.data.stats.FullStats
+import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.ReadingStats
 import com.mushaf.reader.data.stats.SessionEntity
 import com.mushaf.reader.data.stats.StatsRepository
@@ -64,6 +65,10 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var fillScreen by mutableStateOf(initialSettings.fillScreen)
         private set
 
+    /** When on, pages turn vertically (swipe up/down) instead of horizontally. */
+    var verticalPaging by mutableStateOf(initialSettings.verticalPaging)
+        private set
+
     /** Ids of the header buttons the user has hidden; any id NOT in this set is shown. */
     var hiddenButtons by mutableStateOf(initialSettings.hiddenButtons)
         private set
@@ -108,18 +113,28 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var buttonPageColor by mutableStateOf(initialSettings.buttonPageColor)
         private set
 
-    /** Full-screen restore-header chip: show the juz-progress bar, and its color. */
-    var showButtonJuzBar by mutableStateOf(initialSettings.showButtonJuzBar)
-        private set
-
-    var buttonJuzBarColor by mutableStateOf(initialSettings.buttonJuzBarColor)
-        private set
-
     /** Thin juz-progress bar pinned to the bottom of the page, and its color. */
     var showBottomJuzBar by mutableStateOf(initialSettings.showBottomJuzBar)
         private set
 
     var bottomJuzBarColor by mutableStateOf(initialSettings.bottomJuzBarColor)
+        private set
+
+    /** Full-screen edge marker for the current page's side (right/left of the spread), and its color. */
+    var showPageSideIndicator by mutableStateOf(initialSettings.showPageSideIndicator)
+        private set
+
+    var pageSideIndicatorColor by mutableStateOf(initialSettings.pageSideIndicatorColor)
+        private set
+
+    /** When the current (in-progress) khatma cycle began, epoch millis. */
+    var khatmaStartedAt by mutableStateOf(
+        initialSettings.khatmaStartedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
+    )
+        private set
+
+    /** Archive of completed khatmas, newest first. */
+    var khatmas by mutableStateOf<List<KhatmaEntity>>(emptyList())
         private set
 
     /** Start time (ms) of the current foreground reading session; 0 when none is running.
@@ -170,6 +185,11 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { ayahData = withContext(Dispatchers.IO) { ayahRepo.loadAll() } }
         viewModelScope.launch { bookmarks = withContext(Dispatchers.IO) { store.bookmarks() } }
         viewModelScope.launch { bookmarks2 = withContext(Dispatchers.IO) { store.bookmarks2() } }
+        viewModelScope.launch { khatmas = withContext(Dispatchers.IO) { statsRepo.allKhatmas() } }
+        // Anchor the current khatma cycle on first run of the feature so its duration is meaningful.
+        if (initialSettings.khatmaStartedAt <= 0L) {
+            viewModelScope.launch { store.setKhatmaStartedAt(khatmaStartedAt) }
+        }
     }
 
     fun toggleTheme() {
@@ -180,6 +200,12 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleFillScreen() {
         fillScreen = !fillScreen
         viewModelScope.launch { store.setFillScreen(fillScreen) }
+    }
+
+    fun updateVerticalPaging(value: Boolean) {
+        if (value == verticalPaging) return
+        verticalPaging = value
+        viewModelScope.launch { store.setVerticalPaging(value) }
     }
 
     /** Whether the header button with [id] is currently shown. */
@@ -266,18 +292,6 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setButtonPageColor(value) }
     }
 
-    fun updateShowButtonJuzBar(value: Boolean) {
-        if (value == showButtonJuzBar) return
-        showButtonJuzBar = value
-        viewModelScope.launch { store.setShowButtonJuzBar(value) }
-    }
-
-    fun updateButtonJuzBarColor(value: String) {
-        if (value == buttonJuzBarColor) return
-        buttonJuzBarColor = value
-        viewModelScope.launch { store.setButtonJuzBarColor(value) }
-    }
-
     fun updateShowBottomJuzBar(value: Boolean) {
         if (value == showBottomJuzBar) return
         showBottomJuzBar = value
@@ -288,6 +302,18 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         if (value == bottomJuzBarColor) return
         bottomJuzBarColor = value
         viewModelScope.launch { store.setBottomJuzBarColor(value) }
+    }
+
+    fun updateShowPageSideIndicator(value: Boolean) {
+        if (value == showPageSideIndicator) return
+        showPageSideIndicator = value
+        viewModelScope.launch { store.setShowPageSideIndicator(value) }
+    }
+
+    fun updatePageSideIndicatorColor(value: String) {
+        if (value == pageSideIndicatorColor) return
+        pageSideIndicatorColor = value
+        viewModelScope.launch { store.setPageSideIndicatorColor(value) }
     }
 
     fun assetModel(pageNumber: Int): String = pageRepo.assetUri(pageNumber, darkTheme)
@@ -359,6 +385,21 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setReadPages(next) }
     }
 
+    /** Manually flip a page's "read" state on the khatma map (tap a cell to mark/unmark read).
+     *  Keeps read ⊆ visited: marking adds to both sets, unmarking removes from both. */
+    fun togglePageRead(page: Int) {
+        if (page < 1 || page > pageCount) return
+        val markRead = !readPagesAll.contains(page)
+        val nextRead = if (markRead) readPagesAll + page else readPagesAll - page
+        val nextVisited = if (markRead) visitedPagesAll + page else visitedPagesAll - page
+        readPagesAll = nextRead
+        visitedPagesAll = nextVisited
+        viewModelScope.launch {
+            store.setReadPages(nextRead)
+            store.setVisitedPages(nextVisited)
+        }
+    }
+
     fun beginSession() {
         sessionStart = System.currentTimeMillis()
         sessionStartedAt = sessionStart
@@ -382,20 +423,6 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         val pages = visitedPages.size
         sessionStart = 0L
         viewModelScope.launch { statsRepo.commitSession(start, end, startPage, endPage, pages) }
-    }
-
-    /** Delete the given reading sessions, then refresh the visible stats. */
-    fun deleteSessions(toDelete: List<SessionEntity>) {
-        if (toDelete.isEmpty()) return
-        viewModelScope.launch {
-            statsRepo.deleteSessions(toDelete.map { it.id })
-            sessions = statsRepo.allSessions()
-            fullStats = statsRepo.fullStats(
-                currentPage = lastPage,
-                totalPages = pageCount,
-                bookmarkPage = bookmarkPage(),
-            )
-        }
     }
 
     /** Wipe ALL statistics: every session plus the khatma-map progress (visited/read pages). */
@@ -434,12 +461,45 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         finalizeDwell(System.currentTimeMillis())
         viewModelScope.launch {
             sessions = statsRepo.allSessions()
+            khatmas = statsRepo.allKhatmas()
             fullStats = statsRepo.fullStats(
                 currentPage = lastPage,
                 totalPages = pageCount,
                 bookmarkPage = bookmarkPage(),
             )
         }
+    }
+
+    /** Archive the current khatma as complete (today's date), then reset progress for a new cycle. */
+    fun completeKhatma() {
+        val now = System.currentTimeMillis()
+        val started = khatmaStartedAt
+        val days = ((now - started).coerceAtLeast(0L) / 86_400_000L).toInt()
+        viewModelScope.launch {
+            statsRepo.saveKhatma(now, started, days, pageCount)
+            khatmas = statsRepo.allKhatmas()
+            resetKhatmaProgressInternal(now)
+        }
+    }
+
+    /** Start a new khatma: clear page/juz progress and reset the cycle start. Sessions and the
+     *  saved-khatma archive are NOT touched. */
+    fun resetKhatmaProgress() {
+        viewModelScope.launch { resetKhatmaProgressInternal(System.currentTimeMillis()) }
+    }
+
+    private suspend fun resetKhatmaProgressInternal(now: Long) {
+        visitedPagesAll = emptySet()
+        readPagesAll = emptySet()
+        store.setVisitedPages(emptySet())
+        store.setReadPages(emptySet())
+        khatmaStartedAt = now
+        store.setKhatmaStartedAt(now)
+        fullStats = statsRepo.fullStats(
+            currentPage = lastPage,
+            totalPages = pageCount,
+            bookmarkPage = bookmarkPage(),
+        )
     }
 
     /** True once the ayah data has finished loading (so the index/search are populated). */

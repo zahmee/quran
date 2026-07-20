@@ -1,0 +1,31 @@
+name: اقتراح ميزة
+description: اقترح تحسينًا محددًا لتجربة القراءة
+title: "[Feature]: "
+labels: [enhancement, needs-triage]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: الحاجة
+      description: ما المشكلة أو الحاجة التي ستعالجها الميزة؟
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: الحل المقترح
+      description: صف التجربة من وجهة نظر المستخدم.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: بدائل أو ملاحظات
+      description: أي بدائل جربتها أو تفاصيل تساعد في التقييم.
+  - type: checkboxes
+    id: principles
+    attributes:
+      label: مبادئ المشروع
+      options:
+        - label: يمكن تنفيذ الاقتراح مع الحفاظ على الخصوصية والعمل دون اتصال كلما أمكن.
+          required: true

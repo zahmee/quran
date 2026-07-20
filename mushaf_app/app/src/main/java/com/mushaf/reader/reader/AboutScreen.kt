@@ -1,7 +1,7 @@
 package com.mushaf.reader.reader
 
 import android.content.Intent
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -91,11 +91,11 @@ fun AboutScreen(onBack: () -> Unit) {
             ) {
                 val openWeb: (String) -> Unit = { url ->
                     runCatching {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
                     }
                 }
                 val openEmail: () -> Unit = {
-                    val mail = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:info@cdit.co")).apply {
+                    val mail = Intent(Intent.ACTION_SENDTO, "mailto:info@cdit.co".toUri()).apply {
                         putExtra(Intent.EXTRA_SUBJECT, "ملاحظات حول تطبيق قرآن القارئ")
                     }
                     runCatching { context.startActivity(mail) }
