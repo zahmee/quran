@@ -8,7 +8,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -81,6 +80,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -227,6 +227,22 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                     )
                 }
 
+                // Optional thin surah-progress bar directly above the page. It always hugs the very
+                // top of its slot — under the header when that shows, at the screen's top edge in
+                // full-screen — and deliberately does NOT reserve the camera band, so the page fills
+                // the screen right up to the top instead of leaving a gap (the bar simply sits behind
+                // a punch-hole camera if one is there).
+                if (viewModel.showTopSurahBar) {
+                    TopSurahBar(
+                        fraction = pageInfo
+                            ?.let { viewModel.surahProgressPercent(currentPage, it.surahNumber) / 100f }
+                            ?: 0f,
+                        colorId = viewModel.topSurahBarColor,
+                        thickness = viewModel.topSurahBarThickness.dp,
+                        opacity = viewModel.topSurahBarOpacity / 100f
+                    )
+                }
+
                 ReaderPager(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -245,6 +261,9 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                     page = pagerState.currentPage + 1,
                     showPage = viewModel.showButtonPage,
                     pageColorId = viewModel.buttonPageColor,
+                    posFraction = viewModel.buttonPosFraction,
+                    onDrag = viewModel::dragButtonPosFraction,
+                    onDragEnd = viewModel::saveButtonPosFraction,
                     onClick = { headerVisible = true }
                 )
             }
@@ -253,7 +272,10 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
             if (!headerVisible && viewModel.showPageSideIndicator) {
                 PageSideIndicator(
                     page = pagerState.currentPage + 1,
-                    colorId = viewModel.pageSideIndicatorColor
+                    colorId = viewModel.pageSideIndicatorColor,
+                    thickness = viewModel.pageSideIndicatorThickness.dp,
+                    length = viewModel.pageSideIndicatorLength.dp,
+                    opacity = viewModel.pageSideIndicatorOpacity / 100f
                 )
             }
 
@@ -264,7 +286,9 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 BottomJuzBar(
                     modifier = Modifier.align(Alignment.BottomCenter),
                     fraction = bbJuz.pageInJuz.toFloat() / bbJuz.pagesInJuz.coerceAtLeast(1),
-                    colorId = viewModel.bottomJuzBarColor
+                    colorId = viewModel.bottomJuzBarColor,
+                    thickness = viewModel.bottomJuzBarThickness.dp,
+                    opacity = viewModel.bottomJuzBarOpacity / 100f
                 )
             }
         }
@@ -362,10 +386,28 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 onShowBottomJuzBarChange = { viewModel.updateShowBottomJuzBar(it) },
                 bottomJuzBarColor = viewModel.bottomJuzBarColor,
                 onBottomJuzBarColorChange = { viewModel.updateBottomJuzBarColor(it) },
+                bottomJuzBarThickness = viewModel.bottomJuzBarThickness,
+                onBottomJuzBarThicknessChange = { viewModel.updateBottomJuzBarThickness(it) },
+                bottomJuzBarOpacity = viewModel.bottomJuzBarOpacity,
+                onBottomJuzBarOpacityChange = { viewModel.updateBottomJuzBarOpacity(it) },
+                showTopSurahBar = viewModel.showTopSurahBar,
+                onShowTopSurahBarChange = { viewModel.updateShowTopSurahBar(it) },
+                topSurahBarColor = viewModel.topSurahBarColor,
+                onTopSurahBarColorChange = { viewModel.updateTopSurahBarColor(it) },
+                topSurahBarThickness = viewModel.topSurahBarThickness,
+                onTopSurahBarThicknessChange = { viewModel.updateTopSurahBarThickness(it) },
+                topSurahBarOpacity = viewModel.topSurahBarOpacity,
+                onTopSurahBarOpacityChange = { viewModel.updateTopSurahBarOpacity(it) },
                 showPageSideIndicator = viewModel.showPageSideIndicator,
                 onShowPageSideIndicatorChange = { viewModel.updateShowPageSideIndicator(it) },
                 pageSideIndicatorColor = viewModel.pageSideIndicatorColor,
                 onPageSideIndicatorColorChange = { viewModel.updatePageSideIndicatorColor(it) },
+                pageSideIndicatorThickness = viewModel.pageSideIndicatorThickness,
+                onPageSideIndicatorThicknessChange = { viewModel.updatePageSideIndicatorThickness(it) },
+                pageSideIndicatorLength = viewModel.pageSideIndicatorLength,
+                onPageSideIndicatorLengthChange = { viewModel.updatePageSideIndicatorLength(it) },
+                pageSideIndicatorOpacity = viewModel.pageSideIndicatorOpacity,
+                onPageSideIndicatorOpacityChange = { viewModel.updatePageSideIndicatorOpacity(it) },
                 onAbout = { showAbout = true },
                 onClearAllStats = { viewModel.clearAllStats() },
                 onBack = { showSettings = false }
@@ -1166,12 +1208,16 @@ private fun MushafPageBadge(
 
 /** Floating button shown while the header is hidden (full-screen reading): a small chip hugging the
  *  LEFT screen edge — a grabber notch over the current page number (red). Tap restores the header;
- *  the chip slides UP/DOWN along that edge and keeps its spot across rotation/recompositions. */
+ *  the chip slides UP/DOWN along that edge and keeps the spot the user drags it to — across
+ *  rotation, hiding/showing the header, and app restarts (persisted via [posFraction]). */
 @Composable
 private fun ShowHeaderButton(
     page: Int,
     showPage: Boolean,
     pageColorId: String,
+    posFraction: Float,
+    onDrag: (Float) -> Unit,
+    onDragEnd: () -> Unit,
     onClick: () -> Unit,
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
@@ -1189,11 +1235,18 @@ private fun ShowHeaderButton(
                     .asPaddingValues().calculateTopPadding().toPx()
             }
             var btnSize by remember { mutableStateOf(IntSize.Zero) }
-            // User-chosen vertical spot; NaN = untouched -> rests just below the top inset. The chip
-            // stays flush to the LEFT edge (x = 0) and slides UP/DOWN only. Survives rotation.
-            var posY by rememberSaveable { mutableStateOf(Float.NaN) }
-            val maxY = (maxHpx - btnSize.height).coerceAtLeast(0f)
-            val y = (if (posY.isNaN()) topInsetPx else posY).coerceIn(topInsetPx, maxY)
+            // The chip stays flush to the LEFT edge (x = 0) and slides UP/DOWN only. Its spot comes
+            // in as a 0..1 fraction of the travel below the top inset (-1 = untouched -> top), so
+            // the saved position lands in the same relative place on any screen size/orientation.
+            val maxY = (maxHpx - btnSize.height).coerceAtLeast(topInsetPx)
+            val travel = maxY - topInsetPx
+            val y = topInsetPx + posFraction.coerceIn(0f, 1f) * travel
+            // Read inside the (long-lived) gesture coroutine so it sees the current values without
+            // restarting the gesture — keying pointerInput on them would cancel the drag mid-move.
+            val currentTravel by rememberUpdatedState(travel)
+            val currentFraction by rememberUpdatedState(posFraction.coerceIn(0f, 1f))
+            val currentOnDrag by rememberUpdatedState(onDrag)
+            val currentOnDragEnd by rememberUpdatedState(onDragEnd)
 
             // Plain Surface + Modifier.clickable (NOT Surface(onClick=…)) so it does NOT get wrapped
             // in the 48.dp minimumInteractiveComponentSize, which would center the smaller visible
@@ -1208,11 +1261,21 @@ private fun ShowHeaderButton(
                 modifier = Modifier
                     .absoluteOffset { IntOffset(0, y.roundToInt()) }
                     .onSizeChanged { btnSize = it }
-                    .pointerInput(maxHpx, topInsetPx) {
-                        detectDragGestures { change, drag ->
+                    .pointerInput(Unit) {
+                        // Accumulate the drag here rather than re-reading the fraction per event:
+                        // several pointer events can land between recompositions, and reading a
+                        // stale value would drop part of the movement.
+                        var dragFraction = 0f
+                        detectDragGestures(
+                            onDragStart = { dragFraction = currentFraction },
+                            onDragEnd = { currentOnDragEnd() },
+                            onDragCancel = { currentOnDragEnd() },
+                        ) { change, drag ->
                             change.consume()
-                            val curY = if (posY.isNaN()) topInsetPx else posY
-                            posY = (curY + drag.y).coerceIn(topInsetPx, (maxHpx - btnSize.height).coerceAtLeast(0f))
+                            if (currentTravel > 0f) {
+                                dragFraction = (dragFraction + drag.y / currentTravel).coerceIn(0f, 1f)
+                                currentOnDrag(dragFraction)
+                            }
                         }
                     }
                     .clickable(onClick = onClick)
@@ -1247,9 +1310,16 @@ private fun ShowHeaderButton(
 }
 
 /** A thin juz-progress bar pinned to the bottom of the page (optional, off by default).
- *  Fills from the right (mushaf reading direction) by the page's position within its juz. */
+ *  Fills from the right (mushaf reading direction) by the page's position within its juz.
+ *  [thickness] is the user-chosen bar height, [opacity] how solid it is drawn (0..1). */
 @Composable
-private fun BottomJuzBar(modifier: Modifier, fraction: Float, colorId: String) {
+private fun BottomJuzBar(
+    modifier: Modifier,
+    fraction: Float,
+    colorId: String,
+    thickness: Dp,
+    opacity: Float,
+) {
     val barColor = headerStatusColor(colorId, MaterialTheme.colorScheme.onSurfaceVariant)
     // Wrap in LTR so CenterEnd reliably means the right edge regardless of the screen's RTL.
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
@@ -1257,27 +1327,72 @@ private fun BottomJuzBar(modifier: Modifier, fraction: Float, colorId: String) {
             modifier = modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .height(4.dp)
-                .background(barColor.copy(alpha = 0.18f)),
+                .height(thickness)
+                .background(barColor.copy(alpha = TRACK_ALPHA * opacity)),
             contentAlignment = Alignment.CenterEnd
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(fraction.coerceIn(0f, 1f))
                     .fillMaxHeight()
-                    .background(barColor)
+                    .background(barColor.copy(alpha = opacity))
             )
         }
     }
 }
 
+/** A thin surah-progress bar laid out directly above the mushaf page (optional, off by default).
+ *  Fills from the right, like [BottomJuzBar], by the page's position within the current surah.
+ *  Unlike the juz bar it is part of the column rather than an overlay, so it never covers the page
+ *  text. It intentionally does not pad for the top inset: in full-screen it hugs the very top edge
+ *  and ignores the camera cutout, so the page fills the screen with no gap above the bar. */
+@Composable
+private fun TopSurahBar(
+    fraction: Float,
+    colorId: String,
+    thickness: Dp,
+    opacity: Float,
+) {
+    val barColor = headerStatusColor(colorId, MaterialTheme.colorScheme.onSurfaceVariant)
+    // Wrap in LTR so CenterEnd reliably means the right edge regardless of the screen's RTL.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(thickness)
+                .background(barColor.copy(alpha = TRACK_ALPHA * opacity)),
+            contentAlignment = Alignment.CenterEnd
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .background(barColor.copy(alpha = opacity))
+            )
+        }
+    }
+}
+
+/** The unread part of a progress bar is a faint wash of the same color; the user's opacity setting
+ *  scales this too, so dialing a bar down fades the whole thing rather than just its filled part. */
+private const val TRACK_ALPHA = 0.18f
+
 /** Full-screen-only edge marker for the current page's side of the spread: a small rounded bar
  *  flush to the RIGHT edge for a right-side (odd) page, and to the LEFT edge for a left-side
- *  (even) page — matching the MushafPageBadge parity. Vertically centered. */
+ *  (even) page — matching the MushafPageBadge parity. Vertically centered. [thickness] is the bar's
+ *  width, [length] its height, [opacity] how solid it is drawn (0..1); only the two corners facing
+ *  away from the screen edge are rounded. */
 @Composable
-private fun PageSideIndicator(page: Int, colorId: String) {
+private fun PageSideIndicator(
+    page: Int,
+    colorId: String,
+    thickness: Dp,
+    length: Dp,
+    opacity: Float,
+) {
     val color = headerStatusColor(colorId, MaterialTheme.colorScheme.onSurfaceVariant)
     val onRight = page % 2 == 1 // odd pages sit on the right of the paper mushaf
+    val radius = thickness / 2 // a pill cap at any thickness
     // Wrap in LTR so CenterStart/CenterEnd mean plain left/right regardless of the reader's RTL.
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Box(
@@ -1286,12 +1401,12 @@ private fun PageSideIndicator(page: Int, colorId: String) {
         ) {
             Box(
                 modifier = Modifier
-                    .size(width = 4.dp, height = 40.dp)
+                    .size(width = thickness, height = length)
                     .clip(
-                        if (onRight) RoundedCornerShape(topStart = 3.dp, bottomStart = 3.dp)
-                        else RoundedCornerShape(topEnd = 3.dp, bottomEnd = 3.dp)
+                        if (onRight) RoundedCornerShape(topStart = radius, bottomStart = radius)
+                        else RoundedCornerShape(topEnd = radius, bottomEnd = radius)
                     )
-                    .background(color.copy(alpha = 0.72f))
+                    .background(color.copy(alpha = opacity))
             )
         }
     }

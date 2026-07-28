@@ -3,6 +3,7 @@ package com.mushaf.reader.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -15,6 +16,17 @@ private val Context.dataStore by preferencesDataStore(name = "reading")
 /** Persists the last-read page (continue reading), display settings (dark theme,
  *  fill-screen), and the set of bookmarked verse keys, so the app reopens as it was left. */
 class ReadingStore(private val context: Context) {
+
+    companion object {
+        /** Thickness (dp) of the progress bars / page-side marker before the user picks another. */
+        const val DEFAULT_BAR_THICKNESS = 4
+        /** Height (dp) of the page-side marker before the user picks another one. */
+        const val DEFAULT_SIDE_INDICATOR_LENGTH = 40
+        /** Opacity (percent) of the two progress bars — fully opaque unless the user dials it down. */
+        const val DEFAULT_BAR_OPACITY = 100
+        /** The page-side marker has always been drawn a little see-through; keep that as its default. */
+        const val DEFAULT_SIDE_INDICATOR_OPACITY = 70
+    }
 
     private val keyLastPage = intPreferencesKey("last_page")
     private val keyBookmarks = stringSetPreferencesKey("bookmarks")
@@ -37,11 +49,25 @@ class ReadingStore(private val context: Context) {
     // Full-screen restore-header chip + bottom-of-page juz bar.
     private val keyShowButtonPage = booleanPreferencesKey("show_button_page")
     private val keyButtonPageColor = stringPreferencesKey("button_page_color")
+    // Where the user dragged the chip, as a 0..1 fraction of its vertical travel; -1 = never moved.
+    private val keyButtonPosFraction = floatPreferencesKey("button_pos_fraction")
     private val keyShowBottomJuzBar = booleanPreferencesKey("show_bottom_juz_bar")
     private val keyBottomJuzBarColor = stringPreferencesKey("bottom_juz_bar_color")
+    // Bar thickness in dp and opacity in percent — shared scales for both progress bars.
+    private val keyBottomJuzBarThickness = intPreferencesKey("bottom_juz_bar_thickness")
+    private val keyBottomJuzBarOpacity = intPreferencesKey("bottom_juz_bar_opacity")
+    // Top-of-page surah-progress bar (mirror of the bottom juz bar).
+    private val keyShowTopSurahBar = booleanPreferencesKey("show_top_surah_bar")
+    private val keyTopSurahBarColor = stringPreferencesKey("top_surah_bar_color")
+    private val keyTopSurahBarThickness = intPreferencesKey("top_surah_bar_thickness")
+    private val keyTopSurahBarOpacity = intPreferencesKey("top_surah_bar_opacity")
     // Full-screen edge marker for the current page's side (right vs left of the spread).
     private val keyShowPageSideIndicator = booleanPreferencesKey("show_page_side_indicator")
     private val keyPageSideIndicatorColor = stringPreferencesKey("page_side_indicator_color")
+    // Its bar width (thickness) and height (length) in dp, plus its opacity in percent.
+    private val keyPageSideIndicatorThickness = intPreferencesKey("page_side_indicator_thickness")
+    private val keyPageSideIndicatorLength = intPreferencesKey("page_side_indicator_length")
+    private val keyPageSideIndicatorOpacity = intPreferencesKey("page_side_indicator_opacity")
     // When the current (in-progress) khatma cycle began, epoch millis; 0 = not initialised yet.
     private val keyKhatmaStartedAt = longPreferencesKey("khatma_started_at")
     // Page turning direction: false = horizontal (default), true = vertical (up/down).
@@ -69,10 +95,20 @@ class ReadingStore(private val context: Context) {
         val sessionTimerColor: String,
         val showButtonPage: Boolean,
         val buttonPageColor: String,
+        val buttonPosFraction: Float,
         val showBottomJuzBar: Boolean,
         val bottomJuzBarColor: String,
+        val bottomJuzBarThickness: Int,
+        val bottomJuzBarOpacity: Int,
+        val showTopSurahBar: Boolean,
+        val topSurahBarColor: String,
+        val topSurahBarThickness: Int,
+        val topSurahBarOpacity: Int,
         val showPageSideIndicator: Boolean,
         val pageSideIndicatorColor: String,
+        val pageSideIndicatorThickness: Int,
+        val pageSideIndicatorLength: Int,
+        val pageSideIndicatorOpacity: Int,
         val khatmaStartedAt: Long,
         val verticalPaging: Boolean,
     )
@@ -98,10 +134,20 @@ class ReadingStore(private val context: Context) {
             sessionTimerColor = prefs[keySessionTimerColor] ?: "muted",
             showButtonPage = prefs[keyShowButtonPage] ?: true,
             buttonPageColor = prefs[keyButtonPageColor] ?: "red",
+            buttonPosFraction = prefs[keyButtonPosFraction] ?: -1f,
             showBottomJuzBar = prefs[keyShowBottomJuzBar] ?: false,
             bottomJuzBarColor = prefs[keyBottomJuzBarColor] ?: "blue",
+            bottomJuzBarThickness = prefs[keyBottomJuzBarThickness] ?: DEFAULT_BAR_THICKNESS,
+            bottomJuzBarOpacity = prefs[keyBottomJuzBarOpacity] ?: DEFAULT_BAR_OPACITY,
+            showTopSurahBar = prefs[keyShowTopSurahBar] ?: false,
+            topSurahBarColor = prefs[keyTopSurahBarColor] ?: "green",
+            topSurahBarThickness = prefs[keyTopSurahBarThickness] ?: DEFAULT_BAR_THICKNESS,
+            topSurahBarOpacity = prefs[keyTopSurahBarOpacity] ?: DEFAULT_BAR_OPACITY,
             showPageSideIndicator = prefs[keyShowPageSideIndicator] ?: true,
             pageSideIndicatorColor = prefs[keyPageSideIndicatorColor] ?: "green",
+            pageSideIndicatorThickness = prefs[keyPageSideIndicatorThickness] ?: DEFAULT_BAR_THICKNESS,
+            pageSideIndicatorLength = prefs[keyPageSideIndicatorLength] ?: DEFAULT_SIDE_INDICATOR_LENGTH,
+            pageSideIndicatorOpacity = prefs[keyPageSideIndicatorOpacity] ?: DEFAULT_SIDE_INDICATOR_OPACITY,
             khatmaStartedAt = prefs[keyKhatmaStartedAt] ?: 0L,
             verticalPaging = prefs[keyVerticalPaging] ?: false,
         )
@@ -182,6 +228,10 @@ class ReadingStore(private val context: Context) {
         context.dataStore.edit { it[keyButtonPageColor] = value }
     }
 
+    suspend fun setButtonPosFraction(value: Float) {
+        context.dataStore.edit { it[keyButtonPosFraction] = value }
+    }
+
     suspend fun setShowBottomJuzBar(value: Boolean) {
         context.dataStore.edit { it[keyShowBottomJuzBar] = value }
     }
@@ -190,12 +240,48 @@ class ReadingStore(private val context: Context) {
         context.dataStore.edit { it[keyBottomJuzBarColor] = value }
     }
 
+    suspend fun setBottomJuzBarThickness(value: Int) {
+        context.dataStore.edit { it[keyBottomJuzBarThickness] = value }
+    }
+
+    suspend fun setBottomJuzBarOpacity(value: Int) {
+        context.dataStore.edit { it[keyBottomJuzBarOpacity] = value }
+    }
+
+    suspend fun setShowTopSurahBar(value: Boolean) {
+        context.dataStore.edit { it[keyShowTopSurahBar] = value }
+    }
+
+    suspend fun setTopSurahBarColor(value: String) {
+        context.dataStore.edit { it[keyTopSurahBarColor] = value }
+    }
+
+    suspend fun setTopSurahBarThickness(value: Int) {
+        context.dataStore.edit { it[keyTopSurahBarThickness] = value }
+    }
+
+    suspend fun setTopSurahBarOpacity(value: Int) {
+        context.dataStore.edit { it[keyTopSurahBarOpacity] = value }
+    }
+
     suspend fun setShowPageSideIndicator(value: Boolean) {
         context.dataStore.edit { it[keyShowPageSideIndicator] = value }
     }
 
     suspend fun setPageSideIndicatorColor(value: String) {
         context.dataStore.edit { it[keyPageSideIndicatorColor] = value }
+    }
+
+    suspend fun setPageSideIndicatorThickness(value: Int) {
+        context.dataStore.edit { it[keyPageSideIndicatorThickness] = value }
+    }
+
+    suspend fun setPageSideIndicatorLength(value: Int) {
+        context.dataStore.edit { it[keyPageSideIndicatorLength] = value }
+    }
+
+    suspend fun setPageSideIndicatorOpacity(value: Int) {
+        context.dataStore.edit { it[keyPageSideIndicatorOpacity] = value }
     }
 
     suspend fun setKhatmaStartedAt(value: Long) {

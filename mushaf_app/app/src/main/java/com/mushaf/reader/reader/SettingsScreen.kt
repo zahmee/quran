@@ -102,10 +102,28 @@ fun SettingsScreen(
     onShowBottomJuzBarChange: (Boolean) -> Unit,
     bottomJuzBarColor: String,
     onBottomJuzBarColorChange: (String) -> Unit,
+    bottomJuzBarThickness: Int,
+    onBottomJuzBarThicknessChange: (Int) -> Unit,
+    bottomJuzBarOpacity: Int,
+    onBottomJuzBarOpacityChange: (Int) -> Unit,
+    showTopSurahBar: Boolean,
+    onShowTopSurahBarChange: (Boolean) -> Unit,
+    topSurahBarColor: String,
+    onTopSurahBarColorChange: (String) -> Unit,
+    topSurahBarThickness: Int,
+    onTopSurahBarThicknessChange: (Int) -> Unit,
+    topSurahBarOpacity: Int,
+    onTopSurahBarOpacityChange: (Int) -> Unit,
     showPageSideIndicator: Boolean,
     onShowPageSideIndicatorChange: (Boolean) -> Unit,
     pageSideIndicatorColor: String,
     onPageSideIndicatorColorChange: (String) -> Unit,
+    pageSideIndicatorThickness: Int,
+    onPageSideIndicatorThicknessChange: (Int) -> Unit,
+    pageSideIndicatorLength: Int,
+    onPageSideIndicatorLengthChange: (Int) -> Unit,
+    pageSideIndicatorOpacity: Int,
+    onPageSideIndicatorOpacityChange: (Int) -> Unit,
     onAbout: () -> Unit,
     onClearAllStats: () -> Unit,
     onBack: () -> Unit,
@@ -219,7 +237,7 @@ fun SettingsScreen(
 
                 SettingsPanel(
                     title = "زر إظهار رأس الصفحة",
-                    body = "الزر العائم في وضع كامل الشاشة، وشريط تقدم الجزء أسفل الصفحة.",
+                    body = "الزر العائم في وضع كامل الشاشة، وإشارة اتجاه الصفحة.",
                     icon = Icons.Outlined.WidthFull
                 ) {
                     ToggleSettingRow(
@@ -236,6 +254,63 @@ fun SettingsScreen(
                     )
                     SoftDivider()
                     ToggleSettingRow(
+                        icon = Icons.Outlined.VerticalSplit,
+                        title = "إشارة اتجاه الصفحة",
+                        body = "شريط صغير على حافة الشاشة في وضع ملء الشاشة: على اليمين للصفحة اليمنى، وعلى اليسار للصفحة اليسرى.",
+                        checked = showPageSideIndicator,
+                        onCheckedChange = onShowPageSideIndicatorChange
+                    )
+                    ColorChoiceRow(
+                        title = "لون الإشارة",
+                        selected = pageSideIndicatorColor,
+                        onSelected = onPageSideIndicatorColorChange
+                    )
+                    ThicknessChoiceRow(
+                        title = "سمك الإشارة",
+                        selected = pageSideIndicatorThickness,
+                        onSelected = onPageSideIndicatorThicknessChange
+                    )
+                    LengthChoiceRow(
+                        title = "طول الإشارة",
+                        selected = pageSideIndicatorLength,
+                        onSelected = onPageSideIndicatorLengthChange
+                    )
+                    OpacityChoiceRow(
+                        title = "شفافية الإشارة",
+                        selected = pageSideIndicatorOpacity,
+                        onSelected = onPageSideIndicatorOpacityChange
+                    )
+                }
+
+                SettingsPanel(
+                    title = "أشرطة التقدم",
+                    body = "خطان رفيعان يمتلئان من اليمين: أعلى الصفحة لتقدم السورة، وأسفلها لتقدم الجزء.",
+                    icon = Icons.Outlined.QueryStats
+                ) {
+                    ToggleSettingRow(
+                        icon = Icons.AutoMirrored.Outlined.MenuBook,
+                        title = "شريط تقدم السورة أعلى الصفحة",
+                        body = "خط رفيع فوق الصفحة يعرض موضعك داخل السورة التي تقرؤها.",
+                        checked = showTopSurahBar,
+                        onCheckedChange = onShowTopSurahBarChange
+                    )
+                    ColorChoiceRow(
+                        title = "لون الشريط العلوي",
+                        selected = topSurahBarColor,
+                        onSelected = onTopSurahBarColorChange
+                    )
+                    ThicknessChoiceRow(
+                        title = "سمك الشريط العلوي",
+                        selected = topSurahBarThickness,
+                        onSelected = onTopSurahBarThicknessChange
+                    )
+                    OpacityChoiceRow(
+                        title = "شفافية الشريط العلوي",
+                        selected = topSurahBarOpacity,
+                        onSelected = onTopSurahBarOpacityChange
+                    )
+                    SoftDivider()
+                    ToggleSettingRow(
                         icon = Icons.Outlined.WidthFull,
                         title = "شريط تقدم الجزء أسفل الصفحة",
                         body = "شريط رفيع ثابت في أسفل الصفحة يعرض تقدمك في الجزء الحالي.",
@@ -247,18 +322,15 @@ fun SettingsScreen(
                         selected = bottomJuzBarColor,
                         onSelected = onBottomJuzBarColorChange
                     )
-                    SoftDivider()
-                    ToggleSettingRow(
-                        icon = Icons.Outlined.VerticalSplit,
-                        title = "إشارة اتجاه الصفحة",
-                        body = "شريط صغير على حافة الشاشة في وضع ملء الشاشة: على اليمين للصفحة اليمنى، وعلى اليسار للصفحة اليسرى.",
-                        checked = showPageSideIndicator,
-                        onCheckedChange = onShowPageSideIndicatorChange
+                    ThicknessChoiceRow(
+                        title = "سمك الشريط السفلي",
+                        selected = bottomJuzBarThickness,
+                        onSelected = onBottomJuzBarThicknessChange
                     )
-                    ColorChoiceRow(
-                        title = "لون الإشارة",
-                        selected = pageSideIndicatorColor,
-                        onSelected = onPageSideIndicatorColorChange
+                    OpacityChoiceRow(
+                        title = "شفافية الشريط السفلي",
+                        selected = bottomJuzBarOpacity,
+                        onSelected = onBottomJuzBarOpacityChange
                     )
                 }
                 }
@@ -699,6 +771,342 @@ private data class HeaderColorChoice(
     val id: String,
     val label: String,
     val color: Color,
+)
+
+/** Bar-thickness picker, same dropdown shape as [ColorChoiceRow]. Each choice carries a sample line
+ *  drawn at its own thickness, so the pick is visible before it is applied to the page. */
+@Composable
+private fun ThicknessChoiceRow(
+    title: String,
+    selected: Int,
+    onSelected: (Int) -> Unit,
+) {
+    val choices = listOf(
+        BarThicknessChoice(2, "رفيع جداً"),
+        BarThicknessChoice(4, "رفيع"),
+        BarThicknessChoice(6, "متوسط"),
+        BarThicknessChoice(9, "سميك"),
+        BarThicknessChoice(12, "عريض"),
+    )
+    val accent = MaterialTheme.colorScheme.primary
+    // Only this list ever writes the setting, so an unknown value can't normally show up; fall back
+    // to the default thickness (4.dp) if it somehow does.
+    val current = choices.firstOrNull { it.thickness == selected } ?: choices[1]
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 2.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+        Box {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = accent.copy(alpha = 0.10f),
+                border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
+                modifier = Modifier.clickable { expanded = true }
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ThicknessSample(current.thickness, accent)
+                    Text(
+                        text = current.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = accent
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.ArrowDropDown,
+                        contentDescription = "اختيار السمك",
+                        tint = accent
+                    )
+                }
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                choices.forEach { choice ->
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                ThicknessSample(
+                                    thickness = choice.thickness,
+                                    color = if (choice.thickness == selected) accent
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = choice.label,
+                                    color = if (choice.thickness == selected) accent
+                                    else MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = if (choice.thickness == selected) FontWeight.SemiBold
+                                    else FontWeight.Normal
+                                )
+                            }
+                        },
+                        trailingIcon = if (choice.thickness == selected) {
+                            { Icon(Icons.Filled.Check, contentDescription = null, tint = accent) }
+                        } else null,
+                        onClick = {
+                            expanded = false
+                            onSelected(choice.thickness)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** A short line rendered at [thickness] dp — the visual half of a thickness choice. */
+@Composable
+private fun ThicknessSample(thickness: Int, color: Color) {
+    Surface(
+        modifier = Modifier
+            .width(24.dp)
+            .height(thickness.dp),
+        shape = RoundedCornerShape(50),
+        color = color
+    ) {}
+}
+
+private data class BarThicknessChoice(
+    val thickness: Int,
+    val label: String,
+)
+
+/** Length picker for the page-side marker — same dropdown shape as [ThicknessChoiceRow], but the
+ *  sample stands upright like the marker itself. */
+@Composable
+private fun LengthChoiceRow(
+    title: String,
+    selected: Int,
+    onSelected: (Int) -> Unit,
+) {
+    val choices = listOf(
+        BarLengthChoice(24, "قصير جداً"),
+        BarLengthChoice(40, "قصير"),
+        BarLengthChoice(64, "متوسط"),
+        BarLengthChoice(96, "طويل"),
+        BarLengthChoice(140, "ممتد"),
+    )
+    val accent = MaterialTheme.colorScheme.primary
+    // Only this list ever writes the setting; fall back to the default length (40.dp) otherwise.
+    val current = choices.firstOrNull { it.length == selected } ?: choices[1]
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 2.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+        Box {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = accent.copy(alpha = 0.10f),
+                border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
+                modifier = Modifier.clickable { expanded = true }
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    LengthSample(current.length, accent)
+                    Text(
+                        text = current.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = accent
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.ArrowDropDown,
+                        contentDescription = "اختيار الطول",
+                        tint = accent
+                    )
+                }
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                choices.forEach { choice ->
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                LengthSample(
+                                    length = choice.length,
+                                    color = if (choice.length == selected) accent
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = choice.label,
+                                    color = if (choice.length == selected) accent
+                                    else MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = if (choice.length == selected) FontWeight.SemiBold
+                                    else FontWeight.Normal
+                                )
+                            }
+                        },
+                        trailingIcon = if (choice.length == selected) {
+                            { Icon(Icons.Filled.Check, contentDescription = null, tint = accent) }
+                        } else null,
+                        onClick = {
+                            expanded = false
+                            onSelected(choice.length)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** An upright bar standing for a marker [length]. Drawn at a quarter scale so even the longest
+ *  choice still fits on one settings row while the choices stay visibly different from each other. */
+@Composable
+private fun LengthSample(length: Int, color: Color) {
+    Surface(
+        modifier = Modifier
+            .width(4.dp)
+            .height((length / 4).dp),
+        shape = RoundedCornerShape(50),
+        color = color
+    ) {}
+}
+
+private data class BarLengthChoice(
+    val length: Int,
+    val label: String,
+)
+
+/** Opacity picker (percent), same dropdown shape as the others. The sample swatch is drawn at the
+ *  chosen opacity over the row's own background, so «شفاف» reads as barely-there and «معتم» as solid. */
+@Composable
+private fun OpacityChoiceRow(
+    title: String,
+    selected: Int,
+    onSelected: (Int) -> Unit,
+) {
+    val choices = listOf(
+        BarOpacityChoice(25, "شفاف جداً"),
+        BarOpacityChoice(50, "شفاف"),
+        BarOpacityChoice(70, "متوسط"),
+        BarOpacityChoice(85, "خفيف"),
+        BarOpacityChoice(100, "معتم"),
+    )
+    val accent = MaterialTheme.colorScheme.primary
+    // Only this list ever writes the setting; fall back to fully opaque if an odd value appears.
+    val current = choices.firstOrNull { it.opacity == selected } ?: choices.last()
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 2.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+        Box {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = accent.copy(alpha = 0.10f),
+                border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
+                modifier = Modifier.clickable { expanded = true }
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OpacitySample(current.opacity, accent)
+                    Text(
+                        text = current.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = accent
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.ArrowDropDown,
+                        contentDescription = "اختيار الشفافية",
+                        tint = accent
+                    )
+                }
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                choices.forEach { choice ->
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                OpacitySample(
+                                    opacity = choice.opacity,
+                                    color = if (choice.opacity == selected) accent
+                                    else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "${choice.label} (${choice.opacity.toArabicDigits()}٪)",
+                                    color = if (choice.opacity == selected) accent
+                                    else MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = if (choice.opacity == selected) FontWeight.SemiBold
+                                    else FontWeight.Normal
+                                )
+                            }
+                        },
+                        trailingIcon = if (choice.opacity == selected) {
+                            { Icon(Icons.Filled.Check, contentDescription = null, tint = accent) }
+                        } else null,
+                        onClick = {
+                            expanded = false
+                            onSelected(choice.opacity)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** A small filled dot drawn at [opacity] percent — the visual half of an opacity choice. */
+@Composable
+private fun OpacitySample(opacity: Int, color: Color) {
+    Surface(
+        modifier = Modifier.size(16.dp),
+        shape = CircleShape,
+        color = color.copy(alpha = opacity / 100f)
+    ) {}
+}
+
+private data class BarOpacityChoice(
+    val opacity: Int,
+    val label: String,
 )
 
 @Composable

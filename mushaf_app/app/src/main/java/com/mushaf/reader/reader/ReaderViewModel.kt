@@ -113,18 +113,54 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var buttonPageColor by mutableStateOf(initialSettings.buttonPageColor)
         private set
 
-    /** Thin juz-progress bar pinned to the bottom of the page, and its color. */
+    /** Where the user parked the full-screen chip, as a 0..1 fraction of its vertical travel
+     *  (0 = just under the top inset, 1 = bottom edge); -1 = never moved, so it rests at the top.
+     *  A fraction — not pixels — so the spot holds across rotation and different screen sizes. */
+    var buttonPosFraction by mutableStateOf(initialSettings.buttonPosFraction)
+        private set
+
+    /** Thin juz-progress bar pinned to the bottom of the page, its color, and its thickness (dp). */
     var showBottomJuzBar by mutableStateOf(initialSettings.showBottomJuzBar)
         private set
 
     var bottomJuzBarColor by mutableStateOf(initialSettings.bottomJuzBarColor)
         private set
 
-    /** Full-screen edge marker for the current page's side (right/left of the spread), and its color. */
+    var bottomJuzBarThickness by mutableStateOf(initialSettings.bottomJuzBarThickness)
+        private set
+
+    /** How solid the bar is drawn, 0..100 percent. */
+    var bottomJuzBarOpacity by mutableStateOf(initialSettings.bottomJuzBarOpacity)
+        private set
+
+    /** Thin surah-progress bar sitting just above the page, its color, and its thickness (dp). */
+    var showTopSurahBar by mutableStateOf(initialSettings.showTopSurahBar)
+        private set
+
+    var topSurahBarColor by mutableStateOf(initialSettings.topSurahBarColor)
+        private set
+
+    var topSurahBarThickness by mutableStateOf(initialSettings.topSurahBarThickness)
+        private set
+
+    var topSurahBarOpacity by mutableStateOf(initialSettings.topSurahBarOpacity)
+        private set
+
+    /** Full-screen edge marker for the current page's side (right/left of the spread): whether it
+     *  shows, its color, and its bar width (thickness) and height (length) in dp. */
     var showPageSideIndicator by mutableStateOf(initialSettings.showPageSideIndicator)
         private set
 
     var pageSideIndicatorColor by mutableStateOf(initialSettings.pageSideIndicatorColor)
+        private set
+
+    var pageSideIndicatorThickness by mutableStateOf(initialSettings.pageSideIndicatorThickness)
+        private set
+
+    var pageSideIndicatorLength by mutableStateOf(initialSettings.pageSideIndicatorLength)
+        private set
+
+    var pageSideIndicatorOpacity by mutableStateOf(initialSettings.pageSideIndicatorOpacity)
         private set
 
     /** When the current (in-progress) khatma cycle began, epoch millis. */
@@ -292,6 +328,17 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setButtonPageColor(value) }
     }
 
+    /** Live drag of the full-screen chip: memory only, so it tracks the finger without a disk
+     *  write per pixel. [saveButtonPosFraction] commits the spot when the finger lifts. */
+    fun dragButtonPosFraction(value: Float) {
+        buttonPosFraction = value.coerceIn(0f, 1f)
+    }
+
+    fun saveButtonPosFraction() {
+        val value = buttonPosFraction
+        viewModelScope.launch { store.setButtonPosFraction(value) }
+    }
+
     fun updateShowBottomJuzBar(value: Boolean) {
         if (value == showBottomJuzBar) return
         showBottomJuzBar = value
@@ -304,6 +351,42 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setBottomJuzBarColor(value) }
     }
 
+    fun updateBottomJuzBarThickness(value: Int) {
+        if (value == bottomJuzBarThickness) return
+        bottomJuzBarThickness = value
+        viewModelScope.launch { store.setBottomJuzBarThickness(value) }
+    }
+
+    fun updateBottomJuzBarOpacity(value: Int) {
+        if (value == bottomJuzBarOpacity) return
+        bottomJuzBarOpacity = value
+        viewModelScope.launch { store.setBottomJuzBarOpacity(value) }
+    }
+
+    fun updateShowTopSurahBar(value: Boolean) {
+        if (value == showTopSurahBar) return
+        showTopSurahBar = value
+        viewModelScope.launch { store.setShowTopSurahBar(value) }
+    }
+
+    fun updateTopSurahBarColor(value: String) {
+        if (value == topSurahBarColor) return
+        topSurahBarColor = value
+        viewModelScope.launch { store.setTopSurahBarColor(value) }
+    }
+
+    fun updateTopSurahBarThickness(value: Int) {
+        if (value == topSurahBarThickness) return
+        topSurahBarThickness = value
+        viewModelScope.launch { store.setTopSurahBarThickness(value) }
+    }
+
+    fun updateTopSurahBarOpacity(value: Int) {
+        if (value == topSurahBarOpacity) return
+        topSurahBarOpacity = value
+        viewModelScope.launch { store.setTopSurahBarOpacity(value) }
+    }
+
     fun updateShowPageSideIndicator(value: Boolean) {
         if (value == showPageSideIndicator) return
         showPageSideIndicator = value
@@ -314,6 +397,24 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         if (value == pageSideIndicatorColor) return
         pageSideIndicatorColor = value
         viewModelScope.launch { store.setPageSideIndicatorColor(value) }
+    }
+
+    fun updatePageSideIndicatorThickness(value: Int) {
+        if (value == pageSideIndicatorThickness) return
+        pageSideIndicatorThickness = value
+        viewModelScope.launch { store.setPageSideIndicatorThickness(value) }
+    }
+
+    fun updatePageSideIndicatorLength(value: Int) {
+        if (value == pageSideIndicatorLength) return
+        pageSideIndicatorLength = value
+        viewModelScope.launch { store.setPageSideIndicatorLength(value) }
+    }
+
+    fun updatePageSideIndicatorOpacity(value: Int) {
+        if (value == pageSideIndicatorOpacity) return
+        pageSideIndicatorOpacity = value
+        viewModelScope.launch { store.setPageSideIndicatorOpacity(value) }
     }
 
     fun assetModel(pageNumber: Int): String = pageRepo.assetUri(pageNumber, darkTheme)
