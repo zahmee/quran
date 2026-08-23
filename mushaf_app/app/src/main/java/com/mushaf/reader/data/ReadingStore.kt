@@ -26,6 +26,8 @@ class ReadingStore(private val context: Context) {
         const val DEFAULT_BAR_OPACITY = 100
         /** The page-side marker has always been drawn a little see-through; keep that as its default. */
         const val DEFAULT_SIDE_INDICATOR_OPACITY = 70
+        /** Keep the restore-header button at its current visual strength until the user changes it. */
+        const val DEFAULT_SHOW_HEADER_BUTTON_OPACITY = 100
     }
 
     private val keyLastPage = intPreferencesKey("last_page")
@@ -49,6 +51,7 @@ class ReadingStore(private val context: Context) {
     // Full-screen restore-header chip + bottom-of-page juz bar.
     private val keyShowButtonPage = booleanPreferencesKey("show_button_page")
     private val keyButtonPageColor = stringPreferencesKey("button_page_color")
+    private val keyShowHeaderButtonOpacity = intPreferencesKey("show_header_button_opacity")
     // Where the user dragged the chip, as a 0..1 fraction of its vertical travel; -1 = never moved.
     private val keyButtonPosFraction = floatPreferencesKey("button_pos_fraction")
     private val keyShowBottomJuzBar = booleanPreferencesKey("show_bottom_juz_bar")
@@ -95,6 +98,7 @@ class ReadingStore(private val context: Context) {
         val sessionTimerColor: String,
         val showButtonPage: Boolean,
         val buttonPageColor: String,
+        val showHeaderButtonOpacity: Int,
         val buttonPosFraction: Float,
         val showBottomJuzBar: Boolean,
         val bottomJuzBarColor: String,
@@ -134,6 +138,9 @@ class ReadingStore(private val context: Context) {
             sessionTimerColor = prefs[keySessionTimerColor] ?: "muted",
             showButtonPage = prefs[keyShowButtonPage] ?: true,
             buttonPageColor = prefs[keyButtonPageColor] ?: "red",
+            showHeaderButtonOpacity = (
+                prefs[keyShowHeaderButtonOpacity] ?: DEFAULT_SHOW_HEADER_BUTTON_OPACITY
+            ).coerceIn(25, 100),
             buttonPosFraction = prefs[keyButtonPosFraction] ?: -1f,
             showBottomJuzBar = prefs[keyShowBottomJuzBar] ?: false,
             bottomJuzBarColor = prefs[keyBottomJuzBarColor] ?: "blue",
@@ -226,6 +233,10 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setButtonPageColor(value: String) {
         context.dataStore.edit { it[keyButtonPageColor] = value }
+    }
+
+    suspend fun setShowHeaderButtonOpacity(value: Int) {
+        context.dataStore.edit { it[keyShowHeaderButtonOpacity] = value.coerceIn(25, 100) }
     }
 
     suspend fun setButtonPosFraction(value: Float) {

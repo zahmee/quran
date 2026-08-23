@@ -14,14 +14,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Business
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -32,9 +30,7 @@ import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -49,6 +45,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.mushaf.reader.R
+import com.mushaf.reader.ui.components.MushafIconBadge
+import com.mushaf.reader.ui.components.MushafPanel
+import com.mushaf.reader.ui.components.MushafSectionHeader
+import com.mushaf.reader.ui.components.MushafSoftDivider
+import com.mushaf.reader.ui.components.MushafTopBar
 
 /** "About" screen: app identity, trust notes, and Mushaf source attribution. */
 @Composable
@@ -62,25 +63,7 @@ fun AboutScreen(onBack: () -> Unit) {
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top bar
-            Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
-                    }
-                    Text(
-                        text = "حول التطبيق",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
+            MushafTopBar(title = "حول التطبيق", onBack = onBack)
 
             Column(
                 modifier = Modifier
@@ -104,7 +87,7 @@ fun AboutScreen(onBack: () -> Unit) {
                 AppIdentityPanel(versionName)
                 TrustPanel()
                 MushafSourcePanel(
-                    onVisitSite = { openWeb("https://qurancomplex.gov.sa") }
+                    onVisitSite = { openWeb("https://qurancomplex.gov.sa/quran-dev/") }
                 )
                 DeveloperPanel(
                     onVisitSite = { openWeb("https://cdit.co") }
@@ -271,8 +254,8 @@ private fun MushafSourcePanel(onVisitSite: () -> Unit) {
     Panel {
         InfoHeader(
             icon = Icons.Outlined.Verified,
-            title = "مصدر المصحف",
-            body = "تعتمد صفحات المصحف على نسخة من مصحف المدينة المنورة، الصادر عن مجمع الملك فهد لطباعة المصحف الشريف."
+            title = "مصادر المصحف والمحتوى",
+            body = "تعتمد صفحات المصحف على نسخة من مصحف المدينة المنورة. ويستخدم التطبيق «التفسير الميسر» (الإصدار 3.0) و«الميسر في غريب القرآن الكريم» (الطبعة الثانية)، وجميعها صادرة عن مجمع الملك فهد لطباعة المصحف الشريف."
         )
 
         Spacer(Modifier.height(14.dp))
@@ -309,24 +292,7 @@ private fun InfoRow(icon: ImageVector, title: String, body: String) {
 
 @Composable
 private fun InfoHeader(icon: ImageVector, title: String, body: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        IconBadge(icon)
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = body,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
+    MushafSectionHeader(title = title, subtitle = body, icon = icon)
 }
 
 @Composable
@@ -352,42 +318,19 @@ private fun ActionButton(text: String, icon: ImageVector, onClick: () -> Unit) {
 
 @Composable
 private fun IconBadge(icon: ImageVector) {
-    Surface(
-        modifier = Modifier.size(36.dp),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(8.dp)
-        )
-    }
+    MushafIconBadge(icon = icon)
 }
 
 @Composable
 private fun SoftDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(vertical = 12.dp),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-    )
+    MushafSoftDivider(verticalPadding = 12.dp)
 }
 
 // --- small UI helpers (kept local to match the app's per-screen card style) ---
 
 @Composable
 private fun Panel(content: @Composable ColumnScope.() -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        shadowElevation = 0.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-    ) {
-        Column(modifier = Modifier.padding(18.dp), content = content)
-    }
+    MushafPanel(content = content)
 }
 
 @Composable

@@ -17,14 +17,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.AccessTime
@@ -66,6 +64,9 @@ import com.mushaf.reader.data.stats.DayStat
 import com.mushaf.reader.data.stats.FullStats
 import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.SessionEntity
+import com.mushaf.reader.ui.components.MushafPanel
+import com.mushaf.reader.ui.components.MushafSegmentedTabs
+import com.mushaf.reader.ui.components.MushafTopBar
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -90,7 +91,7 @@ fun StatsScreen(
 
     Surface(modifier = Modifier.fillMaxSize(), color = colors.page) {
         Column(modifier = Modifier.fillMaxSize()) {
-            StatsTopBar(tab = tab, onTabChange = { tab = it }, onBack = onBack, colors = colors)
+            StatsTopBar(tab = tab, onTabChange = { tab = it }, onBack = onBack)
             when (tab) {
                 0 -> OverviewTab(
                     stats = stats,
@@ -157,77 +158,18 @@ private fun StatsTopBar(
     tab: Int,
     onTabChange: (Int) -> Unit,
     onBack: () -> Unit,
-    colors: StatsColors,
 ) {
-    Surface(color = colors.header, shadowElevation = 4.dp) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع", tint = colors.ink)
-                }
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-                    Text(
-                        "إحصائيات القراءة",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.ink,
-                    )
-                    Text(
-                        "لوحة هادئة لمتابعة الورد والختمة",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = colors.muted,
-                    )
-                }
-            }
-            SegmentedTabs(tab = tab, onTabChange = onTabChange, colors = colors)
-        }
-    }
-}
-
-@Composable
-private fun SegmentedTabs(tab: Int, onTabChange: (Int) -> Unit, colors: StatsColors) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(colors.track)
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        TabPill("ملخص", selected = tab == 0, colors = colors, modifier = Modifier.weight(1f)) { onTabChange(0) }
-        TabPill("التقويم", selected = tab == 1, colors = colors, modifier = Modifier.weight(1f)) { onTabChange(1) }
-        TabPill("السجل", selected = tab == 2, colors = colors, modifier = Modifier.weight(1f)) { onTabChange(2) }
-    }
-}
-
-@Composable
-private fun TabPill(
-    label: String,
-    selected: Boolean,
-    colors: StatsColors,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        color = if (selected) colors.card else Color.Transparent,
-        contentColor = if (selected) colors.primary else colors.muted,
-        shadowElevation = if (selected) 1.dp else 0.dp,
-    ) {
-        Text(
-            label,
-            modifier = Modifier.padding(vertical = 10.dp),
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
+    Column {
+        MushafTopBar(
+            title = "إحصائيات القراءة",
+            subtitle = "متابعة الورد والختمة والجلسات",
+            onBack = onBack,
+        )
+        MushafSegmentedTabs(
+            labels = listOf("ملخص", "التقويم", "السجل"),
+            selectedIndex = tab,
+            onSelected = onTabChange,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
         )
     }
 }
@@ -1163,15 +1105,7 @@ private fun SessionRow(timeLabel: String, valueLabel: String, colors: StatsColor
 
 @Composable
 private fun StatsCard(colors: StatsColors, content: @Composable ColumnScope.() -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = colors.card,
-        tonalElevation = 1.dp,
-        shadowElevation = 1.dp,
-    ) {
-        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.Start, content = content)
-    }
+    MushafPanel(containerColor = colors.card, content = content)
 }
 
 @Composable
@@ -1211,63 +1145,34 @@ private fun IconBubble(icon: ImageVector, colors: StatsColors) {
 
 @Composable
 private fun statsPalette(): StatsColors {
-    val dark = MaterialTheme.colorScheme.background.luminanceApprox() < 0.35f
-    return if (dark) {
-        StatsColors(
-            page = Color(0xFF101211),
-            header = Color(0xFF151917),
-            card = Color(0xFF1A201D),
-            tile = Color(0xFF242C27),
-            subtle = Color(0xFF202622),
-            track = Color(0xFF2B342F),
-            divider = Color(0xFF303932),
-            ink = Color(0xFFEFF4EE),
-            muted = Color(0xFFAEB9B1),
-            primary = Color(0xFF70D59D),
-            secondary = Color(0xFF568D74),
-            warm = Color(0xFFE0AA59),
-            onPrimary = Color(0xFF0B1A12),
-            heroStart = Color(0xFF173928),
-            heroEnd = Color(0xFF12211B),
-            heroInk = Color(0xFFF2F8F1),
-            heroMuted = Color(0xFFC6D8CB),
-            heroAccent = Color(0xFFE2C56D),
-            heroButton = Color(0x3325372F),
-            heroFact = Color(0xFF253C31),
-            heroFactInk = Color(0xFFF2F8F1),
-            heroFactMuted = Color(0xFFC6D8CB),
-        )
-    } else {
-        StatsColors(
-            page = Color(0xFFF6F0E5),
-            header = Color(0xFFFBF7EF),
-            card = Color(0xFFFFFCF6),
-            tile = Color(0xFFF0E7D8),
-            subtle = Color(0xFFF5EDE0),
-            track = Color(0xFFE6DBC9),
-            divider = Color(0xFFE7DCCB),
-            ink = Color(0xFF1E211C),
-            muted = Color(0xFF777064),
-            primary = Color(0xFF1F7A5A),
-            secondary = Color(0xFF97B7A2),
-            warm = Color(0xFFC4832E),
-            onPrimary = Color.White,
-            heroStart = Color(0xFF174D37),
-            heroEnd = Color(0xFF1F7A5A),
-            heroInk = Color.White,
-            heroMuted = Color(0xFFDDECE2),
-            heroAccent = Color(0xFFE5C86C),
-            heroButton = Color(0x26FFFFFF),
-            heroFact = Color(0xFFE9F2EA),
-            heroFactInk = Color(0xFF104D37),
-            heroFactMuted = Color(0xFF4D765F),
-        )
-    }
+    val scheme = MaterialTheme.colorScheme
+    return StatsColors(
+        page = scheme.background,
+        card = scheme.surface,
+        tile = scheme.surfaceContainerHigh,
+        subtle = scheme.surfaceContainerLow,
+        track = scheme.outlineVariant,
+        divider = scheme.outlineVariant,
+        ink = scheme.onSurface,
+        muted = scheme.onSurfaceVariant,
+        primary = scheme.primary,
+        secondary = scheme.tertiary,
+        warm = scheme.secondary,
+        onPrimary = scheme.onPrimary,
+        heroStart = scheme.primaryContainer,
+        heroEnd = scheme.primaryContainer,
+        heroInk = scheme.onPrimaryContainer,
+        heroMuted = scheme.onPrimaryContainer.copy(alpha = 0.72f),
+        heroAccent = scheme.secondary,
+        heroButton = scheme.surfaceVariant,
+        heroFact = scheme.surfaceVariant,
+        heroFactInk = scheme.onSurface,
+        heroFactMuted = scheme.onSurfaceVariant,
+    )
 }
 
 private data class StatsColors(
     val page: Color,
-    val header: Color,
     val card: Color,
     val tile: Color,
     val subtle: Color,
@@ -1289,9 +1194,6 @@ private data class StatsColors(
     val heroFactInk: Color,
     val heroFactMuted: Color,
 )
-
-private fun Color.luminanceApprox(): Float =
-    (red * 0.299f + green * 0.587f + blue * 0.114f)
 
 private fun formatPace(pagesPerMinute: Double): String {
     if (pagesPerMinute <= 0.0) return "-"

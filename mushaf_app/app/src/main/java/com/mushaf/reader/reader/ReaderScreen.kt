@@ -36,17 +36,19 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerScope
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
@@ -63,16 +65,19 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -102,7 +107,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -112,6 +120,15 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.mushaf.reader.ui.components.MushafSegmentedTabs
+import com.mushaf.reader.ui.theme.BookmarkGoldColor
+import com.mushaf.reader.ui.theme.BookmarkVioletColor
+import com.mushaf.reader.ui.theme.ReadingType
+import com.mushaf.reader.ui.theme.StatusBlueColor
+import com.mushaf.reader.ui.theme.StatusGoldColor
+import com.mushaf.reader.ui.theme.StatusGreenColor
+import com.mushaf.reader.ui.theme.StatusRedColor
 import com.mushaf.reader.data.AyahMarker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -261,6 +278,7 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                     page = pagerState.currentPage + 1,
                     showPage = viewModel.showButtonPage,
                     pageColorId = viewModel.buttonPageColor,
+                    opacity = viewModel.showHeaderButtonOpacity / 100f,
                     posFraction = viewModel.buttonPosFraction,
                     onDrag = viewModel::dragButtonPosFraction,
                     onDragEnd = viewModel::saveButtonPosFraction,
@@ -382,6 +400,8 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 onShowButtonPageChange = { viewModel.updateShowButtonPage(it) },
                 buttonPageColor = viewModel.buttonPageColor,
                 onButtonPageColorChange = { viewModel.updateButtonPageColor(it) },
+                showHeaderButtonOpacity = viewModel.showHeaderButtonOpacity,
+                onShowHeaderButtonOpacityChange = { viewModel.updateShowHeaderButtonOpacity(it) },
                 showBottomJuzBar = viewModel.showBottomJuzBar,
                 onShowBottomJuzBarChange = { viewModel.updateShowBottomJuzBar(it) },
                 bottomJuzBarColor = viewModel.bottomJuzBarColor,
@@ -431,6 +451,16 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
     }
 }
 
+private enum class ExplanationTab(val title: String) {
+    Tafsir("التفسير الميسر"),
+    Meanings("معاني الكلمات"),
+}
+
+private data class ExplanationRequest(
+    val ayah: AyahMarker,
+    val initialTab: ExplanationTab,
+)
+
 @Composable
 private fun ReaderPager(
     modifier: Modifier,
@@ -441,6 +471,14 @@ private fun ReaderPager(
     verticalPaging: Boolean,
 ) {
     var anchor by remember { mutableStateOf(Offset.Zero) }
+    var longPressAyah by remember { mutableStateOf<AyahMarker?>(null) }
+    var explanationRequest by remember { mutableStateOf<ExplanationRequest?>(null) }
+
+    LaunchedEffect(selected) {
+        if (selected == null) {
+            longPressAyah = null
+        }
+    }
 
     BoxWithConstraints(modifier = modifier) {
         val boxW = constraints.maxWidth
@@ -457,11 +495,11 @@ private fun ReaderPager(
                 selectedAyah = selected,
                 bookmarkedKeys = if (viewModel.isButtonVisible("bookmark")) viewModel.bookmarks else emptySet(),
                 bookmarkedKeys2 = if (viewModel.isButtonVisible("bookmark2")) viewModel.bookmarks2 else emptySet(),
-                onSelectAyah = { m, off ->
-                    viewModel.selectAyah(if (viewModel.selectedAyah == m) null else m)
+                onLongPressAyah = { m, off ->
+                    viewModel.selectAyah(m)
                     anchor = off
+                    longPressAyah = m
                 },
-                onEmptyTap = { },
                 fillScreen = fillScreen
             )
         }
@@ -482,19 +520,45 @@ private fun ReaderPager(
             )
         }
 
-        if (selected != null) {
-            AyahFloatingMenu(
-                ayah = selected,
+        longPressAyah?.let { ayah ->
+            AyahLongPressMenu(
+                ayah = ayah,
                 anchor = anchor,
                 boxWidthPx = boxW,
                 boxHeightPx = boxH,
-                bookmarked = viewModel.isBookmarked(selected.verseKey),
-                onBookmark = { viewModel.toggleBookmark(selected) },
+                bookmarked = viewModel.isBookmarked(ayah.verseKey),
+                onBookmark = { viewModel.toggleBookmark(ayah) },
                 showBookmark = viewModel.isButtonVisible("bookmark"),
-                bookmarked2 = viewModel.isBookmarked2(selected.verseKey),
-                onBookmark2 = { viewModel.toggleBookmark2(selected) },
+                bookmarked2 = viewModel.isBookmarked2(ayah.verseKey),
+                onBookmark2 = { viewModel.toggleBookmark2(ayah) },
                 showBookmark2 = viewModel.isButtonVisible("bookmark2"),
-                onClose = { viewModel.clearSelection() }
+                onTafsir = {
+                    longPressAyah = null
+                    viewModel.loadExplanation(ayah)
+                    explanationRequest = ExplanationRequest(ayah, ExplanationTab.Tafsir)
+                },
+                onMeanings = {
+                    longPressAyah = null
+                    viewModel.loadExplanation(ayah)
+                    explanationRequest = ExplanationRequest(ayah, ExplanationTab.Meanings)
+                },
+                onClose = {
+                    longPressAyah = null
+                    viewModel.clearSelection()
+                },
+            )
+        }
+
+        explanationRequest?.let { request ->
+            AyahExplanationSheet(
+                request = request,
+                state = viewModel.explanationState,
+                onRetry = { viewModel.loadExplanation(request.ayah) },
+                onDismiss = {
+                    explanationRequest = null
+                    viewModel.clearExplanation()
+                    viewModel.clearSelection()
+                },
             )
         }
     }
@@ -538,8 +602,8 @@ private fun ReaderHeader(
     onStats: () -> Unit,
     onPageClick: () -> Unit,
 ) {
-    val headerColor = if (dark) Color(0xFF202020) else MaterialTheme.colorScheme.surface
-    val contentColor = if (dark) Color(0xFFEDEDED) else MaterialTheme.colorScheme.onSurface
+    val headerColor = MaterialTheme.colorScheme.surface
+    val contentColor = MaterialTheme.colorScheme.onSurface
     val quietContentColor = contentColor.copy(alpha = 0.68f)
     val activeContentColor = MaterialTheme.colorScheme.primary
     val clockTextColor = headerStatusColor(clockColor, quietContentColor)
@@ -658,6 +722,16 @@ private fun ReaderHeader(
                             modifier = Modifier.padding(horizontal = 6.dp)
                         )
                     }
+                    if (isVisible("fill")) {
+                        IconButton(onClick = onToggleFillScreen, modifier = Modifier.size(btnSize)) {
+                            Icon(
+                                imageVector = if (fillScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                                contentDescription = if (fillScreen) "عرض الصفحة كاملة" else "توسيع الصفحة",
+                                tint = if (fillScreen) activeContentColor else quietContentColor,
+                                modifier = Modifier.size(iconSize),
+                            )
+                        }
+                    }
                     if (isVisible("hide")) {
                         IconButton(onClick = onHideHeader, modifier = Modifier.size(btnSize)) {
                             Icon(
@@ -672,11 +746,9 @@ private fun ReaderHeader(
                         btnSize = btnSize,
                         iconSize = iconSize,
                         tint = quietContentColor,
-                        activeContentColor = activeContentColor,
                         quietContentColor = quietContentColor,
                         hasBookmark = hasBookmark,
                         hasBookmark2 = hasBookmark2,
-                        fillScreen = fillScreen,
                         dark = dark,
                         isVisible = isVisible,
                         onOpenSearch = onOpenSearch,
@@ -684,7 +756,6 @@ private fun ReaderHeader(
                         onBookmark2Jump = onBookmark2Jump,
                         onStats = onStats,
                         onOpenIndex = onOpenIndex,
-                        onToggleFillScreen = onToggleFillScreen,
                         onToggleTheme = onToggleTheme
                     )
                 }
@@ -718,7 +789,7 @@ private fun ReaderHeader(
                             modifier = Modifier.size(iconSize)
                         )
                     }
-                    // Optional live wall-clock (red), shown right after the fill-screen button.
+                    // Optional live wall-clock, shown beside the always-available settings button.
                     if (showClock) {
                         Text(
                             text = formatClock(nowMs),
@@ -744,6 +815,16 @@ private fun ReaderHeader(
                             modifier = Modifier.padding(horizontal = 6.dp)
                         )
                     }
+                    if (isVisible("fill")) {
+                        IconButton(onClick = onToggleFillScreen, modifier = Modifier.size(btnSize)) {
+                            Icon(
+                                imageVector = if (fillScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                                contentDescription = if (fillScreen) "عرض الصفحة كاملة" else "توسيع الصفحة",
+                                tint = if (fillScreen) activeContentColor else quietContentColor,
+                                modifier = Modifier.size(iconSize),
+                            )
+                        }
+                    }
                     if (isVisible("hide")) IconButton(onClick = onHideHeader, modifier = Modifier.size(btnSize)) {
                         Icon(
                             imageVector = Icons.Filled.KeyboardArrowUp,
@@ -756,11 +837,9 @@ private fun ReaderHeader(
                         btnSize = btnSize,
                         iconSize = iconSize,
                         tint = quietContentColor,
-                        activeContentColor = activeContentColor,
                         quietContentColor = quietContentColor,
                         hasBookmark = hasBookmark,
                         hasBookmark2 = hasBookmark2,
-                        fillScreen = fillScreen,
                         dark = dark,
                         isVisible = isVisible,
                         onOpenSearch = onOpenSearch,
@@ -768,7 +847,6 @@ private fun ReaderHeader(
                         onBookmark2Jump = onBookmark2Jump,
                         onStats = onStats,
                         onOpenIndex = onOpenIndex,
-                        onToggleFillScreen = onToggleFillScreen,
                         onToggleTheme = onToggleTheme
                     )
                 }
@@ -831,11 +909,9 @@ private fun HeaderMoreMenu(
     btnSize: Dp,
     iconSize: Dp,
     tint: Color,
-    activeContentColor: Color,
     quietContentColor: Color,
     hasBookmark: Boolean,
     hasBookmark2: Boolean,
-    fillScreen: Boolean,
     dark: Boolean,
     isVisible: (String) -> Boolean,
     onOpenSearch: () -> Unit,
@@ -843,7 +919,6 @@ private fun HeaderMoreMenu(
     onBookmark2Jump: () -> Unit,
     onStats: () -> Unit,
     onOpenIndex: (Int) -> Unit,
-    onToggleFillScreen: () -> Unit,
     onToggleTheme: () -> Unit,
 ) {
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -877,7 +952,7 @@ private fun HeaderMoreMenu(
                         Icon(
                             imageVector = Icons.Filled.Bookmark,
                             contentDescription = null,
-                            tint = if (hasBookmark) BookmarkGold else quietContentColor
+                            tint = if (hasBookmark) BookmarkGoldColor else quietContentColor
                         )
                     },
                     enabled = hasBookmark,
@@ -894,7 +969,7 @@ private fun HeaderMoreMenu(
                         Icon(
                             imageVector = Icons.Filled.Bookmark,
                             contentDescription = null,
-                            tint = if (hasBookmark2) BookmarkViolet else quietContentColor
+                            tint = if (hasBookmark2) BookmarkVioletColor else quietContentColor
                         )
                     },
                     enabled = hasBookmark2,
@@ -921,22 +996,6 @@ private fun HeaderMoreMenu(
                     onClick = {
                         showMoreMenu = false
                         onOpenIndex(0)
-                    }
-                )
-            }
-            if (isVisible("fill")) {
-                DropdownMenuItem(
-                    text = { Text(if (fillScreen) "عرض الصفحة كاملة" else "ملء الصفحة") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = if (fillScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
-                            contentDescription = null,
-                            tint = if (fillScreen) activeContentColor else LocalContentColor.current
-                        )
-                    },
-                    onClick = {
-                        showMoreMenu = false
-                        onToggleFillScreen()
                     }
                 )
             }
@@ -1136,8 +1195,11 @@ private fun MushafPageBadge(
     accentColor: Color,
     big: Boolean,
 ) {
-    val badgeWidth = if (big) 58.dp else 50.dp
-    val badgeHeight = if (big) 34.dp else 29.dp
+    // Each leaf needs enough room for the widest mushaf page number (three digits).
+    // Keep the number centred inside its own leaf so it never touches the spine or frame.
+    val badgeWidth = if (big) 72.dp else 64.dp
+    val badgeHeight = if (big) 36.dp else 31.dp
+    val leafWidth = badgeWidth / 2
     val pageTextStyle = if (big) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelMedium
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
@@ -1188,9 +1250,11 @@ private fun MushafPageBadge(
             }
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 4.dp),
-                contentAlignment = if (onRightPage) Alignment.CenterEnd else Alignment.CenterStart,
+                    .align(if (onRightPage) Alignment.CenterEnd else Alignment.CenterStart)
+                    .width(leafWidth)
+                    .fillMaxHeight()
+                    .padding(horizontal = 2.dp),
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = page.toArabicDigits(),
@@ -1199,7 +1263,9 @@ private fun MushafPageBadge(
                     fontWeight = FontWeight.ExtraBold,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
-                    modifier = Modifier.widthIn(min = 18.dp)
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
@@ -1215,6 +1281,7 @@ private fun ShowHeaderButton(
     page: Int,
     showPage: Boolean,
     pageColorId: String,
+    opacity: Float,
     posFraction: Float,
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
@@ -1223,6 +1290,7 @@ private fun ShowHeaderButton(
     val onSurface = MaterialTheme.colorScheme.onSurface
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val numberColor = headerStatusColor(pageColorId, muted) // default "red"
+    val buttonAlpha = opacity.coerceIn(0.25f, 1f)
 
     // Position in LTR so the offset math is plain top-left-origin pixels.
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
@@ -1253,11 +1321,11 @@ private fun ShowHeaderButton(
             // chip inside a 48.dp touch box and push it ~9.dp off the edge. This keeps it 100% flush.
             Surface(
                 shape = RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = 11.dp, bottomEnd = 11.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                contentColor = onSurface,
-                border = BorderStroke(1.dp, onSurface.copy(alpha = 0.12f)),
-                shadowElevation = 4.dp,
-                tonalElevation = 1.dp,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f * buttonAlpha),
+                contentColor = onSurface.copy(alpha = buttonAlpha),
+                border = BorderStroke(1.dp, onSurface.copy(alpha = 0.12f * buttonAlpha)),
+                shadowElevation = 4.dp * buttonAlpha,
+                tonalElevation = if (buttonAlpha >= 0.85f) 1.dp else 0.dp,
                 modifier = Modifier
                     .absoluteOffset { IntOffset(0, y.roundToInt()) }
                     .onSizeChanged { btnSize = it }
@@ -1293,14 +1361,14 @@ private fun ShowHeaderButton(
                         modifier = Modifier
                             .size(width = 11.dp, height = 2.5.dp)
                             .clip(RoundedCornerShape(50))
-                            .background(onSurface.copy(alpha = 0.5f))
+                            .background(onSurface.copy(alpha = 0.5f * buttonAlpha))
                     )
                     if (showPage) {
                         Text(
                             text = page.toArabicDigits(),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.ExtraBold,
-                            color = numberColor
+                            color = numberColor.copy(alpha = buttonAlpha)
                         )
                     }
                 }
@@ -1412,9 +1480,195 @@ private fun PageSideIndicator(
     }
 }
 
-/** Floating menu that appears over the page, anchored near the tapped position. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AyahFloatingMenu(
+private fun AyahExplanationSheet(
+    request: ExplanationRequest,
+    state: AyahExplanationUiState,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var selectedTab by remember(request.ayah.verseKey, request.initialTab) {
+        mutableStateOf(request.initialTab)
+    }
+    val currentState = state.takeIf { it.verseKey == request.ayah.verseKey }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
+                .navigationBarsPadding(),
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Text(
+                    text = request.ayah.surahNameAr,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                Text(
+                    text = "الآية ${request.ayah.ayahNumber.toArabicDigits()} • صفحة ${request.ayah.page.toArabicDigits()}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            MushafSegmentedTabs(
+                labels = ExplanationTab.entries.map { it.title },
+                selectedIndex = selectedTab.ordinal,
+                onSelected = { selectedTab = ExplanationTab.entries[it] },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+
+            when {
+                currentState == null || currentState.loading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+
+                currentState.errorMessage != null -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            currentState.errorMessage,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center,
+                        )
+                        TextButton(onClick = onRetry) { Text("إعادة المحاولة") }
+                    }
+                }
+
+                selectedTab == ExplanationTab.Tafsir -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        item {
+                            val tafsir = currentState.tafsirHtml
+                            if (tafsir.isNullOrBlank()) {
+                                EmptyExplanationMessage("لا يتوفر تفسير لهذه الآية.")
+                            } else {
+                                Text(
+                                    text = formatTafsirText(
+                                        raw = tafsir,
+                                        accent = MaterialTheme.colorScheme.primary,
+                                    ),
+                                    style = ReadingType.bodyLarge,
+                                )
+                            }
+                        }
+                        item {
+                            SourceNote("المصدر: التفسير الميسر، الإصدار 3.0 — مجمع الملك فهد لطباعة المصحف الشريف.")
+                        }
+                    }
+                }
+
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (currentState.meanings.isEmpty()) {
+                            item { EmptyExplanationMessage("لا توجد كلمات غريبة مسجّلة لهذه الآية.") }
+                        } else {
+                            itemsIndexed(currentState.meanings) { _, meaning ->
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                ) {
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Text(
+                                            text = meaning.word,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                        Text(
+                                            text = meaning.meaning,
+                                            modifier = Modifier.padding(top = 5.dp),
+                                            style = ReadingType.bodyMedium,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        item {
+                            SourceNote("المصدر: الميسر في غريب القرآن الكريم، الطبعة الثانية — مجمع الملك فهد لطباعة المصحف الشريف.")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyExplanationMessage(message: String) {
+    Text(
+        text = message,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 28.dp),
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+    )
+}
+
+@Composable
+private fun SourceNote(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier.padding(top = 8.dp, bottom = 14.dp),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+private val TafsirAyahSpan = Regex(
+    pattern = """<span\s+class=['\"]aya['\"]>(.*?)</span>""",
+    options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+)
+
+private fun formatTafsirText(raw: String, accent: Color): AnnotatedString = buildAnnotatedString {
+    var cursor = 0
+    TafsirAyahSpan.findAll(raw).forEach { match ->
+        append(raw.substring(cursor, match.range.first))
+        withStyle(SpanStyle(color = accent, fontWeight = FontWeight.Bold)) {
+            append(match.groupValues[1])
+        }
+        cursor = match.range.last + 1
+    }
+    append(raw.substring(cursor))
+}
+
+/** The single ayah menu. It is opened only by a long press and stays anchored to that press. */
+@Composable
+private fun AyahLongPressMenu(
     ayah: AyahMarker,
     anchor: Offset,
     boxWidthPx: Int,
@@ -1425,6 +1679,8 @@ private fun AyahFloatingMenu(
     bookmarked2: Boolean,
     onBookmark2: () -> Unit,
     showBookmark2: Boolean,
+    onTafsir: () -> Unit,
+    onMeanings: () -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -1434,8 +1690,8 @@ private fun AyahFloatingMenu(
 
     var menuSize by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
-    val margin = with(density) { 8.dp.toPx() }
-    val gap = with(density) { 14.dp.toPx() }
+    val margin = with(density) { 10.dp.toPx() }
+    val gap = with(density) { 10.dp.toPx() }
 
     val x = (anchor.x - menuSize.width / 2f)
         .coerceIn(margin, (boxWidthPx - menuSize.width - margin).coerceAtLeast(margin))
@@ -1446,24 +1702,23 @@ private fun AyahFloatingMenu(
     val ink = MaterialTheme.colorScheme.onSurface
     val accent = MaterialTheme.colorScheme.primary
     val hasText = ayah.textUthmani.isNotBlank()
-    val verseKeyAr = "${ayah.surahNumber.toArabicDigits()}:${ayah.ayahNumber.toArabicDigits()}"
 
     Surface(
         modifier = Modifier
             .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
             .onSizeChanged { menuSize = it }
-            .widthIn(max = 320.dp),
-        shape = RoundedCornerShape(18.dp),
+            .widthIn(min = 280.dp, max = 320.dp),
+        shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.18f)),
-        shadowElevation = 10.dp,
-        tonalElevation = 2.dp
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.14f)),
+        shadowElevation = 12.dp,
+        tonalElevation = 2.dp,
     ) {
-        Column(modifier = Modifier.padding(start = 14.dp, end = 16.dp, top = 13.dp, bottom = 10.dp)) {
-            // Header — ornamental ayah medallion + surah identity / verse key.
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 AyahMedallion(ayahNumber = ayah.ayahNumber, accent = accent, ornate = hasText)
                 Column(modifier = Modifier.weight(1f)) {
@@ -1473,140 +1728,251 @@ private fun AyahFloatingMenu(
                     ) {
                         Text(
                             text = ayah.surahNameAr,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.ExtraBold,
                             color = ink,
                             maxLines = 1
                         )
                         if (ayah.isSajdah) SajdahBadge()
                     }
-                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                        Text(
-                            text = verseKeyAr,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = accent,
-                            maxLines = 1
-                        )
-                    }
+                    Text(
+                        text = "الآية ${ayah.ayahNumber.toArabicDigits()} • صفحة ${ayah.page.toArabicDigits()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "إغلاق",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
-            // One-line verse preview (skipped on marker-less needs_review pages).
+
             if (hasText) {
                 Text(
                     text = ayah.textUthmani,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = ink.copy(alpha = 0.78f),
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 21.sp),
+                    color = ink.copy(alpha = 0.82f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 8.dp)
+                    modifier = Modifier.padding(top = 8.dp),
                 )
             }
             Text(
-                text = "صفحة ${ayah.page.toArabicDigits()} • جزء ${ayah.juz.toArabicDigits()} • حزب ${ayah.hizb.toArabicDigits()}",
+                text = "الجزء ${ayah.juz.toArabicDigits()} • الحزب ${ayah.hizb.toArabicDigits()}",
                 style = MaterialTheme.typography.labelSmall,
-                color = ink.copy(alpha = 0.60f),
-                modifier = Modifier.padding(top = 7.dp)
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
             )
-            // Hairline tray divider, then the grouped action row.
+
+            MenuSectionLabel("استكشف الآية")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ReadingAction(
+                    modifier = Modifier.weight(1f),
+                    title = "التفسير",
+                    subtitle = "التفسير الميسر",
+                    icon = Icons.AutoMirrored.Filled.MenuBook,
+                    onClick = onTafsir,
+                )
+                ReadingAction(
+                    modifier = Modifier.weight(1f),
+                    title = "المعاني",
+                    subtitle = "غريب القرآن",
+                    icon = Icons.AutoMirrored.Outlined.ManageSearch,
+                    onClick = onMeanings,
+                )
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 10.dp)
+                    .padding(top = 11.dp)
                     .height(1.dp)
-                    .background(ink.copy(alpha = 0.08f))
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)),
             )
+
+            MenuSectionLabel("إجراءات سريعة")
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                // Act-on-verse trio (leading edge): bookmark accented, copy + share neutral.
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Each bookmark keeps its colour identity even when unset, so the user can
-                    // tell the gold bookmark from the violet one before tapping. Only the
-                    // bookmarks enabled in settings appear here.
-                    if (showBookmark) {
-                        MenuAction(
-                            icon = if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                            desc = "علامة",
-                            onClick = onBookmark,
-                            tint = BookmarkGold,
-                            bg = if (bookmarked) BookmarkGold.copy(alpha = 0.14f) else Color.Transparent
-                        )
-                    }
-                    if (showBookmark2) {
-                        MenuAction(
-                            icon = if (bookmarked2) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                            desc = "علامة ثانية",
-                            onClick = onBookmark2,
-                            tint = BookmarkViolet,
-                            bg = if (bookmarked2) BookmarkViolet.copy(alpha = 0.14f) else Color.Transparent
-                        )
-                    }
-                    MenuAction(
-                        icon = Icons.Filled.ContentCopy,
-                        desc = "نسخ",
-                        onClick = {
-                            clipboard.setText(AnnotatedString(shareText))
-                            Toast.makeText(context, "تم نسخ الآية", Toast.LENGTH_SHORT).show()
-                        },
-                        tint = ink.copy(alpha = 0.78f)
-                    )
-                    MenuAction(
-                        icon = Icons.Filled.Share,
-                        desc = "مشاركة",
-                        onClick = {
-                            val send = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, shareText)
-                            }
-                            context.startActivity(Intent.createChooser(send, null))
-                        },
-                        tint = ink.copy(alpha = 0.78f)
+                if (showBookmark) {
+                    CompactAyahAction(
+                        modifier = Modifier.weight(1f),
+                        title = "علامة ١",
+                        icon = if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                        tint = BookmarkGoldColor,
+                        selected = bookmarked,
+                        onClick = onBookmark,
                     )
                 }
-                // Dismiss, set apart by a hairline and visually demoted.
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(22.dp)
-                            .background(ink.copy(alpha = 0.08f))
-                    )
-                    MenuAction(
-                        icon = Icons.Filled.Close,
-                        desc = "إغلاق",
-                        onClick = onClose,
-                        tint = ink.copy(alpha = 0.45f),
-                        size = 40.dp
+                if (showBookmark2) {
+                    CompactAyahAction(
+                        modifier = Modifier.weight(1f),
+                        title = "علامة ٢",
+                        icon = if (bookmarked2) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                        tint = BookmarkVioletColor,
+                        selected = bookmarked2,
+                        onClick = onBookmark2,
                     )
                 }
+                CompactAyahAction(
+                    modifier = Modifier.weight(1f),
+                    title = "نسخ",
+                    icon = Icons.Filled.ContentCopy,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    onClick = {
+                        clipboard.setText(AnnotatedString(shareText))
+                        Toast.makeText(context, "تم نسخ الآية", Toast.LENGTH_SHORT).show()
+                    },
+                )
+                CompactAyahAction(
+                    modifier = Modifier.weight(1f),
+                    title = "مشاركة",
+                    icon = Icons.Filled.Share,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    onClick = {
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, shareText)
+                        }
+                        context.startActivity(Intent.createChooser(send, null))
+                    },
+                )
             }
         }
     }
 }
 
-/** Amber accent used for saved bookmarks — matches ZoomablePage's persistent-bookmark band. */
-private val BookmarkGold = Color(0xFFD4A017)
+@Composable
+private fun MenuSectionLabel(title: String) {
+    Text(
+        text = title,
+        modifier = Modifier.padding(top = 10.dp, bottom = 6.dp),
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.82f),
+    )
+}
 
-/** Violet accent for the second bookmark — matches ZoomablePage's BookmarkColor2 band. */
-private val BookmarkViolet = Color(0xFF7E57C2)
+@Composable
+private fun ReadingAction(
+    modifier: Modifier,
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier
+            .defaultMinSize(minHeight = 56.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactAyahAction(
+    modifier: Modifier,
+    title: String,
+    icon: ImageVector,
+    tint: Color,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier
+            .defaultMinSize(minHeight = 54.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) tint.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
+        border = if (selected) BorderStroke(1.dp, tint.copy(alpha = 0.3f)) else null,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(tint.copy(alpha = if (selected) 0.13f else 0.08f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = tint,
+                )
+            }
+            Text(
+                text = title,
+                modifier = Modifier.padding(top = 2.dp),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
+    }
+}
 
 /** Ornamental circular ayah-number medallion echoing the mushaf's printed ayah-end circles:
  *  two concentric green hairline rings + (when [ornate]) an 8-dot rosette, with the ayah
  *  number centered and Ltr-isolated so multi-digit numbers never bidi-flip. */
 @Composable
 private fun AyahMedallion(ayahNumber: Int, accent: Color, ornate: Boolean) {
-    Box(modifier = Modifier.size(46.dp), contentAlignment = Alignment.Center) {
+    Box(modifier = Modifier.size(38.dp), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val outer = size.minDimension / 2f
             val ringStroke = 1.4.dp.toPx()
@@ -1632,34 +1998,12 @@ private fun AyahMedallion(ayahNumber: Int, accent: Color, ornate: Boolean) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Text(
                 text = ayahNumber.toArabicDigits(),
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.ExtraBold,
                 color = accent,
                 maxLines = 1
             )
         }
-    }
-}
-
-/** A single circular action target in the ayah menu (44dp default, optional tinted background). */
-@Composable
-private fun MenuAction(
-    icon: ImageVector,
-    desc: String,
-    onClick: () -> Unit,
-    tint: Color,
-    bg: Color = Color.Transparent,
-    size: Dp = 44.dp,
-) {
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(bg)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(imageVector = icon, contentDescription = desc, tint = tint, modifier = Modifier.size(22.dp))
     }
 }
 
@@ -1753,9 +2097,9 @@ private fun formatElapsed(ms: Long): String {
 
 private fun headerStatusColor(id: String, muted: Color): Color =
     when (id) {
-        "red" -> Color(0xFFE53935)
-        "green" -> Color(0xFF2E9E45)
-        "gold" -> Color(0xFFC28A16)
-        "blue" -> Color(0xFF2F6FE4)
+        "red" -> StatusRedColor
+        "green" -> StatusGreenColor
+        "gold" -> StatusGoldColor
+        "blue" -> StatusBlueColor
         else -> muted
     }

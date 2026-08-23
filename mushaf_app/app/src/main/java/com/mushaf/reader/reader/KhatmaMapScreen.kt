@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -29,7 +28,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.CheckCircle
@@ -39,7 +37,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -60,6 +57,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mushaf.reader.ui.components.MushafPanel
+import com.mushaf.reader.ui.components.MushafSegmentedTabs
+import com.mushaf.reader.ui.components.MushafTopBar
 
 @Composable
 fun KhatmaMapScreen(
@@ -90,11 +90,10 @@ fun KhatmaMapScreen(
 
     Surface(modifier = Modifier.fillMaxSize(), color = colors.page) {
         Column(modifier = Modifier.fillMaxSize()) {
-            KhatmaTopBar(onBack = onBack, colors = colors)
+            KhatmaTopBar(onBack = onBack)
             MapModeSwitch(
                 mode = mode,
                 onModeChange = { mode = it },
-                colors = colors,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp),
             )
             if (mode == KhatmaMapMode.Juz) {
@@ -169,88 +168,23 @@ fun KhatmaMapScreen(
 private fun MapModeSwitch(
     mode: KhatmaMapMode,
     onModeChange: (KhatmaMapMode) -> Unit,
-    colors: KhatmaColors,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(colors.track)
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        ModePill(
-            label = "الأجزاء",
-            selected = mode == KhatmaMapMode.Juz,
-            colors = colors,
-            modifier = Modifier.weight(1f),
-            onClick = { onModeChange(KhatmaMapMode.Juz) },
-        )
-        ModePill(
-            label = "الصفحات فقط",
-            selected = mode == KhatmaMapMode.Pages,
-            colors = colors,
-            modifier = Modifier.weight(1f),
-            onClick = { onModeChange(KhatmaMapMode.Pages) },
-        )
-    }
-}
-
-@Composable
-private fun ModePill(
-    label: String,
-    selected: Boolean,
-    colors: KhatmaColors,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
+    MushafSegmentedTabs(
+        labels = listOf("الأجزاء", "الصفحات فقط"),
+        selectedIndex = mode.ordinal,
+        onSelected = { onModeChange(KhatmaMapMode.entries[it]) },
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        color = if (selected) colors.card else Color.Transparent,
-        contentColor = if (selected) colors.primary else colors.muted,
-        shadowElevation = if (selected) 1.dp else 0.dp,
-    ) {
-        Text(
-            label,
-            modifier = Modifier.padding(vertical = 10.dp),
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-        )
-    }
+    )
 }
 
 @Composable
-private fun KhatmaTopBar(onBack: () -> Unit, colors: KhatmaColors) {
-    Surface(color = colors.header, shadowElevation = 4.dp) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(start = 10.dp, end = 12.dp, top = 8.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع", tint = colors.ink)
-            }
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-                Text(
-                    "خريطة الختمة",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = colors.ink,
-                )
-                Text(
-                    "كل صفحة في موضعها، وكل لون له معنى",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = colors.muted,
-                )
-            }
-        }
-    }
+private fun KhatmaTopBar(onBack: () -> Unit) {
+    MushafTopBar(
+        title = "خريطة الختمة",
+        subtitle = "كل صفحة في موضعها، وكل لون له معنى",
+        onBack = onBack,
+    )
 }
 
 @Composable
@@ -799,15 +733,11 @@ private fun CompactPageCell(
 
 @Composable
 private fun MapCard(colors: KhatmaColors, content: @Composable ColumnScope.() -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = colors.card,
-        tonalElevation = 1.dp,
-        shadowElevation = 1.dp,
-    ) {
-        Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.Start, content = content)
-    }
+    MushafPanel(
+        contentPadding = PaddingValues(12.dp),
+        containerColor = colors.card,
+        content = content,
+    )
 }
 
 @Composable
@@ -820,69 +750,37 @@ private fun SectionHeader(title: String, subtitle: String, colors: KhatmaColors)
 
 @Composable
 private fun khatmaPalette(): KhatmaColors {
-    val dark = MaterialTheme.colorScheme.background.luminanceApprox() < 0.35f
-    return if (dark) {
-        KhatmaColors(
-            page = Color(0xFF101211),
-            header = Color(0xFF151917),
-            card = Color(0xFF1A201D),
-            tile = Color(0xFF242C27),
-            track = Color(0xFF2B342F),
-            ink = Color(0xFFEFF4EE),
-            muted = Color(0xFFAEB9B1),
-            primary = Color(0xFF70D59D),
-            heroStart = Color(0xFF173928),
-            heroEnd = Color(0xFF12211B),
-            heroInk = Color(0xFFF2F8F1),
-            heroMuted = Color(0xFFC6D8CB),
-            heroBubble = Color(0x3325372F),
-            heroTrack = Color(0xFF355346),
-            read = Color(0xFF70D59D),
-            readInk = Color(0xFF062014),
-            visited = Color(0xFF4E7763),
-            visitedInk = Color(0xFFE9F4EC),
-            bookmark = Color(0xFFE2C56D),
-            bookmarkInk = Color(0xFF332700),
-            empty = Color(0xFF28302C),
-            emptyInk = Color(0xFFB5C1B9),
-            currentBorder = Color(0xFFF2F8F1),
-            cellBorder = Color(0xFF343E38),
-            legendIcon = Color(0xFF0B1A12),
-        )
-    } else {
-        KhatmaColors(
-            page = Color(0xFFF6F0E5),
-            header = Color(0xFFFBF7EF),
-            card = Color(0xFFFFFCF6),
-            tile = Color(0xFFF0E7D8),
-            track = Color(0xFFE6DBC9),
-            ink = Color(0xFF1E211C),
-            muted = Color(0xFF777064),
-            primary = Color(0xFF1F7A5A),
-            heroStart = Color(0xFF174D37),
-            heroEnd = Color(0xFF1F7A5A),
-            heroInk = Color.White,
-            heroMuted = Color(0xFFDDECE2),
-            heroBubble = Color(0x26FFFFFF),
-            heroTrack = Color(0xFF4C876E),
-            read = Color(0xFF1F7A5A),
-            readInk = Color.White,
-            visited = Color(0xFFAED3BD),
-            visitedInk = Color(0xFF153C2B),
-            bookmark = Color(0xFFE5C86C),
-            bookmarkInk = Color(0xFF3A2D00),
-            empty = Color(0xFFEAE0D1),
-            emptyInk = Color(0xFF776F64),
-            currentBorder = Color(0xFF0E3D2B),
-            cellBorder = Color(0xFFD9CDBB),
-            legendIcon = Color.White,
-        )
-    }
+    val scheme = MaterialTheme.colorScheme
+    return KhatmaColors(
+        page = scheme.background,
+        card = scheme.surface,
+        tile = scheme.surfaceContainerHigh,
+        track = scheme.outlineVariant,
+        ink = scheme.onSurface,
+        muted = scheme.onSurfaceVariant,
+        primary = scheme.primary,
+        heroStart = scheme.primaryContainer,
+        heroEnd = scheme.primaryContainer,
+        heroInk = scheme.onPrimaryContainer,
+        heroMuted = scheme.onPrimaryContainer.copy(alpha = 0.72f),
+        heroBubble = scheme.surfaceVariant,
+        heroTrack = scheme.outlineVariant,
+        read = scheme.primary,
+        readInk = scheme.onPrimary,
+        visited = scheme.tertiaryContainer,
+        visitedInk = scheme.onTertiaryContainer,
+        bookmark = scheme.secondaryContainer,
+        bookmarkInk = scheme.onSecondaryContainer,
+        empty = scheme.surfaceContainerHigh,
+        emptyInk = scheme.onSurfaceVariant,
+        currentBorder = scheme.primary,
+        cellBorder = scheme.outlineVariant,
+        legendIcon = scheme.onPrimary,
+    )
 }
 
 private data class KhatmaColors(
     val page: Color,
-    val header: Color,
     val card: Color,
     val tile: Color,
     val track: Color,
@@ -958,6 +856,3 @@ private fun juzInfoForPage(page: Int): JuzPosition {
         }
     }
 }
-
-private fun Color.luminanceApprox(): Float =
-    (red * 0.299f + green * 0.587f + blue * 0.114f)

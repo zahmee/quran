@@ -10,12 +10,16 @@ import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.AyahRepository
 import com.mushaf.reader.data.PageRepository
 import com.mushaf.reader.data.ReadingStore
+import com.mushaf.reader.data.content.GharibMeaning
+import com.mushaf.reader.data.content.QuranContentRepository
 import com.mushaf.reader.data.stats.FullStats
 import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.ReadingStats
 import com.mushaf.reader.data.stats.SessionEntity
 import com.mushaf.reader.data.stats.StatsRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -38,10 +42,19 @@ data class SearchResult(
     val text: String,
 )
 
+data class AyahExplanationUiState(
+    val verseKey: String? = null,
+    val loading: Boolean = false,
+    val tafsirHtml: String? = null,
+    val meanings: List<GharibMeaning> = emptyList(),
+    val errorMessage: String? = null,
+)
+
 class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     private val pageRepo = PageRepository(app)
     private val ayahRepo = AyahRepository(app)
+    private val contentRepo = QuranContentRepository(app)
     private val store = ReadingStore(app)
     private val statsRepo = StatsRepository(app)
 
@@ -113,6 +126,10 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var buttonPageColor by mutableStateOf(initialSettings.buttonPageColor)
         private set
 
+    /** Opacity of the draggable restore-header button, 25..100 percent. */
+    var showHeaderButtonOpacity by mutableStateOf(initialSettings.showHeaderButtonOpacity)
+        private set
+
     /** Where the user parked the full-screen chip, as a 0..1 fraction of its vertical travel
      *  (0 = just under the top inset, 1 = bottom edge); -1 = never moved, so it rests at the top.
      *  A fraction — not pixels — so the spot holds across rotation and different screen sizes. */
@@ -180,6 +197,11 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     var selectedAyah by mutableStateOf<AyahMarker?>(null)
         private set
+
+    var explanationState by mutableStateOf(AyahExplanationUiState())
+        private set
+
+    private var explanationJob: Job? = null
 
     var bookmarks by mutableStateOf<Set<String>>(emptySet())
         private set
@@ -328,6 +350,13 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setButtonPageColor(value) }
     }
 
+    fun updateShowHeaderButtonOpacity(value: Int) {
+        val normalized = value.coerceIn(25, 100)
+        if (normalized == showHeaderButtonOpacity) return
+        showHeaderButtonOpacity = normalized
+        viewModelScope.launch { store.setShowHeaderButtonOpacity(normalized) }
+    }
+
     /** Live drag of the full-screen chip: memory only, so it tracks the finger without a disk
      *  write per pixel. [saveButtonPosFraction] commits the spot when the finger lifts. */
     fun dragButtonPosFraction(value: Float) {
@@ -424,6 +453,37 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     fun selectAyah(ayah: AyahMarker?) { selectedAyah = ayah }
 
     fun clearSelection() { selectedAyah = null }
+
+    fun loadExplanation(ayah: AyahMarker) {
+        explanationJob?.cancel()
+        explanationState = AyahExplanationUiState(
+            verseKey = ayah.verseKey,
+            loading = true,
+        )
+        explanationJob = viewModelScope.launch {
+            try {
+                val content = contentRepo.explanationFor(ayah.verseKey)
+                explanationState = AyahExplanationUiState(
+                    verseKey = ayah.verseKey,
+                    tafsirHtml = content.tafsirHtml,
+                    meanings = content.meanings,
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                explanationState = AyahExplanationUiState(
+                    verseKey = ayah.verseKey,
+                    errorMessage = "تعذر فتح المحتوى. حاول مرة أخرى.",
+                )
+            }
+        }
+    }
+
+    fun clearExplanation() {
+        explanationJob?.cancel()
+        explanationJob = null
+        explanationState = AyahExplanationUiState()
+    }
 
     fun isBookmarked(verseKey: String): Boolean = bookmarks.contains(verseKey)
 
