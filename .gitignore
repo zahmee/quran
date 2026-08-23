@@ -41,3 +41,8 @@ old/
 
 # External tool scratch dirs
 .codex/
+
+# Local source/export bundles used to build Quran content
+# Keep these in private backups; the app tracks the derived database and notices.
+/qurancomplex_tafsir_gharib_*.zip
+/qurancomplex_tafsir_gharib_*/
