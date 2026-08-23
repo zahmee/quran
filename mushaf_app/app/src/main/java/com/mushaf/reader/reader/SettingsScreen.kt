@@ -13,14 +13,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
@@ -44,15 +42,11 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -66,6 +60,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.mushaf.reader.ui.components.MushafIconBadge
+import com.mushaf.reader.ui.components.MushafPanel
+import com.mushaf.reader.ui.components.MushafSectionHeader
+import com.mushaf.reader.ui.components.MushafSegmentedTabs
+import com.mushaf.reader.ui.components.MushafSoftDivider
+import com.mushaf.reader.ui.components.MushafTopBar
+import com.mushaf.reader.ui.theme.StatusBlueColor
+import com.mushaf.reader.ui.theme.StatusGoldColor
+import com.mushaf.reader.ui.theme.StatusGreenColor
+import com.mushaf.reader.ui.theme.StatusRedColor
 
 /** App settings for reader controls, header display, app info, and local reading data. */
 @Composable
@@ -98,6 +102,8 @@ fun SettingsScreen(
     onShowButtonPageChange: (Boolean) -> Unit,
     buttonPageColor: String,
     onButtonPageColorChange: (String) -> Unit,
+    showHeaderButtonOpacity: Int,
+    onShowHeaderButtonOpacityChange: (Int) -> Unit,
     showBottomJuzBar: Boolean,
     onShowBottomJuzBarChange: (Boolean) -> Unit,
     bottomJuzBarColor: String,
@@ -138,30 +144,12 @@ fun SettingsScreen(
         HeaderControl("bookmark2", "العلامة المرجعية الثانية", "الانتقال إلى الفاصل البنفسجي المحفوظ.", Icons.Outlined.BookmarkBorder),
         HeaderControl("stats", "إحصائيات القراءة", "متابعة القراءة والختمة والجلسات.", Icons.Outlined.QueryStats),
         HeaderControl("index", "الفهرس", "فتح السور والأجزاء من القائمة.", Icons.AutoMirrored.Outlined.MenuBook),
-        HeaderControl("fill", "ملء الصفحة", "تكبير صفحة المصحف من قائمة المزيد.", Icons.Outlined.WidthFull),
         HeaderControl("theme", "الوضع الليلي", "تبديل المظهر من قائمة المزيد.", Icons.Outlined.DarkMode),
     )
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
-                    }
-                    Text(
-                        text = "الإعدادات",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
+            MushafTopBar(title = "الإعدادات", onBack = onBack)
 
             SettingsTabs(tab = tab, onTab = { tab = it })
 
@@ -183,19 +171,28 @@ fun SettingsScreen(
 
                 SettingsPanel(
                     title = "رأس الصفحة الجديد",
-                    body = "الزر الثابت للإعدادات، زر الإخفاء، الوقت، ومدة الجلسة.",
+                    body = "الإعدادات، عرض الصفحة، توسيع مساحة القراءة، ومعلومات الجلسة.",
                     icon = Icons.Outlined.Tune
                 ) {
                     HeaderLayoutPreview(
                         showClock = showClock,
                         showSessionTimer = showSessionTimer,
+                        showFillButton = isVisible("fill"),
                         showHideButton = isVisible("hide")
                     )
                     SoftDivider()
                     ToggleSettingRow(
+                        icon = Icons.Outlined.WidthFull,
+                        title = "زر عرض الصفحة كاملة",
+                        body = "يظهر في أعلى القارئ قبل زر توسيع مساحة القراءة، ويبدّل بين عرض الصفحة كاملة وملئها.",
+                        checked = isVisible("fill"),
+                        onCheckedChange = { onToggle("fill", it) }
+                    )
+                    SoftDivider()
+                    ToggleSettingRow(
                         icon = Icons.Filled.KeyboardArrowUp,
-                        title = "زر إخفاء الشريط العلوي",
-                        body = "يعرض سهماً في رأس الصفحة لإخفاء الشريط والقراءة بلا مشتتات.",
+                        title = "زر توسيع مساحة القراءة",
+                        body = "يعرض سهماً يخفي رأس الصفحة للقراءة بلا مشتتات.",
                         checked = isVisible("hide"),
                         onCheckedChange = { onToggle("hide", it) }
                     )
@@ -203,7 +200,7 @@ fun SettingsScreen(
                     ToggleSettingRow(
                         icon = Icons.Outlined.Tune,
                         title = "تكبير أزرار الرأس",
-                        body = "يزيد مساحة الضغط على زر الإعدادات والإخفاء وقائمة المزيد.",
+                        body = "يزيد مساحة الضغط على زر الإعدادات وعرض الصفحة والتوسيع وقائمة المزيد.",
                         checked = bigButtons,
                         onCheckedChange = onBigButtonsChange
                     )
@@ -251,6 +248,11 @@ fun SettingsScreen(
                         title = "لون رقم الصفحة",
                         selected = buttonPageColor,
                         onSelected = onButtonPageColorChange
+                    )
+                    OpacityChoiceRow(
+                        title = "شفافية زر إظهار الرأس",
+                        selected = showHeaderButtonOpacity,
+                        onSelected = onShowHeaderButtonOpacityChange
                     )
                     SoftDivider()
                     ToggleSettingRow(
@@ -471,21 +473,12 @@ fun SettingsScreen(
 @Composable
 private fun SettingsTabs(tab: Int, onTab: (Int) -> Unit) {
     val titles = listOf("الواجهة", "القائمة", "المعلومات", "التطبيق")
-    TabRow(selectedTabIndex = tab) {
-        titles.forEachIndexed { i, title ->
-            Tab(
-                selected = tab == i,
-                onClick = { onTab(i) },
-                text = {
-                    Text(
-                        text = title,
-                        maxLines = 1,
-                        fontWeight = if (tab == i) FontWeight.SemiBold else FontWeight.Normal
-                    )
-                }
-            )
-        }
-    }
+    MushafSegmentedTabs(
+        labels = titles,
+        selectedIndex = tab,
+        onSelected = onTab,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+    )
 }
 
 /** Scroll container shared by every tab so each section scrolls on its own. */
@@ -512,6 +505,7 @@ private data class HeaderControl(
 private fun HeaderLayoutPreview(
     showClock: Boolean,
     showSessionTimer: Boolean,
+    showFillButton: Boolean,
     showHideButton: Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -532,6 +526,7 @@ private fun HeaderLayoutPreview(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (showSessionTimer) StatusPill("الجلسة")
+                if (showFillButton) SmallIconBadge(Icons.Outlined.WidthFull)
                 if (showHideButton) SmallIconBadge(Icons.Filled.KeyboardArrowUp)
                 SmallIconBadge(Icons.Filled.MoreVert)
             }
@@ -588,24 +583,7 @@ private fun SettingsPanel(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Panel {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            IconBadge(icon)
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = body,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        MushafSectionHeader(title = title, subtitle = body, icon = icon)
         Spacer(Modifier.height(14.dp))
         content()
     }
@@ -688,10 +666,10 @@ private fun ColorChoiceRow(
 ) {
     val choices = listOf(
         HeaderColorChoice("muted", "هادئ", MaterialTheme.colorScheme.onSurfaceVariant),
-        HeaderColorChoice("green", "أخضر", Color(0xFF2E9E45)),
-        HeaderColorChoice("red", "أحمر", Color(0xFFE53935)),
-        HeaderColorChoice("gold", "ذهبي", Color(0xFFC28A16)),
-        HeaderColorChoice("blue", "أزرق", Color(0xFF2F6FE4)),
+        HeaderColorChoice("green", "أخضر", StatusGreenColor),
+        HeaderColorChoice("red", "أحمر", StatusRedColor),
+        HeaderColorChoice("gold", "ذهبي", StatusGoldColor),
+        HeaderColorChoice("blue", "أزرق", StatusBlueColor),
     )
     val current = choices.firstOrNull { it.id == selected } ?: choices.first()
     var expanded by remember { mutableStateOf(false) }
@@ -1172,54 +1150,20 @@ private fun DangerPanel(onClear: () -> Unit) {
 
 @Composable
 private fun IconBadge(icon: ImageVector) {
-    Surface(
-        modifier = Modifier.size(40.dp),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(9.dp)
-        )
-    }
+    MushafIconBadge(icon = icon)
 }
 
 @Composable
 private fun SmallIconBadge(icon: ImageVector) {
-    Surface(
-        modifier = Modifier.size(34.dp),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(8.dp)
-        )
-    }
+    MushafIconBadge(icon = icon, size = 32.dp, iconSize = 16.dp)
 }
 
 @Composable
 private fun SoftDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(vertical = 4.dp),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-    )
+    MushafSoftDivider(verticalPadding = 4.dp)
 }
 
 @Composable
 private fun Panel(content: @Composable ColumnScope.() -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        shadowElevation = 0.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-    ) {
-        Column(modifier = Modifier.padding(18.dp), content = content)
-    }
+    MushafPanel(content = content)
 }

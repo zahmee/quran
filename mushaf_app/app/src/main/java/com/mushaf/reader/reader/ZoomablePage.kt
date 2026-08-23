@@ -17,7 +17,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -25,11 +24,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import coil3.compose.AsyncImage
 import com.mushaf.reader.data.AyahMarker
+import com.mushaf.reader.ui.theme.AyahSelectionColor
+import com.mushaf.reader.ui.theme.BookmarkGoldColor
+import com.mushaf.reader.ui.theme.BookmarkVioletColor
 import kotlin.math.min
-
-private val BookmarkColor = Color(0xFFD4A017) // amber: persistent bookmark #1 highlight
-private val BookmarkColor2 = Color(0xFF7E57C2) // violet: persistent bookmark #2 highlight
-private val SelectionColor = Color(0xFF1F7A5A) // green: transient long-press selection
 
 /**
  * A single mushaf page.
@@ -55,8 +53,7 @@ fun ZoomablePage(
     selectedAyah: AyahMarker?,
     bookmarkedKeys: Set<String>,
     bookmarkedKeys2: Set<String>,
-    onSelectAyah: (AyahMarker, Offset) -> Unit,
-    onEmptyTap: () -> Unit,
+    onLongPressAyah: (AyahMarker, Offset) -> Unit,
     fillScreen: Boolean = false,
 ) {
     val highlight = selectedAyah?.takeIf { markers.contains(it) }
@@ -87,17 +84,17 @@ fun ZoomablePage(
         when {
             !fillScreen -> WholePage(
                 model, markers, fitScale, wPx, hPx, imgW, imgH,
-                bookmarked, bookmarked2, highlight, onSelectAyah, onEmptyTap
+                bookmarked, bookmarked2, highlight, onLongPressAyah
             )
 
             widthConstrained -> StretchedPage(
                 model, markers, fitScale, wPx, hPx, imgW, imgH,
-                bookmarked, bookmarked2, highlight, onSelectAyah, onEmptyTap
+                bookmarked, bookmarked2, highlight, onLongPressAyah
             )
 
             else -> FilledWidthPage(
                 model, markers, wPx, imgW, imgH,
-                bookmarked, bookmarked2, highlight, onSelectAyah, onEmptyTap
+                bookmarked, bookmarked2, highlight, onLongPressAyah
             )
         }
     }
@@ -116,8 +113,7 @@ private fun WholePage(
     bookmarked: List<AyahMarker>,
     bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
-    onSelectAyah: (AyahMarker, Offset) -> Unit,
-    onEmptyTap: () -> Unit,
+    onLongPressAyah: (AyahMarker, Offset) -> Unit,
 ) {
     val density = LocalDensity.current
     val contentW = imgW * fitScale
@@ -133,12 +129,10 @@ private fun WholePage(
             .pointerInput(model, markers, fitScale, offsetX, offsetY) {
                 detectTapGestures(
                     onLongPress = { tap ->
-                        if (markers.isEmpty() || fitScale <= 0f) {
-                            onEmptyTap()
-                        } else {
+                        if (markers.isNotEmpty() && fitScale > 0f) {
                             val ix = (tap.x - offsetX) / fitScale
                             val iy = (tap.y - offsetY) / fitScale
-                            pickAyah(markers, ix, iy)?.let { onSelectAyah(it, tap) } ?: onEmptyTap()
+                            pickAyah(markers, ix, iy)?.let { onLongPressAyah(it, tap) }
                         }
                     }
                 )
@@ -170,8 +164,7 @@ private fun StretchedPage(
     bookmarked: List<AyahMarker>,
     bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
-    onSelectAyah: (AyahMarker, Offset) -> Unit,
-    onEmptyTap: () -> Unit,
+    onLongPressAyah: (AyahMarker, Offset) -> Unit,
 ) {
     val density = LocalDensity.current
     val contentW = imgW * fitScale
@@ -187,12 +180,10 @@ private fun StretchedPage(
             .pointerInput(model, markers, fitScale, offsetX, stretch) {
                 detectTapGestures(
                     onLongPress = { tap ->
-                        if (markers.isEmpty() || fitScale <= 0f) {
-                            onEmptyTap()
-                        } else {
+                        if (markers.isNotEmpty() && fitScale > 0f) {
                             val ix = (tap.x - offsetX) / fitScale
                             val iy = tap.y / (fitScale * stretch)
-                            pickAyah(markers, ix, iy)?.let { onSelectAyah(it, tap) } ?: onEmptyTap()
+                            pickAyah(markers, ix, iy)?.let { onLongPressAyah(it, tap) }
                         }
                     }
                 )
@@ -228,8 +219,7 @@ private fun FilledWidthPage(
     bookmarked: List<AyahMarker>,
     bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
-    onSelectAyah: (AyahMarker, Offset) -> Unit,
-    onEmptyTap: () -> Unit,
+    onLongPressAyah: (AyahMarker, Offset) -> Unit,
 ) {
     val density = LocalDensity.current
     val scale = wPx / imgW
@@ -245,12 +235,10 @@ private fun FilledWidthPage(
             .pointerInput(model, markers, scale) {
                 detectTapGestures(
                     onLongPress = { tap ->
-                        if (markers.isEmpty() || scale <= 0f) {
-                            onEmptyTap()
-                        } else {
+                        if (markers.isNotEmpty() && scale > 0f) {
                             val ix = tap.x / scale
                             val iy = (tap.y + scrollState.value) / scale
-                            pickAyah(markers, ix, iy)?.let { onSelectAyah(it, tap) } ?: onEmptyTap()
+                            pickAyah(markers, ix, iy)?.let { onLongPressAyah(it, tap) }
                         }
                     }
                 )
@@ -274,7 +262,7 @@ private fun FilledWidthPage(
     }
 }
 
-/** Hit-test a tap (in image pixels) to an ayah: inside a region, else the nearest center. */
+/** Hit-test a pointer position (in image pixels) to an ayah: inside a region, else nearest center. */
 private fun pickAyah(markers: List<AyahMarker>, ix: Float, iy: Float): AyahMarker? {
     val inside = markers.filter { m -> m.rects.any { it.contains(ix, iy) } }
     return (inside.ifEmpty { markers }).minByOrNull { m ->
@@ -304,7 +292,7 @@ private fun PageContent(
         if (bookmarked.isNotEmpty() || bookmarked2.isNotEmpty() || highlight != null) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val corner = CornerRadius(8f, 8f)
-                val bm = BookmarkColor.copy(alpha = 0.22f)
+                val bm = BookmarkGoldColor.copy(alpha = 0.22f)
                 bookmarked.forEach { m ->
                     m.rects.forEach { r ->
                         drawRoundRect(
@@ -315,7 +303,7 @@ private fun PageContent(
                         )
                     }
                 }
-                val bm2 = BookmarkColor2.copy(alpha = 0.22f)
+                val bm2 = BookmarkVioletColor.copy(alpha = 0.22f)
                 bookmarked2.forEach { m ->
                     m.rects.forEach { r ->
                         drawRoundRect(
@@ -327,7 +315,7 @@ private fun PageContent(
                     }
                 }
                 if (highlight != null) {
-                    val sel = SelectionColor.copy(alpha = 0.20f)
+                    val sel = AyahSelectionColor.copy(alpha = 0.20f)
                     highlight.rects.forEach { r ->
                         drawRoundRect(
                             color = sel,
