@@ -1,5 +1,6 @@
 package com.mushaf.reader.reader
 
+import android.content.ClipData
 import android.content.Intent
 import android.content.res.Configuration
 import android.widget.Toast
@@ -100,7 +101,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1684,7 +1686,8 @@ private fun AyahLongPressMenu(
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val clipboardScope = rememberCoroutineScope()
     val reference = "﴿${ayah.surahNameAr} • آية ${ayah.ayahNumber.toArabicDigits()}﴾"
     val shareText = if (ayah.textUthmani.isNotBlank()) "${ayah.textUthmani}\n$reference" else reference
 
@@ -1834,8 +1837,12 @@ private fun AyahLongPressMenu(
                     icon = Icons.Filled.ContentCopy,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     onClick = {
-                        clipboard.setText(AnnotatedString(shareText))
-                        Toast.makeText(context, "تم نسخ الآية", Toast.LENGTH_SHORT).show()
+                        clipboardScope.launch {
+                            clipboard.setClipEntry(
+                                ClipEntry(ClipData.newPlainText("آية قرآنية", shareText)),
+                            )
+                            Toast.makeText(context, "تم نسخ الآية", Toast.LENGTH_SHORT).show()
+                        }
                     },
                 )
                 CompactAyahAction(

@@ -73,6 +73,8 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
+private val ArabicLocale: Locale = Locale.forLanguageTag("ar")
+
 @Composable
 fun StatsScreen(
     stats: FullStats?,
@@ -520,7 +522,7 @@ private fun MetricTile(icon: ImageVector, label: String, value: String, modifier
 @Composable
 private fun PeriodChartCard(stats: FullStats, colors: StatsColors) {
     var period by remember { mutableStateOf(0) } // 0 = week, 1 = month, 2 = year
-    val dayShort = remember { SimpleDateFormat("EEE", Locale("ar")) }
+    val dayShort = remember { SimpleDateFormat("EEE", ArabicLocale) }
     val monthShort = remember {
         arrayOf("ينا", "فبر", "مار", "أبر", "ماي", "يون", "يول", "أغس", "سبت", "أكت", "نوف", "ديس")
     }
@@ -783,8 +785,8 @@ private fun CalendarTab(sessions: List<SessionEntity>, colors: StatsColors) {
     }
     var monthOffset by remember { mutableStateOf(0) }
     var selectedDay by remember { mutableStateOf<Long?>(null) }
-    val dayFmt = remember { SimpleDateFormat("EEEE d", Locale("ar")) }
-    val timeFmt = remember { SimpleDateFormat("h:mm a", Locale("ar")) }
+    val dayFmt = remember { SimpleDateFormat("EEEE d", ArabicLocale) }
+    val timeFmt = remember { SimpleDateFormat("h:mm a", ArabicLocale) }
     val todayAnchor = remember {
         Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
@@ -995,9 +997,9 @@ private fun HistoryTab(
         return
     }
     val years = remember(sessions) { buildHistory(sessions) }
-    val monthFmt = remember { SimpleDateFormat("MMMM yyyy", Locale("ar")) }
-    val dayFmt = remember { SimpleDateFormat("EEEE d", Locale("ar")) }
-    val timeFmt = remember { SimpleDateFormat("h:mm a", Locale("ar")) }
+    val monthFmt = remember { SimpleDateFormat("MMMM yyyy", ArabicLocale) }
+    val dayFmt = remember { SimpleDateFormat("EEEE d", ArabicLocale) }
+    val timeFmt = remember { SimpleDateFormat("h:mm a", ArabicLocale) }
     val todayStart = remember {
         val c = Calendar.getInstance()
         c.set(Calendar.HOUR_OF_DAY, 0); c.set(Calendar.MINUTE, 0)
