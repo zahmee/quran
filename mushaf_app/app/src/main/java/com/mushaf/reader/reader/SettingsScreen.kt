@@ -414,7 +414,7 @@ fun SettingsScreen(
                     ActionRow(
                         icon = Icons.Outlined.CloudSync,
                         title = "النسخ الاحتياطي",
-                        body = "حفظ التقدم والإشارات والجلسات في Google Drive.",
+                        body = "حفظ التقدم والإشارات والجلسات في ملف تختار مكانه.",
                         onClick = onBackup
                     )
                     SoftDivider()

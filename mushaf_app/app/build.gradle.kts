@@ -23,8 +23,8 @@ android {
         applicationId = "com.mushaf.reader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 39
-        versionName = "0.5.5"
+        versionCode = 40
+        versionName = "0.5.6"
     }
 
     signingConfigs {
@@ -84,7 +84,6 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    implementation(libs.google.play.services.auth)
     ksp(libs.androidx.room.compiler)
     debugImplementation(libs.androidx.ui.tooling)
 }

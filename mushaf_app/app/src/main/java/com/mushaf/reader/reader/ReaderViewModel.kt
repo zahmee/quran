@@ -1,6 +1,7 @@
 package com.mushaf.reader.reader
 
 import android.app.Application
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -11,10 +12,11 @@ import com.mushaf.reader.data.AyahRepository
 import com.mushaf.reader.data.PageRepository
 import com.mushaf.reader.data.ReadingStore
 import com.mushaf.reader.data.backup.BackupException
+import com.mushaf.reader.data.backup.BackupFileInfo
 import com.mushaf.reader.data.backup.BackupSnapshot
-import com.mushaf.reader.data.backup.DriveBackupStage
-import com.mushaf.reader.data.backup.DriveBackupUiState
-import com.mushaf.reader.data.backup.GoogleDriveBackupRepository
+import com.mushaf.reader.data.backup.BackupStage
+import com.mushaf.reader.data.backup.BackupUiState
+import com.mushaf.reader.data.backup.FileBackupRepository
 import com.mushaf.reader.data.content.GharibMeaning
 import com.mushaf.reader.data.content.QuranContentRepository
 import com.mushaf.reader.data.stats.FullStats
@@ -28,6 +30,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** One surah in the navigation index: number, Arabic name, and the page it begins on. */
 data class SurahEntry(val number: Int, val nameAr: String, val firstPage: Int, val ayahCount: Int)
@@ -62,7 +67,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     private val contentRepo = QuranContentRepository(app)
     private val store = ReadingStore(app)
     private val statsRepo = StatsRepository(app)
-    private val driveBackupRepo = GoogleDriveBackupRepository(app)
+    private val backupRepo = FileBackupRepository(app)
 
     val pageCount: Int = pageRepo.pageCount()
 
@@ -73,7 +78,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     // Persisted display/position settings, read once synchronously so the first frame already
     // reflects the user's last theme/fit choice (no flash of the default light/fitted view).
     private val initialSettings = runBlocking(Dispatchers.IO) { store.settings() }
-    private val initialDriveAccount = runBlocking(Dispatchers.IO) { store.driveAccount() }
+    private val initialLastBackup = runBlocking(Dispatchers.IO) { store.lastBackup() }
 
     val initialPage: Int = initialSettings.lastPage.coerceIn(1, pageCount.coerceAtLeast(1))
 
@@ -234,8 +239,12 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var readPagesAll by mutableStateOf(initialSettings.readPages)
         private set
 
-    var driveBackupUiState by mutableStateOf(
-        DriveBackupUiState(accountEmail = initialDriveAccount)
+    var backupUiState by mutableStateOf(
+        BackupUiState(
+            lastBackup = initialLastBackup?.let {
+                BackupFileInfo(fileName = it.fileName, savedAt = it.savedAt, sizeBytes = it.sizeBytes)
+            }
+        )
     )
         private set
 
@@ -462,108 +471,68 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setPageSideIndicatorOpacity(value) }
     }
 
-    fun beginDriveAuthorization() {
-        driveBackupUiState = driveBackupUiState.copy(
-            busy = true,
-            stage = DriveBackupStage.Authorizing,
-            message = null,
-            error = null,
-        )
-    }
+    fun suggestedBackupFileName(): String = backupRepo.suggestedFileName()
 
-    fun driveAuthorizationFailed(message: String) {
-        driveBackupUiState = driveBackupUiState.copy(
-            busy = false,
-            stage = null,
-            message = null,
-            error = message,
-        )
-    }
-
-    fun refreshDriveBackup(accessToken: String, accountEmail: String?) {
+    fun exportBackup(target: Uri) {
         viewModelScope.launch {
-            startDriveOperation(DriveBackupStage.Loading, accountEmail)
-            try {
-                val latest = driveBackupRepo.latestBackup(accessToken)
-                rememberDriveAccount(accountEmail)
-                driveBackupUiState = driveBackupUiState.copy(
-                    latestBackup = latest,
-                    remoteChecked = true,
-                    busy = false,
-                    stage = null,
-                    error = null,
-                    message = if (latest == null) "الحساب متصل، ولا توجد نسخة محفوظة بعد." else null,
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                finishDriveWithError(error)
-            }
-        }
-    }
-
-    fun createDriveBackup(accessToken: String, accountEmail: String?) {
-        viewModelScope.launch {
-            startDriveOperation(DriveBackupStage.Uploading, accountEmail)
+            startBackupOperation(BackupStage.Exporting)
             try {
                 checkpointCurrentSessionForBackup()
-                val uploaded = driveBackupRepo.createBackup(accessToken)
-                rememberDriveAccount(accountEmail)
-                driveBackupUiState = driveBackupUiState.copy(
-                    latestBackup = uploaded,
-                    remoteChecked = true,
+                val saved = backupRepo.exportTo(target)
+                store.setLastBackup(
+                    ReadingStore.LastBackup(saved.savedAt, saved.fileName, saved.sizeBytes)
+                )
+                backupUiState = backupUiState.copy(
+                    lastBackup = saved,
                     busy = false,
                     stage = null,
                     error = null,
-                    message = "حُفظت نسخة جديدة على Google Drive بنجاح.",
+                    message = "حُفظت النسخة في «${saved.fileName}».",
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                finishDriveWithError(error)
+                finishBackupWithError(error)
             }
         }
     }
 
-    fun restoreLatestDriveBackup(accessToken: String, accountEmail: String?) {
+    fun importBackup(source: Uri) {
         viewModelScope.launch {
-            startDriveOperation(DriveBackupStage.Restoring, accountEmail)
+            startBackupOperation(BackupStage.Importing)
             try {
-                val restored = driveBackupRepo.restoreLatest(accessToken)
+                val restored = backupRepo.importFrom(source)
                 applyRestoredSnapshot(restored.snapshot)
-                rememberDriveAccount(accountEmail)
-                driveBackupUiState = driveBackupUiState.copy(
-                    latestBackup = restored.remote,
-                    remoteChecked = true,
+                backupUiState = backupUiState.copy(
                     busy = false,
                     stage = null,
                     error = null,
-                    message = "اكتملت الاستعادة وتحدّثت بيانات القراءة على هذا الجهاز.",
+                    message = "اكتملت الاستعادة من نسخة ${formatBackupDate(restored.snapshot.createdAt)} " +
+                        "(${restored.snapshot.deviceName}).",
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                finishDriveWithError(error)
+                finishBackupWithError(error)
             }
         }
     }
 
-    fun clearDriveBackupFeedback() {
-        driveBackupUiState = driveBackupUiState.copy(message = null, error = null)
+    /** The user closed the system picker without choosing a file. */
+    fun backupSelectionCancelled() {
+        backupUiState = backupUiState.copy(busy = false, stage = null)
     }
 
-    fun forgetDriveAccount() {
-        driveBackupUiState = DriveBackupUiState()
-        viewModelScope.launch { store.setDriveAccount(null) }
+    fun clearBackupFeedback() {
+        backupUiState = backupUiState.copy(message = null, error = null)
     }
 
     fun consumeRestorePageRequest() {
         restorePageRequest = null
     }
 
-    private fun startDriveOperation(stage: DriveBackupStage, accountEmail: String?) {
-        driveBackupUiState = driveBackupUiState.copy(
-            accountEmail = accountEmail?.takeIf { it.isNotBlank() } ?: driveBackupUiState.accountEmail,
+    private fun startBackupOperation(stage: BackupStage) {
+        backupUiState = backupUiState.copy(
             busy = true,
             stage = stage,
             message = null,
@@ -571,21 +540,18 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    private suspend fun rememberDriveAccount(accountEmail: String?) {
-        val email = accountEmail?.takeIf { it.isNotBlank() } ?: return
-        store.setDriveAccount(email)
-        driveBackupUiState = driveBackupUiState.copy(accountEmail = email)
-    }
-
-    private fun finishDriveWithError(error: Exception) {
+    private fun finishBackupWithError(error: Exception) {
         val message = if (error is BackupException) error.message else null
-        driveBackupUiState = driveBackupUiState.copy(
+        backupUiState = backupUiState.copy(
             busy = false,
             stage = null,
             message = null,
-            error = message ?: "تعذر إكمال العملية. تحقق من الاتصال ثم أعد المحاولة.",
+            error = message ?: "تعذر إكمال العملية. أعد المحاولة باختيار الملف مرة أخرى.",
         )
     }
+
+    private fun formatBackupDate(time: Long): String =
+        SimpleDateFormat("yyyy/MM/dd HH:mm", Locale("ar")).format(Date(time))
 
     /** Persist the active reading slice before exporting, then continue with a fresh slice. */
     private suspend fun checkpointCurrentSessionForBackup() {

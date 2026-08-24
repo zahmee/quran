@@ -11,42 +11,34 @@ data class BackupSnapshot(
     val backupId: String,
     val createdAt: Long,
     val appVersion: String,
+    val deviceName: String,
     val pageCount: Int,
     val reading: ReadingStore.BackupState,
     val sessions: List<SessionEntity>,
     val khatmas: List<KhatmaEntity>,
 )
 
-data class RemoteBackupInfo(
-    val fileId: String,
-    val name: String,
-    val backupId: String,
-    val createdAt: Long,
-    val modifiedAt: Long,
+/** The backup file the user saved to, or picked from, a location of their own choosing. */
+data class BackupFileInfo(
+    val fileName: String,
+    val savedAt: Long,
     val sizeBytes: Long,
-    val sha256: String,
-    val deviceName: String,
-    val appVersion: String,
 )
 
 data class RestoredBackup(
-    val remote: RemoteBackupInfo,
+    val file: BackupFileInfo,
     val snapshot: BackupSnapshot,
 )
 
-enum class DriveBackupStage {
-    Authorizing,
-    Loading,
-    Uploading,
-    Restoring,
+enum class BackupStage {
+    Exporting,
+    Importing,
 }
 
-data class DriveBackupUiState(
-    val accountEmail: String? = null,
-    val latestBackup: RemoteBackupInfo? = null,
-    val remoteChecked: Boolean = false,
+data class BackupUiState(
+    val lastBackup: BackupFileInfo? = null,
     val busy: Boolean = false,
-    val stage: DriveBackupStage? = null,
+    val stage: BackupStage? = null,
     val message: String? = null,
     val error: String? = null,
 )

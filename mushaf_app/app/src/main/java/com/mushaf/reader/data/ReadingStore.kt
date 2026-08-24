@@ -76,7 +76,9 @@ class ReadingStore(private val context: Context) {
     // Page turning direction: false = horizontal (default), true = vertical (up/down).
     private val keyVerticalPaging = booleanPreferencesKey("vertical_paging")
     // Local OAuth account selection. It is deliberately excluded from cloud backups.
-    private val keyDriveAccount = stringPreferencesKey("drive_account")
+    private val keyLastBackupAt = longPreferencesKey("last_backup_at")
+    private val keyLastBackupName = stringPreferencesKey("last_backup_name")
+    private val keyLastBackupSize = longPreferencesKey("last_backup_size")
 
     /** The display/position settings + per-page progress read together in one pass at startup.
      *  [visitedPages] = pages opened at all; [readPages] = pages dwelt on long enough to count
@@ -119,7 +121,7 @@ class ReadingStore(private val context: Context) {
         val verticalPaging: Boolean,
     )
 
-    /** Complete user-owned state exported to Google Drive. OAuth/account metadata is excluded. */
+    /** Complete user-owned state written to the backup file. Device-local metadata is excluded. */
     data class BackupState(
         val settings: Settings,
         val bookmarks: Set<String>,
@@ -219,13 +221,28 @@ class ReadingStore(private val context: Context) {
         }
     }
 
-    suspend fun driveAccount(): String? =
-        context.dataStore.data.first()[keyDriveAccount]?.takeIf { it.isNotBlank() }
+    /** Remembered so the backup screen can show when the user last exported, and to where. */
+    data class LastBackup(val savedAt: Long, val fileName: String, val sizeBytes: Long)
 
-    suspend fun setDriveAccount(value: String?) {
+    suspend fun lastBackup(): LastBackup? {
+        val prefs = context.dataStore.data.first()
+        val savedAt = prefs[keyLastBackupAt] ?: return null
+        val fileName = prefs[keyLastBackupName]?.takeIf { it.isNotBlank() } ?: return null
+        if (savedAt <= 0L) return null
+        return LastBackup(savedAt, fileName, prefs[keyLastBackupSize] ?: 0L)
+    }
+
+    suspend fun setLastBackup(value: LastBackup?) {
         context.dataStore.edit { prefs ->
-            if (value.isNullOrBlank()) prefs.remove(keyDriveAccount)
-            else prefs[keyDriveAccount] = value
+            if (value == null) {
+                prefs.remove(keyLastBackupAt)
+                prefs.remove(keyLastBackupName)
+                prefs.remove(keyLastBackupSize)
+            } else {
+                prefs[keyLastBackupAt] = value.savedAt
+                prefs[keyLastBackupName] = value.fileName
+                prefs[keyLastBackupSize] = value.sizeBytes
+            }
         }
     }
 

@@ -24,6 +24,7 @@ object BackupJsonCodec {
             .put("backupId", snapshot.backupId)
             .put("createdAt", snapshot.createdAt)
             .put("appVersion", snapshot.appVersion)
+            .put("deviceName", snapshot.deviceName)
             .put("pageCount", snapshot.pageCount)
             .put("reading", encodeReading(snapshot.reading))
             .put("sessions", encodeSessions(snapshot.sessions))
@@ -66,6 +67,7 @@ object BackupJsonCodec {
                     if (it <= 0L) throw BackupException("تاريخ النسخة الاحتياطية غير صالح.")
                 },
                 appVersion = root.optString("appVersion", "غير معروف").take(40),
+                deviceName = root.optString("deviceName", "جهاز غير معروف").take(80),
                 pageCount = pageCount,
                 reading = decodeReading(root.getJSONObject("reading"), expectedPageCount),
                 sessions = decodeSessions(root.getJSONArray("sessions"), expectedPageCount),
