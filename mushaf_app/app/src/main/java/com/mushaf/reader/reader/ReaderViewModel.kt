@@ -10,6 +10,11 @@ import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.AyahRepository
 import com.mushaf.reader.data.PageRepository
 import com.mushaf.reader.data.ReadingStore
+import com.mushaf.reader.data.backup.BackupException
+import com.mushaf.reader.data.backup.BackupSnapshot
+import com.mushaf.reader.data.backup.DriveBackupStage
+import com.mushaf.reader.data.backup.DriveBackupUiState
+import com.mushaf.reader.data.backup.GoogleDriveBackupRepository
 import com.mushaf.reader.data.content.GharibMeaning
 import com.mushaf.reader.data.content.QuranContentRepository
 import com.mushaf.reader.data.stats.FullStats
@@ -57,6 +62,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     private val contentRepo = QuranContentRepository(app)
     private val store = ReadingStore(app)
     private val statsRepo = StatsRepository(app)
+    private val driveBackupRepo = GoogleDriveBackupRepository(app)
 
     val pageCount: Int = pageRepo.pageCount()
 
@@ -67,6 +73,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     // Persisted display/position settings, read once synchronously so the first frame already
     // reflects the user's last theme/fit choice (no flash of the default light/fitted view).
     private val initialSettings = runBlocking(Dispatchers.IO) { store.settings() }
+    private val initialDriveAccount = runBlocking(Dispatchers.IO) { store.driveAccount() }
 
     val initialPage: Int = initialSettings.lastPage.coerceIn(1, pageCount.coerceAtLeast(1))
 
@@ -225,6 +232,15 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Pages dwelt on long enough to count as actually read (read ⊆ visited). */
     var readPagesAll by mutableStateOf(initialSettings.readPages)
+        private set
+
+    var driveBackupUiState by mutableStateOf(
+        DriveBackupUiState(accountEmail = initialDriveAccount)
+    )
+        private set
+
+    /** A restored page is consumed by ReaderScreen so the live pager follows the imported state. */
+    var restorePageRequest by mutableStateOf<Int?>(null)
         private set
 
     // Session tracking (one row per foreground period, committed on stop).
@@ -444,6 +460,215 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         if (value == pageSideIndicatorOpacity) return
         pageSideIndicatorOpacity = value
         viewModelScope.launch { store.setPageSideIndicatorOpacity(value) }
+    }
+
+    fun beginDriveAuthorization() {
+        driveBackupUiState = driveBackupUiState.copy(
+            busy = true,
+            stage = DriveBackupStage.Authorizing,
+            message = null,
+            error = null,
+        )
+    }
+
+    fun driveAuthorizationFailed(message: String) {
+        driveBackupUiState = driveBackupUiState.copy(
+            busy = false,
+            stage = null,
+            message = null,
+            error = message,
+        )
+    }
+
+    fun refreshDriveBackup(accessToken: String, accountEmail: String?) {
+        viewModelScope.launch {
+            startDriveOperation(DriveBackupStage.Loading, accountEmail)
+            try {
+                val latest = driveBackupRepo.latestBackup(accessToken)
+                rememberDriveAccount(accountEmail)
+                driveBackupUiState = driveBackupUiState.copy(
+                    latestBackup = latest,
+                    remoteChecked = true,
+                    busy = false,
+                    stage = null,
+                    error = null,
+                    message = if (latest == null) "الحساب متصل، ولا توجد نسخة محفوظة بعد." else null,
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                finishDriveWithError(error)
+            }
+        }
+    }
+
+    fun createDriveBackup(accessToken: String, accountEmail: String?) {
+        viewModelScope.launch {
+            startDriveOperation(DriveBackupStage.Uploading, accountEmail)
+            try {
+                checkpointCurrentSessionForBackup()
+                val uploaded = driveBackupRepo.createBackup(accessToken)
+                rememberDriveAccount(accountEmail)
+                driveBackupUiState = driveBackupUiState.copy(
+                    latestBackup = uploaded,
+                    remoteChecked = true,
+                    busy = false,
+                    stage = null,
+                    error = null,
+                    message = "حُفظت نسخة جديدة على Google Drive بنجاح.",
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                finishDriveWithError(error)
+            }
+        }
+    }
+
+    fun restoreLatestDriveBackup(accessToken: String, accountEmail: String?) {
+        viewModelScope.launch {
+            startDriveOperation(DriveBackupStage.Restoring, accountEmail)
+            try {
+                val restored = driveBackupRepo.restoreLatest(accessToken)
+                applyRestoredSnapshot(restored.snapshot)
+                rememberDriveAccount(accountEmail)
+                driveBackupUiState = driveBackupUiState.copy(
+                    latestBackup = restored.remote,
+                    remoteChecked = true,
+                    busy = false,
+                    stage = null,
+                    error = null,
+                    message = "اكتملت الاستعادة وتحدّثت بيانات القراءة على هذا الجهاز.",
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                finishDriveWithError(error)
+            }
+        }
+    }
+
+    fun clearDriveBackupFeedback() {
+        driveBackupUiState = driveBackupUiState.copy(message = null, error = null)
+    }
+
+    fun forgetDriveAccount() {
+        driveBackupUiState = DriveBackupUiState()
+        viewModelScope.launch { store.setDriveAccount(null) }
+    }
+
+    fun consumeRestorePageRequest() {
+        restorePageRequest = null
+    }
+
+    private fun startDriveOperation(stage: DriveBackupStage, accountEmail: String?) {
+        driveBackupUiState = driveBackupUiState.copy(
+            accountEmail = accountEmail?.takeIf { it.isNotBlank() } ?: driveBackupUiState.accountEmail,
+            busy = true,
+            stage = stage,
+            message = null,
+            error = null,
+        )
+    }
+
+    private suspend fun rememberDriveAccount(accountEmail: String?) {
+        val email = accountEmail?.takeIf { it.isNotBlank() } ?: return
+        store.setDriveAccount(email)
+        driveBackupUiState = driveBackupUiState.copy(accountEmail = email)
+    }
+
+    private fun finishDriveWithError(error: Exception) {
+        val message = if (error is BackupException) error.message else null
+        driveBackupUiState = driveBackupUiState.copy(
+            busy = false,
+            stage = null,
+            message = null,
+            error = message ?: "تعذر إكمال العملية. تحقق من الاتصال ثم أعد المحاولة.",
+        )
+    }
+
+    /** Persist the active reading slice before exporting, then continue with a fresh slice. */
+    private suspend fun checkpointCurrentSessionForBackup() {
+        val now = System.currentTimeMillis()
+        if (pageEnteredAt > 0L && now - pageEnteredAt >= readDwellMs &&
+            !readPagesAll.contains(visiblePage)
+        ) {
+            readPagesAll = readPagesAll + visiblePage
+            visitedPagesAll = visitedPagesAll + visiblePage
+            store.setReadPages(readPagesAll)
+            store.setVisitedPages(visitedPagesAll)
+        }
+        if (sessionStart > 0L && now - sessionStart >= 1_000L) {
+            statsRepo.commitSession(
+                startedAt = sessionStart,
+                endedAt = now,
+                startPage = sessionStartPage,
+                endPage = lastPage,
+                pagesRead = visitedPages.size,
+            )
+        }
+        sessionStart = now
+        sessionStartedAt = now
+        sessionStartPage = lastPage
+        visitedPages.clear()
+        visitedPages.add(lastPage)
+        visiblePage = lastPage
+        pageEnteredAt = now
+    }
+
+    private suspend fun applyRestoredSnapshot(snapshot: BackupSnapshot) {
+        val value = snapshot.reading.settings
+        darkTheme = value.darkTheme
+        fillScreen = value.fillScreen
+        verticalPaging = value.verticalPaging
+        hiddenButtons = value.hiddenButtons
+        bigButtons = value.bigButtons
+        showClock = value.showClock
+        showSessionTimer = value.showSessionTimer
+        showSurahNumber = value.showSurahNumber
+        showSurahAyahCount = value.showSurahAyahCount
+        showSurahProgress = value.showSurahProgress
+        showJuzProgressPercent = value.showJuzProgressPercent
+        showJuzProgressPages = value.showJuzProgressPages
+        clockColor = value.clockColor
+        sessionTimerColor = value.sessionTimerColor
+        showButtonPage = value.showButtonPage
+        buttonPageColor = value.buttonPageColor
+        showHeaderButtonOpacity = value.showHeaderButtonOpacity
+        buttonPosFraction = value.buttonPosFraction
+        showBottomJuzBar = value.showBottomJuzBar
+        bottomJuzBarColor = value.bottomJuzBarColor
+        bottomJuzBarThickness = value.bottomJuzBarThickness
+        bottomJuzBarOpacity = value.bottomJuzBarOpacity
+        showTopSurahBar = value.showTopSurahBar
+        topSurahBarColor = value.topSurahBarColor
+        topSurahBarThickness = value.topSurahBarThickness
+        topSurahBarOpacity = value.topSurahBarOpacity
+        showPageSideIndicator = value.showPageSideIndicator
+        pageSideIndicatorColor = value.pageSideIndicatorColor
+        pageSideIndicatorThickness = value.pageSideIndicatorThickness
+        pageSideIndicatorLength = value.pageSideIndicatorLength
+        pageSideIndicatorOpacity = value.pageSideIndicatorOpacity
+        khatmaStartedAt = value.khatmaStartedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
+        bookmarks = snapshot.reading.bookmarks
+        bookmarks2 = snapshot.reading.bookmarks2
+        visitedPagesAll = value.visitedPages
+        readPagesAll = value.readPages
+        lastPage = value.lastPage.coerceIn(1, pageCount)
+        sessions = statsRepo.allSessions()
+        khatmas = statsRepo.allKhatmas()
+        stats = statsRepo.summary(lastPage, pageCount, bookmarkPage())
+        fullStats = statsRepo.fullStats(lastPage, pageCount, bookmarkPage())
+
+        val now = System.currentTimeMillis()
+        sessionStart = now
+        sessionStartedAt = now
+        sessionStartPage = lastPage
+        visitedPages.clear()
+        visitedPages.add(lastPage)
+        visiblePage = lastPage
+        pageEnteredAt = now
+        restorePageRequest = lastPage
     }
 
     fun assetModel(pageNumber: Int): String = pageRepo.assetUri(pageNumber, darkTheme)

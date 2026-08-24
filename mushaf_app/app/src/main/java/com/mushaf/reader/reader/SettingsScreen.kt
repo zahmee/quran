@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.QueryStats
@@ -130,6 +131,7 @@ fun SettingsScreen(
     onPageSideIndicatorLengthChange: (Int) -> Unit,
     pageSideIndicatorOpacity: Int,
     onPageSideIndicatorOpacityChange: (Int) -> Unit,
+    onBackup: () -> Unit,
     onAbout: () -> Unit,
     onClearAllStats: () -> Unit,
     onBack: () -> Unit,
@@ -406,9 +408,16 @@ fun SettingsScreen(
                 else -> SettingsTabScroll {
                 SettingsPanel(
                     title = "معلومات التطبيق",
-                    body = "مصدر المصحف، الخصوصية، الجهة المطوّرة، وطرق التواصل.",
+                    body = "النسخ الاحتياطي، مصدر المصحف، الخصوصية، وطرق التواصل.",
                     icon = Icons.Outlined.Info
                 ) {
+                    ActionRow(
+                        icon = Icons.Outlined.CloudSync,
+                        title = "النسخ الاحتياطي",
+                        body = "حفظ التقدم والإشارات والجلسات في Google Drive.",
+                        onClick = onBackup
+                    )
+                    SoftDivider()
                     ActionRow(
                         icon = Icons.Outlined.Info,
                         title = "حول التطبيق",

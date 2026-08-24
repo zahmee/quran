@@ -75,6 +75,8 @@ class ReadingStore(private val context: Context) {
     private val keyKhatmaStartedAt = longPreferencesKey("khatma_started_at")
     // Page turning direction: false = horizontal (default), true = vertical (up/down).
     private val keyVerticalPaging = booleanPreferencesKey("vertical_paging")
+    // Local OAuth account selection. It is deliberately excluded from cloud backups.
+    private val keyDriveAccount = stringPreferencesKey("drive_account")
 
     /** The display/position settings + per-page progress read together in one pass at startup.
      *  [visitedPages] = pages opened at all; [readPages] = pages dwelt on long enough to count
@@ -115,6 +117,13 @@ class ReadingStore(private val context: Context) {
         val pageSideIndicatorOpacity: Int,
         val khatmaStartedAt: Long,
         val verticalPaging: Boolean,
+    )
+
+    /** Complete user-owned state exported to Google Drive. OAuth/account metadata is excluded. */
+    data class BackupState(
+        val settings: Settings,
+        val bookmarks: Set<String>,
+        val bookmarks2: Set<String>,
     )
 
     suspend fun settings(): Settings {
@@ -158,6 +167,66 @@ class ReadingStore(private val context: Context) {
             khatmaStartedAt = prefs[keyKhatmaStartedAt] ?: 0L,
             verticalPaging = prefs[keyVerticalPaging] ?: false,
         )
+    }
+
+    suspend fun backupState(): BackupState = BackupState(
+        settings = settings(),
+        bookmarks = bookmarks(),
+        bookmarks2 = bookmarks2(),
+    )
+
+    /** Replace the backed-up preferences in one atomic DataStore edit. */
+    suspend fun restoreBackupState(state: BackupState) {
+        val value = state.settings
+        context.dataStore.edit { prefs ->
+            prefs[keyLastPage] = value.lastPage
+            prefs[keyBookmarks] = state.bookmarks
+            prefs[keyBookmarks2] = state.bookmarks2
+            prefs[keyDarkTheme] = value.darkTheme
+            prefs[keyFillScreen] = value.fillScreen
+            prefs[keyVisitedPages] = value.visitedPages.mapTo(HashSet()) { it.toString() }
+            prefs[keyReadPages] = value.readPages.mapTo(HashSet()) { it.toString() }
+            prefs[keyHiddenButtons] = value.hiddenButtons
+            prefs[keyBigButtons] = value.bigButtons
+            prefs[keyShowClock] = value.showClock
+            prefs[keyShowSessionTimer] = value.showSessionTimer
+            prefs[keyShowSurahNumber] = value.showSurahNumber
+            prefs[keyShowSurahAyahCount] = value.showSurahAyahCount
+            prefs[keyShowSurahProgress] = value.showSurahProgress
+            prefs[keyShowJuzProgressPercent] = value.showJuzProgressPercent
+            prefs[keyShowJuzProgressPages] = value.showJuzProgressPages
+            prefs[keyClockColor] = value.clockColor
+            prefs[keySessionTimerColor] = value.sessionTimerColor
+            prefs[keyShowButtonPage] = value.showButtonPage
+            prefs[keyButtonPageColor] = value.buttonPageColor
+            prefs[keyShowHeaderButtonOpacity] = value.showHeaderButtonOpacity
+            prefs[keyButtonPosFraction] = value.buttonPosFraction
+            prefs[keyShowBottomJuzBar] = value.showBottomJuzBar
+            prefs[keyBottomJuzBarColor] = value.bottomJuzBarColor
+            prefs[keyBottomJuzBarThickness] = value.bottomJuzBarThickness
+            prefs[keyBottomJuzBarOpacity] = value.bottomJuzBarOpacity
+            prefs[keyShowTopSurahBar] = value.showTopSurahBar
+            prefs[keyTopSurahBarColor] = value.topSurahBarColor
+            prefs[keyTopSurahBarThickness] = value.topSurahBarThickness
+            prefs[keyTopSurahBarOpacity] = value.topSurahBarOpacity
+            prefs[keyShowPageSideIndicator] = value.showPageSideIndicator
+            prefs[keyPageSideIndicatorColor] = value.pageSideIndicatorColor
+            prefs[keyPageSideIndicatorThickness] = value.pageSideIndicatorThickness
+            prefs[keyPageSideIndicatorLength] = value.pageSideIndicatorLength
+            prefs[keyPageSideIndicatorOpacity] = value.pageSideIndicatorOpacity
+            prefs[keyKhatmaStartedAt] = value.khatmaStartedAt
+            prefs[keyVerticalPaging] = value.verticalPaging
+        }
+    }
+
+    suspend fun driveAccount(): String? =
+        context.dataStore.data.first()[keyDriveAccount]?.takeIf { it.isNotBlank() }
+
+    suspend fun setDriveAccount(value: String?) {
+        context.dataStore.edit { prefs ->
+            if (value.isNullOrBlank()) prefs.remove(keyDriveAccount)
+            else prefs[keyDriveAccount] = value
+        }
     }
 
     private fun Set<String>?.toIntSet(): Set<Int> =

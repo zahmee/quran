@@ -156,6 +156,7 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
     var showSearch by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showDriveBackup by remember { mutableStateOf(false) }
     var headerVisible by remember { mutableStateOf(true) }
     val selected = viewModel.selectedAyah
 
@@ -169,16 +170,28 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
     BackHandler(enabled = showIndex) { showIndex = false }
     BackHandler(enabled = showSearch) { showSearch = false }
     BackHandler(enabled = showSettings) { showSettings = false }
+    // The Drive screen opens above Settings, so Back returns to the Settings app tab.
+    BackHandler(enabled = showDriveBackup) { showDriveBackup = false }
     // Registered after index/settings so Back from About returns to the screen it was opened from.
     BackHandler(enabled = showAbout) { showAbout = false }
     // When the header is hidden, Back brings it back instead of leaving the app.
-    BackHandler(enabled = !showStatsScreen && !showIndex && !showSearch && !showAbout && !showSettings && !headerVisible) {
+    BackHandler(enabled = !showStatsScreen && !showIndex && !showSearch && !showAbout &&
+        !showSettings && !showDriveBackup && !headerVisible
+    ) {
         headerVisible = true
     }
 
     LaunchedEffect(pagerState.currentPage) {
         viewModel.clearSelection()
         viewModel.onPageVisible(pagerState.currentPage + 1)
+    }
+
+    val restoredPage = viewModel.restorePageRequest
+    LaunchedEffect(restoredPage) {
+        if (restoredPage != null) {
+            pagerState.scrollToPage((restoredPage - 1).coerceIn(0, pageCount - 1))
+            viewModel.consumeRestorePageRequest()
+        }
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -430,9 +443,17 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 onPageSideIndicatorLengthChange = { viewModel.updatePageSideIndicatorLength(it) },
                 pageSideIndicatorOpacity = viewModel.pageSideIndicatorOpacity,
                 onPageSideIndicatorOpacityChange = { viewModel.updatePageSideIndicatorOpacity(it) },
+                onBackup = { showDriveBackup = true },
                 onAbout = { showAbout = true },
                 onClearAllStats = { viewModel.clearAllStats() },
                 onBack = { showSettings = false }
+            )
+        }
+
+        if (showDriveBackup) {
+            DriveBackupScreen(
+                viewModel = viewModel,
+                onBack = { showDriveBackup = false },
             )
         }
 

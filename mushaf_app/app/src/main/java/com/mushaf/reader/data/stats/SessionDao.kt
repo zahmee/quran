@@ -11,6 +11,9 @@ interface SessionDao {
     @Insert
     suspend fun insert(session: SessionEntity): Long
 
+    @Insert
+    suspend fun insertAll(sessions: List<SessionEntity>)
+
     @Update
     suspend fun update(session: SessionEntity)
 
