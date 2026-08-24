@@ -1,6 +1,5 @@
 package com.mushaf.reader
 
-import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -25,14 +24,6 @@ class MainActivity : ComponentActivity() {
         // so the device must not dim/lock and interrupt the user mid-read. The flag only
         // applies while this window is visible; the screen locks normally once the app leaves.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        // Let content draw into the short-edge cutout so its insets are reported; the
-        // reader header then pads itself below the camera (see ReaderHeader).
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            window.attributes = window.attributes.apply {
-                layoutInDisplayCutoutMode =
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
-        }
         hideSystemBars()
         setContent {
             MushafTheme(darkTheme = vm.darkTheme) {

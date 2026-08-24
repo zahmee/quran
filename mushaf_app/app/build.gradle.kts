@@ -40,7 +40,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             // Falls back to unsigned if keystore.properties is absent (e.g. on a fresh clone / CI).
             signingConfig = if (keystorePropertiesFile.exists())
                 signingConfigs.getByName("release") else null
