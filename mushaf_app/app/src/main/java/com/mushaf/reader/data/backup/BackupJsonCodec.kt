@@ -87,11 +87,13 @@ object BackupJsonCodec {
 
     private fun encodeSettings(value: ReadingStore.Settings): JSONObject = JSONObject()
         .put("lastPage", value.lastPage)
-        .put("darkTheme", value.darkTheme)
+        .put("themeId", value.themeId)
         .put("fillScreen", value.fillScreen)
         .put("visitedPages", intArray(value.visitedPages))
         .put("readPages", intArray(value.readPages))
         .put("hiddenButtons", stringArray(value.hiddenButtons))
+        .put("barButtons", stringArray(value.barButtons))
+        .put("buttonColors", stringArray(ReadingStore.encodeButtonColors(value.buttonColors)))
         .put("bigButtons", value.bigButtons)
         .put("showClock", value.showClock)
         .put("showSessionTimer", value.showSessionTimer)
@@ -137,11 +139,23 @@ object BackupJsonCodec {
 
         val settings = ReadingStore.Settings(
             lastPage = lastPage,
-            darkTheme = settingsJson.optBoolean("darkTheme", false),
+            // Backups written before the palettes carry the old boolean instead of an id.
+            themeId = safeText(
+                settingsJson,
+                "themeId",
+                if (settingsJson.optBoolean("darkTheme", false)) ReadingStore.DARK_THEME_ID
+                else ReadingStore.DEFAULT_THEME_ID,
+            ),
             fillScreen = settingsJson.optBoolean("fillScreen", false),
             visitedPages = visitedPages,
             readPages = readPages,
             hiddenButtons = stringSet(settingsJson.getJSONArray("hiddenButtons"), 100),
+            // Added with the bar-placement setting; older backups simply keep the defaults.
+            barButtons = settingsJson.optJSONArray("barButtons")
+                ?.let { stringSet(it, 32) } ?: ReadingStore.DEFAULT_BAR_BUTTONS,
+            buttonColors = ReadingStore.decodeButtonColors(
+                settingsJson.optJSONArray("buttonColors")?.let { stringSet(it, 40) }
+            ),
             bigButtons = settingsJson.optBoolean("bigButtons", false),
             showClock = settingsJson.optBoolean("showClock", false),
             showSessionTimer = settingsJson.optBoolean("showSessionTimer", false),

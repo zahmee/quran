@@ -1,9 +1,11 @@
 package com.mushaf.reader.ui.theme
 
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 
 private val LightColors = lightColorScheme(
@@ -84,13 +86,44 @@ private val DarkColors = darkColorScheme(
     surfaceContainerHighest = Color(0xFF2C312C),
 )
 
+/**
+ * Recolors the app chrome to [palette]. The accent roles (primary/secondary/tertiary/error) are
+ * shared by every theme — only the neutral surfaces take the palette's hue, so the greens and
+ * golds stay recognisable across all six.
+ */
+private fun schemeFor(palette: MushafPalette): ColorScheme {
+    val base = if (palette.dark) DarkColors else LightColors
+    if (!palette.tintsChrome) return base
+    fun t(c: Color) = palette.tintNeutral(c)
+    return base.copy(
+        background = t(base.background),
+        onBackground = t(base.onBackground),
+        surface = t(base.surface),
+        onSurface = t(base.onSurface),
+        surfaceVariant = t(base.surfaceVariant),
+        onSurfaceVariant = t(base.onSurfaceVariant),
+        surfaceDim = t(base.surfaceDim),
+        surfaceBright = t(base.surfaceBright),
+        surfaceContainerLowest = t(base.surfaceContainerLowest),
+        surfaceContainerLow = t(base.surfaceContainerLow),
+        surfaceContainer = t(base.surfaceContainer),
+        surfaceContainerHigh = t(base.surfaceContainerHigh),
+        surfaceContainerHighest = t(base.surfaceContainerHighest),
+        inverseSurface = t(base.inverseSurface),
+        inverseOnSurface = t(base.inverseOnSurface),
+        outline = t(base.outline),
+        outlineVariant = t(base.outlineVariant),
+    )
+}
+
 @Composable
 fun MushafTheme(
-    darkTheme: Boolean,
+    paletteId: String,
     content: @Composable () -> Unit
 ) {
+    val palette = paletteFor(paletteId)
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
+        colorScheme = remember(palette) { schemeFor(palette) },
         typography = Typography,
         shapes = Shapes,
         content = content

@@ -26,12 +26,10 @@ import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CloudSync
-import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.QueryStats
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
@@ -67,6 +65,8 @@ import com.mushaf.reader.ui.components.MushafSectionHeader
 import com.mushaf.reader.ui.components.MushafSegmentedTabs
 import com.mushaf.reader.ui.components.MushafSoftDivider
 import com.mushaf.reader.ui.components.MushafTopBar
+import com.mushaf.reader.ui.theme.MushafPalette
+import com.mushaf.reader.ui.theme.MushafPalettes
 import com.mushaf.reader.ui.theme.StatusBlueColor
 import com.mushaf.reader.ui.theme.StatusGoldColor
 import com.mushaf.reader.ui.theme.StatusGreenColor
@@ -77,6 +77,12 @@ import com.mushaf.reader.ui.theme.StatusRedColor
 fun SettingsScreen(
     isVisible: (String) -> Boolean,
     onToggle: (String, Boolean) -> Unit,
+    paletteId: String,
+    onPaletteChange: (String) -> Unit,
+    isInBar: (String) -> Boolean,
+    onSetInBar: (String, Boolean) -> Unit,
+    buttonColor: (String) -> String,
+    onButtonColorChange: (String, String) -> Unit,
     bigButtons: Boolean,
     onBigButtonsChange: (Boolean) -> Unit,
     verticalPaging: Boolean,
@@ -140,15 +146,6 @@ fun SettingsScreen(
     var confirmText by remember { mutableStateOf("") }
     var tab by remember { mutableStateOf(0) }
 
-    val moreMenuControls = listOf(
-        HeaderControl("search", "البحث", "أول خيار داخل قائمة المزيد.", Icons.Outlined.Search),
-        HeaderControl("bookmark", "العلامة المرجعية", "الانتقال إلى الفاصل الذهبي المحفوظ.", Icons.Outlined.BookmarkBorder),
-        HeaderControl("bookmark2", "العلامة المرجعية الثانية", "الانتقال إلى الفاصل البنفسجي المحفوظ.", Icons.Outlined.BookmarkBorder),
-        HeaderControl("stats", "إحصائيات القراءة", "متابعة القراءة والختمة والجلسات.", Icons.Outlined.QueryStats),
-        HeaderControl("index", "الفهرس", "فتح السور والأجزاء من القائمة.", Icons.AutoMirrored.Outlined.MenuBook),
-        HeaderControl("theme", "الوضع الليلي", "تبديل المظهر من قائمة المزيد.", Icons.Outlined.DarkMode),
-    )
-
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxSize()) {
             MushafTopBar(title = "الإعدادات", onBack = onBack)
@@ -157,6 +154,14 @@ fun SettingsScreen(
 
             when (tab) {
                 0 -> SettingsTabScroll {
+                SettingsPanel(
+                    title = "المظهر",
+                    body = "لون ورق المصحف وحبره، ويتبعه لون واجهة التطبيق.",
+                    icon = Icons.Outlined.Palette
+                ) {
+                    ThemeChoiceGrid(selected = paletteId, onSelected = onPaletteChange)
+                }
+
                 SettingsPanel(
                     title = "تصفّح الصفحات",
                     body = "اتجاه تقليب صفحات المصحف.",
@@ -181,22 +186,6 @@ fun SettingsScreen(
                         showSessionTimer = showSessionTimer,
                         showFillButton = isVisible("fill"),
                         showHideButton = isVisible("hide")
-                    )
-                    SoftDivider()
-                    ToggleSettingRow(
-                        icon = Icons.Outlined.WidthFull,
-                        title = "زر عرض الصفحة كاملة",
-                        body = "يظهر في أعلى القارئ قبل زر توسيع مساحة القراءة، ويبدّل بين عرض الصفحة كاملة وملئها.",
-                        checked = isVisible("fill"),
-                        onCheckedChange = { onToggle("fill", it) }
-                    )
-                    SoftDivider()
-                    ToggleSettingRow(
-                        icon = Icons.Filled.KeyboardArrowUp,
-                        title = "زر توسيع مساحة القراءة",
-                        body = "يعرض سهماً يخفي رأس الصفحة للقراءة بلا مشتتات.",
-                        checked = isVisible("hide"),
-                        onCheckedChange = { onToggle("hide", it) }
                     )
                     SoftDivider()
                     ToggleSettingRow(
@@ -340,21 +329,36 @@ fun SettingsScreen(
                 }
                 1 -> SettingsTabScroll {
                 SettingsPanel(
-                    title = "قائمة المزيد",
-                    body = "هذه العناصر تظهر داخل زر النقاط الثلاث في رأس الصفحة.",
+                    title = "أزرار رأس الصفحة",
+                    body = "لكل عملية: إظهارها، ومكانها في الشريط العلوي أو قائمة المزيد، ولونها في الشريط.",
                     icon = Icons.Filled.MoreVert
                 ) {
                     MenuLocationHint()
                     SoftDivider()
-                    moreMenuControls.forEachIndexed { index, item ->
+                    HeaderActions.forEachIndexed { index, action ->
                         ToggleSettingRow(
-                            icon = item.icon,
-                            title = item.title,
-                            body = item.body,
-                            checked = isVisible(item.id),
-                            onCheckedChange = { onToggle(item.id, it) }
+                            icon = action.settingsIcon,
+                            title = action.title,
+                            body = action.body,
+                            checked = isVisible(action.id),
+                            onCheckedChange = { onToggle(action.id, it) }
                         )
-                        if (index != moreMenuControls.lastIndex) SoftDivider()
+                        // Placement and color only mean something once the action is shown at all,
+                        // and the color only once it has an icon of its own on the bar.
+                        if (isVisible(action.id)) {
+                            PlacementChoiceRow(
+                                inBar = isInBar(action.id),
+                                onSelected = { onSetInBar(action.id, it) }
+                            )
+                            if (isInBar(action.id)) {
+                                ColorChoiceRow(
+                                    title = "لونه في الشريط",
+                                    selected = buttonColor(action.id),
+                                    onSelected = { onButtonColorChange(action.id, it) }
+                                )
+                            }
+                        }
+                        if (index != HeaderActions.lastIndex) SoftDivider()
                     }
                 }
                 }
@@ -503,13 +507,6 @@ private fun SettingsTabScroll(content: @Composable ColumnScope.() -> Unit) {
     )
 }
 
-private data class HeaderControl(
-    val id: String,
-    val title: String,
-    val body: String,
-    val icon: ImageVector,
-)
-
 @Composable
 private fun HeaderLayoutPreview(
     showClock: Boolean,
@@ -559,7 +556,7 @@ private fun MenuLocationHint() {
     ) {
         SmallIconBadge(Icons.Filled.MoreVert)
         Text(
-            text = "إخفاء أي خيار هنا يزيله من القائمة الجانبية في رأس الصفحة.",
+            text = "كل عملية إمّا مخفية، أو زرّاً ملوّناً في الشريط العلوي، أو سطراً داخل قائمة النقاط الثلاث.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
@@ -660,6 +657,176 @@ private fun ActionRow(icon: ImageVector, title: String, body: String, onClick: (
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+/** The reading themes as a grid of page thumbnails: each swatch is painted in that theme's own
+ *  paper and ink, so the choice is made by looking rather than by reading a color name. */
+@Composable
+private fun ThemeChoiceGrid(
+    selected: String,
+    onSelected: (String) -> Unit,
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        MushafPalettes.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { palette ->
+                    ThemeChoiceTile(
+                        palette = palette,
+                        selected = palette.id == selected,
+                        accent = accent,
+                        onClick = { onSelected(palette.id) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeChoiceTile(
+    palette: MushafPalette,
+    selected: Boolean,
+    accent: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = palette.paper,
+            border = BorderStroke(
+                if (selected) 2.dp else 1.dp,
+                if (selected) accent else MaterialTheme.colorScheme.outlineVariant
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(62.dp)
+                .clickable(onClick = onClick)
+        ) {
+            // Three ruled lines standing in for the page's text, in that theme's ink.
+            Column(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                listOf(1f, 1f, 0.55f).forEach { width ->
+                    Surface(
+                        shape = RoundedCornerShape(2.dp),
+                        color = palette.ink.copy(alpha = 0.85f),
+                        modifier = Modifier
+                            .fillMaxWidth(width)
+                            .height(4.dp)
+                    ) {}
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = palette.label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** Where one header action lives: a button on the bar itself, or a line in the More menu. */
+@Composable
+private fun PlacementChoiceRow(
+    inBar: Boolean,
+    onSelected: (Boolean) -> Unit,
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val choices = listOf(
+        Triple(true, "الشريط العلوي", Icons.Outlined.Tune),
+        Triple(false, "قائمة المزيد", Icons.Filled.MoreVert),
+    )
+    val current = choices.first { it.first == inBar }
+    val color = if (inBar) accent else muted
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 2.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "المكان",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+        Box {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = color.copy(alpha = 0.14f),
+                border = BorderStroke(1.dp, color.copy(alpha = 0.6f)),
+                modifier = Modifier.clickable { expanded = true }
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = current.third,
+                        contentDescription = null,
+                        tint = color,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = current.second,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = color
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.ArrowDropDown,
+                        contentDescription = "اختيار المكان",
+                        tint = color
+                    )
+                }
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                choices.forEach { choice ->
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = choice.third,
+                                    contentDescription = null,
+                                    tint = if (choice.first == inBar) color
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = choice.second,
+                                    color = if (choice.first == inBar) color
+                                    else MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = if (choice.first == inBar) FontWeight.SemiBold
+                                    else FontWeight.Normal
+                                )
+                            }
+                        },
+                        trailingIcon = if (choice.first == inBar) {
+                            { Icon(Icons.Filled.Check, contentDescription = null, tint = color) }
+                        } else null,
+                        onClick = {
+                            expanded = false
+                            onSelected(choice.first)
+                        }
+                    )
+                }
+            }
         }
     }
 }

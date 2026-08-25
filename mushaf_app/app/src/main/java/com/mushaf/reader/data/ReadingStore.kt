@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.first
 
 private val Context.dataStore by preferencesDataStore(name = "reading")
 
-/** Persists the last-read page (continue reading), display settings (dark theme,
+/** Persists the last-read page (continue reading), display settings (reading theme,
  *  fill-screen), and the set of bookmarked verse keys, so the app reopens as it was left. */
 class ReadingStore(private val context: Context) {
 
@@ -28,16 +28,40 @@ class ReadingStore(private val context: Context) {
         const val DEFAULT_SIDE_INDICATOR_OPACITY = 70
         /** Keep the restore-header button at its current visual strength until the user changes it. */
         const val DEFAULT_SHOW_HEADER_BUTTON_OPACITY = 100
+        /** Palette id used before the user picks one, and the one the old dark_theme flag maps to.
+         *  Kept as plain strings so this layer stays independent of the ui.theme palette table. */
+        const val DEFAULT_THEME_ID = "light"
+        const val DARK_THEME_ID = "dark"
+        /** Header actions that sit on the bar itself until the user moves them into the More menu.
+         *  These two were bar buttons before the placement setting existed, so they stay there. */
+        val DEFAULT_BAR_BUTTONS = setOf("fill", "hide")
+
+        /** Per-button colors ride in a preference string set as "id=color" — DataStore has no map
+         *  type, and the backup file reuses the same encoding. */
+        fun decodeButtonColors(entries: Set<String>?): Map<String, String> =
+            entries.orEmpty().mapNotNull { entry ->
+                val at = entry.indexOf('=')
+                if (at <= 0 || at == entry.lastIndex) null
+                else entry.substring(0, at) to entry.substring(at + 1)
+            }.toMap()
+
+        fun encodeButtonColors(colors: Map<String, String>): Set<String> =
+            colors.entries.mapTo(HashSet()) { "${it.key}=${it.value}" }
     }
 
     private val keyLastPage = intPreferencesKey("last_page")
     private val keyBookmarks = stringSetPreferencesKey("bookmarks")
     private val keyBookmarks2 = stringSetPreferencesKey("bookmarks2")
+    private val keyThemeId = stringPreferencesKey("theme_id")
+    // Superseded by keyThemeId; still read once so installs from before the palettes keep their look.
     private val keyDarkTheme = booleanPreferencesKey("dark_theme")
     private val keyFillScreen = booleanPreferencesKey("fill_screen")
     private val keyVisitedPages = stringSetPreferencesKey("visited_pages")
     private val keyReadPages = stringSetPreferencesKey("read_pages")
     private val keyHiddenButtons = stringSetPreferencesKey("hidden_header_buttons")
+    // Which header actions sit on the bar rather than in the More menu, and the color each takes there.
+    private val keyBarButtons = stringSetPreferencesKey("bar_buttons")
+    private val keyButtonColors = stringSetPreferencesKey("button_colors")
     private val keyBigButtons = booleanPreferencesKey("big_buttons")
     private val keyShowClock = booleanPreferencesKey("show_clock")
     private val keyShowSessionTimer = booleanPreferencesKey("show_session_timer")
@@ -85,11 +109,13 @@ class ReadingStore(private val context: Context) {
      *  as read (read ⊆ visited). Drives the khatma map. */
     data class Settings(
         val lastPage: Int,
-        val darkTheme: Boolean,
+        val themeId: String,
         val fillScreen: Boolean,
         val visitedPages: Set<Int>,
         val readPages: Set<Int>,
         val hiddenButtons: Set<String>,
+        val barButtons: Set<String>,
+        val buttonColors: Map<String, String>,
         val bigButtons: Boolean,
         val showClock: Boolean,
         val showSessionTimer: Boolean,
@@ -132,11 +158,14 @@ class ReadingStore(private val context: Context) {
         val prefs = context.dataStore.data.first()
         return Settings(
             lastPage = prefs[keyLastPage] ?: 1,
-            darkTheme = prefs[keyDarkTheme] ?: false,
+            themeId = prefs[keyThemeId]
+                ?: if (prefs[keyDarkTheme] == true) DARK_THEME_ID else DEFAULT_THEME_ID,
             fillScreen = prefs[keyFillScreen] ?: false,
             visitedPages = prefs[keyVisitedPages].toIntSet(),
             readPages = prefs[keyReadPages].toIntSet(),
             hiddenButtons = prefs[keyHiddenButtons] ?: emptySet(),
+            barButtons = prefs[keyBarButtons] ?: DEFAULT_BAR_BUTTONS,
+            buttonColors = decodeButtonColors(prefs[keyButtonColors]),
             bigButtons = prefs[keyBigButtons] ?: false,
             showClock = prefs[keyShowClock] ?: false,
             showSessionTimer = prefs[keyShowSessionTimer] ?: false,
@@ -184,11 +213,13 @@ class ReadingStore(private val context: Context) {
             prefs[keyLastPage] = value.lastPage
             prefs[keyBookmarks] = state.bookmarks
             prefs[keyBookmarks2] = state.bookmarks2
-            prefs[keyDarkTheme] = value.darkTheme
+            prefs[keyThemeId] = value.themeId
             prefs[keyFillScreen] = value.fillScreen
             prefs[keyVisitedPages] = value.visitedPages.mapTo(HashSet()) { it.toString() }
             prefs[keyReadPages] = value.readPages.mapTo(HashSet()) { it.toString() }
             prefs[keyHiddenButtons] = value.hiddenButtons
+            prefs[keyBarButtons] = value.barButtons
+            prefs[keyButtonColors] = encodeButtonColors(value.buttonColors)
             prefs[keyBigButtons] = value.bigButtons
             prefs[keyShowClock] = value.showClock
             prefs[keyShowSessionTimer] = value.showSessionTimer
@@ -261,8 +292,16 @@ class ReadingStore(private val context: Context) {
         context.dataStore.edit { it[keyLastPage] = page }
     }
 
-    suspend fun setDarkTheme(value: Boolean) {
-        context.dataStore.edit { it[keyDarkTheme] = value }
+    suspend fun setBarButtons(value: Set<String>) {
+        context.dataStore.edit { it[keyBarButtons] = value }
+    }
+
+    suspend fun setButtonColors(value: Map<String, String>) {
+        context.dataStore.edit { it[keyButtonColors] = encodeButtonColors(value) }
+    }
+
+    suspend fun setThemeId(value: String) {
+        context.dataStore.edit { it[keyThemeId] = value }
     }
 
     suspend fun setFillScreen(value: Boolean) {

@@ -14,9 +14,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -27,6 +29,7 @@ import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.ui.theme.AyahSelectionColor
 import com.mushaf.reader.ui.theme.BookmarkGoldColor
 import com.mushaf.reader.ui.theme.BookmarkVioletColor
+import com.mushaf.reader.ui.theme.PageRecolor
 import kotlin.math.min
 
 /**
@@ -43,10 +46,14 @@ import kotlin.math.min
  *   glyphs just get a little taller.
  *
  * Bookmarked ayahs stay highlighted (amber); a long-pressed ayah is highlighted (green).
+ *
+ * [recolor] repaints the printed page for the chosen reading theme — the page assets themselves
+ * ship in one light version only.
  */
 @Composable
 fun ZoomablePage(
     model: String,
+    recolor: PageRecolor,
     markers: List<AyahMarker>,
     imageWidth: Int,
     imageHeight: Int,
@@ -83,17 +90,17 @@ fun ZoomablePage(
 
         when {
             !fillScreen -> WholePage(
-                model, markers, fitScale, wPx, hPx, imgW, imgH,
+                model, recolor, markers, fitScale, wPx, hPx, imgW, imgH,
                 bookmarked, bookmarked2, highlight, onLongPressAyah
             )
 
             widthConstrained -> StretchedPage(
-                model, markers, fitScale, wPx, hPx, imgW, imgH,
+                model, recolor, markers, fitScale, wPx, hPx, imgW, imgH,
                 bookmarked, bookmarked2, highlight, onLongPressAyah
             )
 
             else -> FilledWidthPage(
-                model, markers, wPx, imgW, imgH,
+                model, recolor, markers, wPx, imgW, imgH,
                 bookmarked, bookmarked2, highlight, onLongPressAyah
             )
         }
@@ -104,6 +111,7 @@ fun ZoomablePage(
 @Composable
 private fun WholePage(
     model: String,
+    recolor: PageRecolor,
     markers: List<AyahMarker>,
     fitScale: Float,
     wPx: Float,
@@ -143,6 +151,7 @@ private fun WholePage(
                 .align(Alignment.Center)
                 .requiredSize(contentWDp, contentHDp),
             model = model,
+            recolor = recolor,
             baseScale = fitScale,
             bookmarked = bookmarked,
             bookmarked2 = bookmarked2,
@@ -155,6 +164,7 @@ private fun WholePage(
 @Composable
 private fun StretchedPage(
     model: String,
+    recolor: PageRecolor,
     markers: List<AyahMarker>,
     fitScale: Float,
     wPx: Float,
@@ -200,6 +210,7 @@ private fun StretchedPage(
                     scaleY = stretch
                 },
             model = model,
+            recolor = recolor,
             baseScale = fitScale,
             bookmarked = bookmarked,
             bookmarked2 = bookmarked2,
@@ -212,6 +223,7 @@ private fun StretchedPage(
 @Composable
 private fun FilledWidthPage(
     model: String,
+    recolor: PageRecolor,
     markers: List<AyahMarker>,
     wPx: Float,
     imgW: Float,
@@ -253,6 +265,7 @@ private fun FilledWidthPage(
             PageContent(
                 modifier = Modifier.requiredSize(contentWDp, contentHDp),
                 model = model,
+                recolor = recolor,
                 baseScale = scale,
                 bookmarked = bookmarked,
                 bookmarked2 = bookmarked2,
@@ -276,6 +289,7 @@ private fun pickAyah(markers: List<AyahMarker>, ix: Float, iy: Float): AyahMarke
 private fun PageContent(
     modifier: Modifier,
     model: String,
+    recolor: PageRecolor,
     baseScale: Float,
     bookmarked: List<AyahMarker>,
     bookmarked2: List<AyahMarker>,
@@ -286,7 +300,20 @@ private fun PageContent(
             model = model,
             contentDescription = null,
             contentScale = ContentScale.FillBounds,
-            modifier = Modifier.fillMaxSize()
+            colorFilter = recolor.filter,
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    // Multiplied over the page rather than folded into the filter, so the surah
+                    // header's printed green and gold survive the tint. Safe without an offscreen
+                    // layer: the page is opaque and covers these exact bounds.
+                    if (recolor.multiply != null) {
+                        Modifier.drawWithContent {
+                            drawContent()
+                            drawRect(recolor.multiply, blendMode = BlendMode.Multiply)
+                        }
+                    } else Modifier
+                )
         )
 
         if (bookmarked.isNotEmpty() || bookmarked2.isNotEmpty() || highlight != null) {

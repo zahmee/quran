@@ -1,0 +1,6 @@
+<resources>
+    <!-- Launch-window background for the three dark reading themes. Deliberately a neutral dark
+         rather than any one theme's paper: resource qualifiers only give us light vs dark, and
+         MainActivity repaints the window with the exact palette color as soon as it starts. -->
+    <color name="paper">#141312</color>
+</resources>

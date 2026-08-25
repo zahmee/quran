@@ -44,25 +44,22 @@ import androidx.compose.foundation.pager.PagerScope
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.ManageSearch
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -126,11 +123,13 @@ import androidx.compose.ui.unit.sp
 import com.mushaf.reader.ui.components.MushafSegmentedTabs
 import com.mushaf.reader.ui.theme.BookmarkGoldColor
 import com.mushaf.reader.ui.theme.BookmarkVioletColor
+import com.mushaf.reader.ui.theme.MushafPalettes
 import com.mushaf.reader.ui.theme.ReadingType
 import com.mushaf.reader.ui.theme.StatusBlueColor
 import com.mushaf.reader.ui.theme.StatusGoldColor
 import com.mushaf.reader.ui.theme.StatusGreenColor
 import com.mushaf.reader.ui.theme.StatusRedColor
+import com.mushaf.reader.ui.theme.pageRecolor
 import com.mushaf.reader.data.AyahMarker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -216,7 +215,7 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                         pageInJuz = juzInfo.pageInJuz,
                         pagesInJuz = juzInfo.pagesInJuz,
                         juzPercent = juzInfo.pageInJuz * 100 / juzInfo.pagesInJuz,
-                        dark = viewModel.darkTheme,
+                        paletteId = viewModel.themeId,
                         hasBookmark = viewModel.bookmarks.isNotEmpty(),
                         hasBookmark2 = viewModel.bookmarks2.isNotEmpty(),
                         fillScreen = viewModel.fillScreen,
@@ -232,6 +231,10 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                         sessionTimerColor = viewModel.sessionTimerColor,
                         sessionStartedAt = viewModel.sessionStartedAt,
                         isVisible = { id -> viewModel.isButtonVisible(id) },
+                        isInBar = { id -> viewModel.isButtonInBar(id) },
+                        buttonTint = { id, fallback ->
+                            headerStatusColor(viewModel.buttonColor(id), fallback)
+                        },
                         onOpenSettings = { showSettings = true },
                         onOpenIndex = { tab ->
                             indexTab = tab
@@ -240,7 +243,7 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                         onOpenSearch = { showSearch = true },
                         onToggleFillScreen = { viewModel.toggleFillScreen() },
                         onHideHeader = { headerVisible = false },
-                        onToggleTheme = { viewModel.toggleTheme() },
+                        onPaletteChange = { viewModel.updateThemeId(it) },
                         onBookmarkJump = {
                             viewModel.bookmarkJumpPage()?.let { p ->
                                 scope.launch { pagerState.scrollToPage((p - 1).coerceIn(0, pageCount - 1)) }
@@ -389,6 +392,12 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
             SettingsScreen(
                 isVisible = { id -> viewModel.isButtonVisible(id) },
                 onToggle = { id, v -> viewModel.setButtonVisible(id, v) },
+                paletteId = viewModel.themeId,
+                onPaletteChange = { viewModel.updateThemeId(it) },
+                isInBar = { id -> viewModel.isButtonInBar(id) },
+                onSetInBar = { id, v -> viewModel.setButtonInBar(id, v) },
+                buttonColor = { id -> viewModel.buttonColor(id) },
+                onButtonColorChange = { id, c -> viewModel.updateButtonColor(id, c) },
                 bigButtons = viewModel.bigButtons,
                 onBigButtonsChange = { viewModel.updateBigButtons(it) },
                 verticalPaging = viewModel.verticalPaging,
@@ -506,12 +515,14 @@ private fun ReaderPager(
     BoxWithConstraints(modifier = modifier) {
         val boxW = constraints.maxWidth
         val boxH = constraints.maxHeight
+        val recolor = remember(viewModel.palette) { viewModel.palette.pageRecolor() }
 
         // Same page content for both orientations; only the pager axis differs.
         val pageContent: @Composable PagerScope.(Int) -> Unit = { index ->
             val pageNumber = index + 1
             ZoomablePage(
                 model = viewModel.assetModel(pageNumber),
+                recolor = recolor,
                 markers = viewModel.markersForPage(pageNumber),
                 imageWidth = viewModel.imageWidth,
                 imageHeight = viewModel.imageHeight,
@@ -598,7 +609,7 @@ private fun ReaderHeader(
     pageInJuz: Int,
     pagesInJuz: Int,
     juzPercent: Int,
-    dark: Boolean,
+    paletteId: String,
     hasBookmark: Boolean,
     hasBookmark2: Boolean,
     fillScreen: Boolean,
@@ -614,12 +625,15 @@ private fun ReaderHeader(
     sessionTimerColor: String,
     sessionStartedAt: Long,
     isVisible: (String) -> Boolean,
+    isInBar: (String) -> Boolean,
+    /** (action id, the tint it would have had) -> the color the user picked for it. */
+    buttonTint: (String, Color) -> Color,
     onOpenSettings: () -> Unit,
     onOpenIndex: (Int) -> Unit,
     onOpenSearch: () -> Unit,
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
-    onToggleTheme: () -> Unit,
+    onPaletteChange: (String) -> Unit,
     onBookmarkJump: () -> Unit,
     onBookmark2Jump: () -> Unit,
     onStats: () -> Unit,
@@ -745,26 +759,27 @@ private fun ReaderHeader(
                             modifier = Modifier.padding(horizontal = 6.dp)
                         )
                     }
-                    if (isVisible("fill")) {
-                        IconButton(onClick = onToggleFillScreen, modifier = Modifier.size(btnSize)) {
-                            Icon(
-                                imageVector = if (fillScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
-                                contentDescription = if (fillScreen) "عرض الصفحة كاملة" else "توسيع الصفحة",
-                                tint = if (fillScreen) activeContentColor else quietContentColor,
-                                modifier = Modifier.size(iconSize),
-                            )
-                        }
-                    }
-                    if (isVisible("hide")) {
-                        IconButton(onClick = onHideHeader, modifier = Modifier.size(btnSize)) {
-                            Icon(
-                                imageVector = Icons.Filled.KeyboardArrowUp,
-                                contentDescription = "إخفاء الشريط العلوي وملء الشاشة",
-                                tint = quietContentColor,
-                                modifier = Modifier.size(iconSize)
-                            )
-                        }
-                    }
+                    HeaderBarActions(
+                        btnSize = btnSize,
+                        iconSize = iconSize,
+                        quietContentColor = quietContentColor,
+                        activeContentColor = activeContentColor,
+                        fillScreen = fillScreen,
+                        hasBookmark = hasBookmark,
+                        hasBookmark2 = hasBookmark2,
+                        paletteId = paletteId,
+                        isVisible = isVisible,
+                        isInBar = isInBar,
+                        buttonTint = buttonTint,
+                        onOpenSearch = onOpenSearch,
+                        onBookmarkJump = onBookmarkJump,
+                        onBookmark2Jump = onBookmark2Jump,
+                        onStats = onStats,
+                        onOpenIndex = onOpenIndex,
+                        onPaletteChange = onPaletteChange,
+                        onToggleFillScreen = onToggleFillScreen,
+                        onHideHeader = onHideHeader
+                    )
                     HeaderMoreMenu(
                         btnSize = btnSize,
                         iconSize = iconSize,
@@ -772,14 +787,18 @@ private fun ReaderHeader(
                         quietContentColor = quietContentColor,
                         hasBookmark = hasBookmark,
                         hasBookmark2 = hasBookmark2,
-                        dark = dark,
+                        fillScreen = fillScreen,
+                        paletteId = paletteId,
                         isVisible = isVisible,
+                        isInBar = isInBar,
                         onOpenSearch = onOpenSearch,
                         onBookmarkJump = onBookmarkJump,
                         onBookmark2Jump = onBookmark2Jump,
                         onStats = onStats,
                         onOpenIndex = onOpenIndex,
-                        onToggleTheme = onToggleTheme
+                        onPaletteChange = onPaletteChange,
+                        onToggleFillScreen = onToggleFillScreen,
+                        onHideHeader = onHideHeader
                     )
                 }
             }
@@ -838,24 +857,27 @@ private fun ReaderHeader(
                             modifier = Modifier.padding(horizontal = 6.dp)
                         )
                     }
-                    if (isVisible("fill")) {
-                        IconButton(onClick = onToggleFillScreen, modifier = Modifier.size(btnSize)) {
-                            Icon(
-                                imageVector = if (fillScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
-                                contentDescription = if (fillScreen) "عرض الصفحة كاملة" else "توسيع الصفحة",
-                                tint = if (fillScreen) activeContentColor else quietContentColor,
-                                modifier = Modifier.size(iconSize),
-                            )
-                        }
-                    }
-                    if (isVisible("hide")) IconButton(onClick = onHideHeader, modifier = Modifier.size(btnSize)) {
-                        Icon(
-                            imageVector = Icons.Filled.KeyboardArrowUp,
-                            contentDescription = "إخفاء الشريط العلوي وملء الشاشة",
-                            tint = quietContentColor,
-                            modifier = Modifier.size(iconSize)
-                        )
-                    }
+                    HeaderBarActions(
+                        btnSize = btnSize,
+                        iconSize = iconSize,
+                        quietContentColor = quietContentColor,
+                        activeContentColor = activeContentColor,
+                        fillScreen = fillScreen,
+                        hasBookmark = hasBookmark,
+                        hasBookmark2 = hasBookmark2,
+                        paletteId = paletteId,
+                        isVisible = isVisible,
+                        isInBar = isInBar,
+                        buttonTint = buttonTint,
+                        onOpenSearch = onOpenSearch,
+                        onBookmarkJump = onBookmarkJump,
+                        onBookmark2Jump = onBookmark2Jump,
+                        onStats = onStats,
+                        onOpenIndex = onOpenIndex,
+                        onPaletteChange = onPaletteChange,
+                        onToggleFillScreen = onToggleFillScreen,
+                        onHideHeader = onHideHeader
+                    )
                     HeaderMoreMenu(
                         btnSize = btnSize,
                         iconSize = iconSize,
@@ -863,14 +885,18 @@ private fun ReaderHeader(
                         quietContentColor = quietContentColor,
                         hasBookmark = hasBookmark,
                         hasBookmark2 = hasBookmark2,
-                        dark = dark,
+                        fillScreen = fillScreen,
+                        paletteId = paletteId,
                         isVisible = isVisible,
+                        isInBar = isInBar,
                         onOpenSearch = onOpenSearch,
                         onBookmarkJump = onBookmarkJump,
                         onBookmark2Jump = onBookmark2Jump,
                         onStats = onStats,
                         onOpenIndex = onOpenIndex,
-                        onToggleTheme = onToggleTheme
+                        onPaletteChange = onPaletteChange,
+                        onToggleFillScreen = onToggleFillScreen,
+                        onHideHeader = onHideHeader
                     )
                 }
             }
@@ -935,21 +961,31 @@ private fun HeaderMoreMenu(
     quietContentColor: Color,
     hasBookmark: Boolean,
     hasBookmark2: Boolean,
-    dark: Boolean,
+    fillScreen: Boolean,
+    paletteId: String,
     isVisible: (String) -> Boolean,
+    isInBar: (String) -> Boolean,
     onOpenSearch: () -> Unit,
     onBookmarkJump: () -> Unit,
     onBookmark2Jump: () -> Unit,
     onStats: () -> Unit,
     onOpenIndex: (Int) -> Unit,
-    onToggleTheme: () -> Unit,
+    onPaletteChange: (String) -> Unit,
+    onToggleFillScreen: () -> Unit,
+    onHideHeader: () -> Unit,
 ) {
+    // Exactly what the user did not move onto the bar. With everything on the bar there is nothing
+    // left to open, so the overflow button steps aside rather than offering an empty menu.
+    val menuActions = HeaderActions.filter { isVisible(it.id) && !isInBar(it.id) }
+    if (menuActions.isEmpty()) return
+
     var showMoreMenu by remember { mutableStateOf(false) }
+    var showThemeMenu by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { showMoreMenu = true }, modifier = Modifier.size(btnSize)) {
             Icon(
                 imageVector = Icons.Filled.MoreVert,
-                contentDescription = "المزيد",
+                contentDescription = "\u0627\u0644\u0645\u0632\u064a\u062f",
                 tint = tint,
                 modifier = Modifier.size(iconSize)
             )
@@ -958,87 +994,213 @@ private fun HeaderMoreMenu(
             expanded = showMoreMenu,
             onDismissRequest = { showMoreMenu = false }
         ) {
-            if (isVisible("search")) {
+            menuActions.forEach { action ->
+                val enabled = when (action.id) {
+                    "bookmark" -> hasBookmark
+                    "bookmark2" -> hasBookmark2
+                    else -> true
+                }
                 DropdownMenuItem(
-                    text = { Text("البحث") },
-                    leadingIcon = { Icon(imageVector = Icons.Filled.Search, contentDescription = null) },
-                    onClick = {
-                        showMoreMenu = false
-                        onOpenSearch()
-                    }
-                )
-            }
-            if (isVisible("bookmark")) {
-                DropdownMenuItem(
-                    text = { Text("العلامة المرجعية") },
+                    text = { Text(headerActionLabel(action, fillScreen)) },
                     leadingIcon = {
                         Icon(
-                            imageVector = Icons.Filled.Bookmark,
+                            imageVector = headerActionIcon(action, fillScreen),
                             contentDescription = null,
-                            tint = if (hasBookmark) BookmarkGoldColor else quietContentColor
+                            tint = headerActionDefaultTint(
+                                action.id, hasBookmark, hasBookmark2, fillScreen,
+                                quietContentColor, quietContentColor
+                            )
                         )
                     },
-                    enabled = hasBookmark,
+                    enabled = enabled,
                     onClick = {
                         showMoreMenu = false
-                        onBookmarkJump()
-                    }
-                )
-            }
-            if (isVisible("bookmark2")) {
-                DropdownMenuItem(
-                    text = { Text("العلامة المرجعية الثانية") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.Bookmark,
-                            contentDescription = null,
-                            tint = if (hasBookmark2) BookmarkVioletColor else quietContentColor
-                        )
-                    },
-                    enabled = hasBookmark2,
-                    onClick = {
-                        showMoreMenu = false
-                        onBookmark2Jump()
-                    }
-                )
-            }
-            if (isVisible("stats")) {
-                DropdownMenuItem(
-                    text = { Text("إحصائيات القراءة") },
-                    leadingIcon = { Icon(imageVector = Icons.Filled.BarChart, contentDescription = null) },
-                    onClick = {
-                        showMoreMenu = false
-                        onStats()
-                    }
-                )
-            }
-            if (isVisible("index")) {
-                DropdownMenuItem(
-                    text = { Text("الفهرس") },
-                    leadingIcon = { Icon(imageVector = Icons.AutoMirrored.Filled.MenuBook, contentDescription = null) },
-                    onClick = {
-                        showMoreMenu = false
-                        onOpenIndex(0)
-                    }
-                )
-            }
-            if (isVisible("theme")) {
-                DropdownMenuItem(
-                    text = { Text(if (dark) "الوضع الفاتح" else "الوضع الليلي") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = if (dark) Icons.Filled.LightMode else Icons.Filled.DarkMode,
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        showMoreMenu = false
-                        onToggleTheme()
+                        if (action.id == "theme") {
+                            showThemeMenu = true
+                        } else {
+                            runHeaderAction(
+                                action.id, onOpenSearch, onBookmarkJump, onBookmark2Jump,
+                                onStats, onOpenIndex, onToggleFillScreen, onHideHeader
+                            )
+                        }
                     }
                 )
             }
         }
+        // Second menu on the same anchor: picking the theme without leaving the reader.
+        PaletteMenu(
+            expanded = showThemeMenu,
+            paletteId = paletteId,
+            onDismiss = { showThemeMenu = false },
+            onPaletteChange = onPaletteChange
+        )
     }
+}
+
+/** The actions the user placed on the bar itself, each drawn in the color chosen for it. Actions
+ *  left in the More menu are skipped here — [HeaderMoreMenu] renders exactly the complement. */
+@Composable
+private fun HeaderBarActions(
+    btnSize: Dp,
+    iconSize: Dp,
+    quietContentColor: Color,
+    activeContentColor: Color,
+    fillScreen: Boolean,
+    hasBookmark: Boolean,
+    hasBookmark2: Boolean,
+    paletteId: String,
+    isVisible: (String) -> Boolean,
+    isInBar: (String) -> Boolean,
+    buttonTint: (String, Color) -> Color,
+    onOpenSearch: () -> Unit,
+    onBookmarkJump: () -> Unit,
+    onBookmark2Jump: () -> Unit,
+    onStats: () -> Unit,
+    onOpenIndex: (Int) -> Unit,
+    onPaletteChange: (String) -> Unit,
+    onToggleFillScreen: () -> Unit,
+    onHideHeader: () -> Unit,
+) {
+    HeaderActions.forEach { action ->
+        if (!isVisible(action.id) || !isInBar(action.id)) return@forEach
+        val tint = buttonTint(
+            action.id,
+            headerActionDefaultTint(
+                action.id, hasBookmark, hasBookmark2, fillScreen,
+                quietContentColor, activeContentColor
+            )
+        )
+        if (action.id == "theme") {
+            HeaderThemeButton(btnSize, iconSize, tint, paletteId, onPaletteChange)
+            return@forEach
+        }
+        val enabled = when (action.id) {
+            "bookmark" -> hasBookmark
+            "bookmark2" -> hasBookmark2
+            else -> true
+        }
+        IconButton(
+            onClick = {
+                runHeaderAction(
+                    action.id, onOpenSearch, onBookmarkJump, onBookmark2Jump,
+                    onStats, onOpenIndex, onToggleFillScreen, onHideHeader
+                )
+            },
+            enabled = enabled,
+            modifier = Modifier.size(btnSize)
+        ) {
+            Icon(
+                imageVector = headerActionIcon(action, fillScreen),
+                contentDescription = headerActionLabel(action, fillScreen),
+                tint = if (enabled) tint else quietContentColor.copy(alpha = 0.38f),
+                modifier = Modifier.size(iconSize)
+            )
+        }
+    }
+}
+
+/** The palette picker as its own bar button; it opens the same list the More menu shows. */
+@Composable
+private fun HeaderThemeButton(
+    btnSize: Dp,
+    iconSize: Dp,
+    tint: Color,
+    paletteId: String,
+    onPaletteChange: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }, modifier = Modifier.size(btnSize)) {
+            Icon(
+                imageVector = Icons.Filled.Palette,
+                contentDescription = "\u0627\u0644\u0645\u0638\u0647\u0631",
+                tint = tint,
+                modifier = Modifier.size(iconSize)
+            )
+        }
+        PaletteMenu(
+            expanded = expanded,
+            paletteId = paletteId,
+            onDismiss = { expanded = false },
+            onPaletteChange = onPaletteChange
+        )
+    }
+}
+
+/** The six reading themes as menu items, each swatch painted in that theme's own paper and ink. */
+@Composable
+private fun PaletteMenu(
+    expanded: Boolean,
+    paletteId: String,
+    onDismiss: () -> Unit,
+    onPaletteChange: (String) -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        MushafPalettes.forEach { choice ->
+            DropdownMenuItem(
+                text = { Text(choice.label) },
+                leadingIcon = {
+                    Surface(
+                        modifier = Modifier.size(16.dp),
+                        shape = CircleShape,
+                        color = choice.paper,
+                        border = BorderStroke(1.dp, choice.ink.copy(alpha = 0.55f))
+                    ) {}
+                },
+                trailingIcon = if (choice.id == paletteId) {
+                    { Icon(Icons.Filled.Check, contentDescription = null) }
+                } else null,
+                onClick = {
+                    onDismiss()
+                    onPaletteChange(choice.id)
+                }
+            )
+        }
+    }
+}
+
+private fun runHeaderAction(
+    id: String,
+    onOpenSearch: () -> Unit,
+    onBookmarkJump: () -> Unit,
+    onBookmark2Jump: () -> Unit,
+    onStats: () -> Unit,
+    onOpenIndex: (Int) -> Unit,
+    onToggleFillScreen: () -> Unit,
+    onHideHeader: () -> Unit,
+) {
+    when (id) {
+        "search" -> onOpenSearch()
+        "bookmark" -> onBookmarkJump()
+        "bookmark2" -> onBookmark2Jump()
+        "stats" -> onStats()
+        "index" -> onOpenIndex(0)
+        "fill" -> onToggleFillScreen()
+        "hide" -> onHideHeader()
+    }
+}
+
+/** Fill-screen is the one action that reads as a state, so its icon and wording follow it. */
+private fun headerActionIcon(action: HeaderAction, fillScreen: Boolean) =
+    if (action.id == "fill" && fillScreen) Icons.Filled.FullscreenExit else action.barIcon
+
+private fun headerActionLabel(action: HeaderAction, fillScreen: Boolean) =
+    if (action.id == "fill" && fillScreen) "\u0639\u0631\u0636 \u0627\u0644\u0635\u0641\u062d\u0629 \u0643\u0627\u0645\u0644\u0629" else action.title
+
+/** What an action is tinted when its color is left on "\u0647\u0627\u062f\u0626" — the look it had before the setting
+ *  existed: the bookmarks flag whether they point anywhere, fill-screen flags that it is on. */
+private fun headerActionDefaultTint(
+    id: String,
+    hasBookmark: Boolean,
+    hasBookmark2: Boolean,
+    fillScreen: Boolean,
+    quiet: Color,
+    active: Color,
+): Color = when (id) {
+    "bookmark" -> if (hasBookmark) BookmarkGoldColor else quiet
+    "bookmark2" -> if (hasBookmark2) BookmarkVioletColor else quiet
+    "fill" -> if (fillScreen) active else quiet
+    else -> quiet
 }
 
 /** Surah identity label (number · name · ayah count · progress), tappable to open the index.

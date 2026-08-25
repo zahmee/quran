@@ -135,6 +135,6 @@ python build_ayah_regions.py
 
 Quran Al-Qari is an open-source, offline-first Android Mushaf reader built with Kotlin and Jetpack
 Compose. It provides all 604 page images, interactive ayah highlighting, full-text search, two
-bookmarks, reading statistics, khatma tracking, light/dark themes, and horizontal or vertical paging.
+bookmarks, reading statistics, khatma tracking, six reading themes, and horizontal or vertical paging.
 The source code is MIT-licensed; bundled Mushaf imagery and Qur'anic datasets are subject to their
 original rights. See [`NOTICE.md`](NOTICE.md).

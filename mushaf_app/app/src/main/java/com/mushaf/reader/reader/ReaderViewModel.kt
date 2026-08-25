@@ -24,6 +24,8 @@ import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.ReadingStats
 import com.mushaf.reader.data.stats.SessionEntity
 import com.mushaf.reader.data.stats.StatsRepository
+import com.mushaf.reader.ui.theme.MushafPalette
+import com.mushaf.reader.ui.theme.paletteFor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -82,8 +84,11 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     val initialPage: Int = initialSettings.lastPage.coerceIn(1, pageCount.coerceAtLeast(1))
 
-    var darkTheme by mutableStateOf(initialSettings.darkTheme)
+    /** Id of the chosen reading theme; [palette] resolves it to the colors it stands for. */
+    var themeId by mutableStateOf(initialSettings.themeId)
         private set
+
+    val palette: MushafPalette get() = paletteFor(themeId)
 
     /** When on, the page fills the screen (width-fill + scroll on wide screens, height-stretch
      *  on tall screens); when off, the whole page is fitted and centered. */
@@ -96,6 +101,14 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Ids of the header buttons the user has hidden; any id NOT in this set is shown. */
     var hiddenButtons by mutableStateOf(initialSettings.hiddenButtons)
+        private set
+
+    /** Ids drawn on the top bar itself; a visible action not in here lives in the More menu. */
+    var barButtons by mutableStateOf(initialSettings.barButtons)
+        private set
+
+    /** Color id per header action, for the icon it draws on the bar. Missing = "muted". */
+    var buttonColors by mutableStateOf(initialSettings.buttonColors)
         private set
 
     /** When on, the header buttons are rendered a little larger. */
@@ -275,9 +288,10 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun toggleTheme() {
-        darkTheme = !darkTheme
-        viewModelScope.launch { store.setDarkTheme(darkTheme) }
+    fun updateThemeId(value: String) {
+        if (value == themeId) return
+        themeId = value
+        viewModelScope.launch { store.setThemeId(value) }
     }
 
     fun toggleFillScreen() {
@@ -300,6 +314,25 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         if (next == hiddenButtons) return
         hiddenButtons = next
         viewModelScope.launch { store.setHiddenButtons(next) }
+    }
+
+    fun isButtonInBar(id: String): Boolean = barButtons.contains(id)
+
+    /** Move the header action with [id] onto the bar, or back into the More menu. */
+    fun setButtonInBar(id: String, inBar: Boolean) {
+        val next = if (inBar) barButtons + id else barButtons - id
+        if (next == barButtons) return
+        barButtons = next
+        viewModelScope.launch { store.setBarButtons(next) }
+    }
+
+    /** Color id the action with [id] draws in on the bar; "muted" means keep its own default. */
+    fun buttonColor(id: String): String = buttonColors[id] ?: "muted"
+
+    fun updateButtonColor(id: String, color: String) {
+        if (buttonColor(id) == color) return
+        buttonColors = buttonColors + (id to color)
+        viewModelScope.launch { store.setButtonColors(buttonColors) }
     }
 
     /** Enable or disable the larger header buttons and persist the choice. */
@@ -584,10 +617,12 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun applyRestoredSnapshot(snapshot: BackupSnapshot) {
         val value = snapshot.reading.settings
-        darkTheme = value.darkTheme
+        themeId = value.themeId
         fillScreen = value.fillScreen
         verticalPaging = value.verticalPaging
         hiddenButtons = value.hiddenButtons
+        barButtons = value.barButtons
+        buttonColors = value.buttonColors
         bigButtons = value.bigButtons
         showClock = value.showClock
         showSessionTimer = value.showSessionTimer
@@ -637,7 +672,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         restorePageRequest = lastPage
     }
 
-    fun assetModel(pageNumber: Int): String = pageRepo.assetUri(pageNumber, darkTheme)
+    fun assetModel(pageNumber: Int): String = pageRepo.assetUri(pageNumber)
 
     fun markersForPage(pageNumber: Int): List<AyahMarker> = ayahData.byPage[pageNumber].orEmpty()
 
