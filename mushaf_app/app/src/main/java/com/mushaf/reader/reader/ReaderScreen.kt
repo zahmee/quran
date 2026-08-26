@@ -2,7 +2,6 @@ package com.mushaf.reader.reader
 
 import android.content.ClipData
 import android.content.Intent
-import android.content.res.Configuration
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
@@ -100,11 +99,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -657,9 +656,31 @@ private fun ReaderHeader(
 
     // Landscape, or an unfolded foldable's wide inner screen, has room to collapse the two header
     // rows into one. A portrait phone or a folded/cover screen (narrow) keeps the two-row layout.
-    val configuration = LocalConfiguration.current
-    val singleRow = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
-        configuration.screenWidthDp >= 600
+    val windowSize = LocalWindowInfo.current.containerSize
+    val windowWidth = with(LocalDensity.current) { windowSize.width.toDp() }
+    val singleRow = windowSize.width > windowSize.height || windowWidth >= 600.dp
+
+    // A placement preference means "keep this action on the bar when there is room". On a narrow
+    // window the remaining actions spill into More, otherwise eight requested buttons can cover the
+    // always-available Settings button. The budgets are deliberately conservative for the optional
+    // clock/session labels and for the page/juz chips in the single-row layout.
+    val requestedBarActions = HeaderActions.filter { isVisible(it.id) && isInBar(it.id) }
+    val hasDirectMenuActions = HeaderActions.any { isVisible(it.id) && !isInBar(it.id) }
+    val sessionReserve = if (showSessionTimer && sessionStartedAt > 0L) 72.dp else 0.dp
+    val actionWidthWithoutMenu = if (singleRow) {
+        windowWidth / 2 - 48.dp - 112.dp - sessionReserve
+    } else {
+        windowWidth - btnSize - (if (showClock) 64.dp else 0.dp) - sessionReserve - 6.dp
+    }
+    fun actionCapacity(reserveMore: Boolean): Int {
+        val width = actionWidthWithoutMenu - if (reserveMore) btnSize else 0.dp
+        return (width.value / btnSize.value).toInt().coerceAtLeast(0)
+    }
+    val capacityWithoutMenu = actionCapacity(reserveMore = false)
+    val needsMore = hasDirectMenuActions || requestedBarActions.size > capacityWithoutMenu
+    val visibleBarActionIds = requestedBarActions
+        .take(actionCapacity(reserveMore = needsMore))
+        .mapTo(LinkedHashSet()) { it.id }
 
     // Live ticker for the optional clock / current-session timer (only loops while one is shown).
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -769,7 +790,7 @@ private fun ReaderHeader(
                         hasBookmark2 = hasBookmark2,
                         paletteId = paletteId,
                         isVisible = isVisible,
-                        isInBar = isInBar,
+                        visibleBarActionIds = visibleBarActionIds,
                         buttonTint = buttonTint,
                         onOpenSearch = onOpenSearch,
                         onBookmarkJump = onBookmarkJump,
@@ -790,7 +811,7 @@ private fun ReaderHeader(
                         fillScreen = fillScreen,
                         paletteId = paletteId,
                         isVisible = isVisible,
-                        isInBar = isInBar,
+                        visibleBarActionIds = visibleBarActionIds,
                         onOpenSearch = onOpenSearch,
                         onBookmarkJump = onBookmarkJump,
                         onBookmark2Jump = onBookmark2Jump,
@@ -867,7 +888,7 @@ private fun ReaderHeader(
                         hasBookmark2 = hasBookmark2,
                         paletteId = paletteId,
                         isVisible = isVisible,
-                        isInBar = isInBar,
+                        visibleBarActionIds = visibleBarActionIds,
                         buttonTint = buttonTint,
                         onOpenSearch = onOpenSearch,
                         onBookmarkJump = onBookmarkJump,
@@ -888,7 +909,7 @@ private fun ReaderHeader(
                         fillScreen = fillScreen,
                         paletteId = paletteId,
                         isVisible = isVisible,
-                        isInBar = isInBar,
+                        visibleBarActionIds = visibleBarActionIds,
                         onOpenSearch = onOpenSearch,
                         onBookmarkJump = onBookmarkJump,
                         onBookmark2Jump = onBookmark2Jump,
@@ -964,7 +985,7 @@ private fun HeaderMoreMenu(
     fillScreen: Boolean,
     paletteId: String,
     isVisible: (String) -> Boolean,
-    isInBar: (String) -> Boolean,
+    visibleBarActionIds: Set<String>,
     onOpenSearch: () -> Unit,
     onBookmarkJump: () -> Unit,
     onBookmark2Jump: () -> Unit,
@@ -974,9 +995,9 @@ private fun HeaderMoreMenu(
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
 ) {
-    // Exactly what the user did not move onto the bar. With everything on the bar there is nothing
-    // left to open, so the overflow button steps aside rather than offering an empty menu.
-    val menuActions = HeaderActions.filter { isVisible(it.id) && !isInBar(it.id) }
+    // Actions assigned to the menu plus any preferred bar actions that did not fit this window.
+    // When every visible action fits on the bar, the overflow button steps aside.
+    val menuActions = HeaderActions.filter { isVisible(it.id) && it.id !in visibleBarActionIds }
     if (menuActions.isEmpty()) return
 
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -1050,7 +1071,7 @@ private fun HeaderBarActions(
     hasBookmark2: Boolean,
     paletteId: String,
     isVisible: (String) -> Boolean,
-    isInBar: (String) -> Boolean,
+    visibleBarActionIds: Set<String>,
     buttonTint: (String, Color) -> Color,
     onOpenSearch: () -> Unit,
     onBookmarkJump: () -> Unit,
@@ -1062,7 +1083,7 @@ private fun HeaderBarActions(
     onHideHeader: () -> Unit,
 ) {
     HeaderActions.forEach { action ->
-        if (!isVisible(action.id) || !isInBar(action.id)) return@forEach
+        if (!isVisible(action.id) || action.id !in visibleBarActionIds) return@forEach
         val tint = buttonTint(
             action.id,
             headerActionDefaultTint(

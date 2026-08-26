@@ -584,7 +584,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun formatBackupDate(time: Long): String =
-        SimpleDateFormat("yyyy/MM/dd HH:mm", Locale("ar")).format(Date(time))
+        SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.forLanguageTag("ar")).format(Date(time))
 
     /** Persist the active reading slice before exporting, then continue with a fresh slice. */
     private suspend fun checkpointCurrentSessionForBackup() {

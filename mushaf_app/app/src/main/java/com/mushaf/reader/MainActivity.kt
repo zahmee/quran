@@ -1,7 +1,6 @@
 package com.mushaf.reader
 
 import android.app.UiModeManager
-import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -11,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.drawable.toDrawable
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
      * is what closes the gap between the launch window and the first drawn frame.
      */
     private fun applyPalette(palette: MushafPalette) {
-        window.setBackgroundDrawable(ColorDrawable(palette.paper.toArgb()))
+        window.setBackgroundDrawable(palette.paper.toArgb().toDrawable())
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             getSystemService(UiModeManager::class.java)?.setApplicationNightMode(
                 if (palette.dark) UiModeManager.MODE_NIGHT_YES else UiModeManager.MODE_NIGHT_NO

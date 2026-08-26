@@ -330,7 +330,7 @@ fun SettingsScreen(
                 1 -> SettingsTabScroll {
                 SettingsPanel(
                     title = "أزرار رأس الصفحة",
-                    body = "لكل عملية: إظهارها، ومكانها في الشريط العلوي أو قائمة المزيد، ولونها في الشريط.",
+                    body = "لكل عملية: إظهارها، ومكانها المفضّل، ولونها في الشريط. تنتقل الأدوات الزائدة إلى قائمة المزيد على الشاشة الضيقة.",
                     icon = Icons.Filled.MoreVert
                 ) {
                     MenuLocationHint()
@@ -556,7 +556,7 @@ private fun MenuLocationHint() {
     ) {
         SmallIconBadge(Icons.Filled.MoreVert)
         Text(
-            text = "كل عملية إمّا مخفية، أو زرّاً ملوّناً في الشريط العلوي، أو سطراً داخل قائمة النقاط الثلاث.",
+            text = "كل عملية إمّا مخفية، أو زرّاً ملوّناً في الشريط عند توفر المساحة، أو سطراً داخل قائمة النقاط الثلاث.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)

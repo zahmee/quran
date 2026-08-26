@@ -408,7 +408,7 @@ private fun stageLabel(stage: BackupStage?): String = when (stage) {
 
 private fun formatDate(time: Long): String {
     if (time <= 0L) return "غير معروف"
-    return SimpleDateFormat("yyyy/MM/dd — HH:mm", Locale("ar")).format(Date(time))
+    return SimpleDateFormat("yyyy/MM/dd — HH:mm", Locale.forLanguageTag("ar")).format(Date(time))
 }
 
 private fun formatSize(bytes: Long): String = when {
