@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -29,22 +30,46 @@ import androidx.compose.ui.unit.dp
 import com.mushaf.reader.ui.components.MushafNavigationRow
 import com.mushaf.reader.ui.components.MushafTopBar
 import com.mushaf.reader.ui.theme.ReadingType
+import kotlinx.coroutines.delay
+
+/** Shortest query worth scanning the mushaf for. One letter matches most of the text and tells the
+ *  reader nothing; two is the shortest real Arabic word (من، في، ما). */
+private const val MinQueryLength = 2
+
+/** How long the typing has to pause before a search runs, so a fast typist triggers one scan. */
+private const val SearchDebounceMs = 220L
 
 /** Full-screen search over ayah text + surah names; each hit jumps to its page. */
 @Composable
 fun SearchScreen(
-    onSearch: (String) -> List<SearchResult>,
+    onSearch: suspend (String) -> List<SearchResult>,
     onJump: (Int) -> Unit,
     onBack: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
-    val results = remember(query) { onSearch(query) }
+    var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val trimmed = query.trim()
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
         keyboard?.show()
+    }
+
+    // Keyed on the query, so a new keystroke cancels the pending scan before it starts — that is
+    // the debounce. The scan itself runs off the main thread inside onSearch.
+    LaunchedEffect(trimmed) {
+        if (trimmed.length < MinQueryLength) {
+            results = emptyList()
+            searching = false
+            return@LaunchedEffect
+        }
+        searching = true
+        delay(SearchDebounceMs)
+        results = onSearch(trimmed)
+        searching = false
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -65,7 +90,11 @@ fun SearchScreen(
             )
 
             when {
-                query.isBlank() -> Hint("اكتب كلمة للبحث في نص المصحف أو اسم السورة")
+                trimmed.isEmpty() -> Hint("اكتب كلمة للبحث في نص المصحف أو اسم السورة")
+                trimmed.length < MinQueryLength -> Hint("اكتب حرفين على الأقل")
+                searching -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
                 results.isEmpty() -> Hint("لا توجد نتائج")
                 else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(results) { r ->

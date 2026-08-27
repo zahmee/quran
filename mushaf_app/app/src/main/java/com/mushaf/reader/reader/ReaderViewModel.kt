@@ -9,8 +9,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.AyahRepository
+import com.mushaf.reader.data.JuzLayout
 import com.mushaf.reader.data.PageRepository
 import com.mushaf.reader.data.ReadingStore
+import com.mushaf.reader.data.normalizeArabic
 import com.mushaf.reader.data.backup.BackupException
 import com.mushaf.reader.data.backup.BackupFileInfo
 import com.mushaf.reader.data.backup.BackupSnapshot
@@ -41,9 +43,6 @@ data class SurahEntry(val number: Int, val nameAr: String, val firstPage: Int, v
 
 /** One juz in the navigation index: number and the page it begins on. */
 data class JuzEntry(val number: Int, val firstPage: Int, val ayahCount: Int)
-
-/** Juz position for a page: juz number, the page's index within that juz, and the juz's page count. */
-data class JuzPageInfo(val juz: Int, val pageInJuz: Int, val pagesInJuz: Int)
 
 /** A single search hit. */
 data class SearchResult(
@@ -97,6 +96,10 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     /** When on, pages turn vertically (swipe up/down) instead of horizontally. */
     var verticalPaging by mutableStateOf(initialSettings.verticalPaging)
+        private set
+
+    /** When on, the screen is held awake while the reader is in the foreground. */
+    var keepScreenOn by mutableStateOf(initialSettings.keepScreenOn)
         private set
 
     /** Ids of the header buttons the user has hidden; any id NOT in this set is shown. */
@@ -303,6 +306,12 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         if (value == verticalPaging) return
         verticalPaging = value
         viewModelScope.launch { store.setVerticalPaging(value) }
+    }
+
+    fun updateKeepScreenOn(value: Boolean) {
+        if (value == keepScreenOn) return
+        keepScreenOn = value
+        viewModelScope.launch { store.setKeepScreenOn(value) }
     }
 
     /** Whether the header button with [id] is currently shown. */
@@ -620,6 +629,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         themeId = value.themeId
         fillScreen = value.fillScreen
         verticalPaging = value.verticalPaging
+        keepScreenOn = value.keepScreenOn
         hiddenButtons = value.hiddenButtons
         barButtons = value.barButtons
         buttonColors = value.buttonColors
@@ -969,74 +979,73 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         return pos * 100 / span
     }
 
-    /** Juz number, current page within the juz, and total pages in the juz — derived purely from
-     *  the page number using the Madinah mushaf layout: juz 1 = 21 pages (1..21), juz 2..29 =
-     *  20 pages each, juz 30 = 23 pages (582..604). */
-    fun juzInfoForPage(page: Int): JuzPageInfo {
-        val p = page.coerceIn(1, pageCount)
-        return when {
-            p <= 21 -> JuzPageInfo(1, p, 21)
-            p >= 582 -> JuzPageInfo(30, p - 581, 23)
-            else -> {
-                val juz = 2 + (p - 22) / 20
-                val start = 22 + (juz - 2) * 20
-                JuzPageInfo(juz, p - start + 1, 20)
-            }
-        }
-    }
+    /** Juz number, current page within the juz, and total pages in the juz. See [JuzLayout] for why
+     *  the split is even and therefore differs from the paper mushaf on two pages. */
+    fun juzInfoForPage(page: Int): JuzLayout.Position = JuzLayout.positionOf(page, pageCount)
 
-    // Cached (marker, normalized text) pairs, built once from the loaded ayah data.
-    private var searchEntries: List<Pair<AyahMarker, String>> = emptyList()
+    /** One searchable ayah: the marker plus its text and surah name pre-normalized, so a keystroke
+     *  never re-normalizes 6236 strings. Each distinct surah name is folded once, not once per ayah. */
+    private class SearchEntry(
+        val marker: AyahMarker,
+        val normalizedText: String,
+        val normalizedSurah: String,
+    )
 
-    private fun ensureSearchIndex(): List<Pair<AyahMarker, String>> {
-        if (searchEntries.isNotEmpty()) return searchEntries
+    // Built once off the main thread, on the first search after the ayah data has loaded.
+    @Volatile
+    private var searchEntries: List<SearchEntry> = emptyList()
+
+    private fun ensureSearchIndex(): List<SearchEntry> {
+        searchEntries.takeIf { it.isNotEmpty() }?.let { return it }
         val all = ayahData.byPage.values.flatten()
         if (all.isEmpty()) return emptyList()
-        searchEntries = all.map { it to normalizeArabic(it.textUthmani) }
-        return searchEntries
+        val foldedNames = HashMap<String, String>(128)
+        val built = all.map { m ->
+            SearchEntry(
+                marker = m,
+                normalizedText = normalizeArabic(m.textUthmani),
+                normalizedSurah = foldedNames.getOrPut(m.surahNameAr) { normalizeArabic(m.surahNameAr) },
+            )
+        }
+        searchEntries = built
+        return built
     }
 
-    /** Search ayah text and surah names (diacritic-insensitive). Also matches a "2:255" verse key. */
-    fun search(query: String, limit: Int = 60): List<SearchResult> {
-        val raw = query.trim()
-        if (raw.isEmpty()) return emptyList()
+    /**
+     * Search ayah text and surah names (diacritic-insensitive). Also matches a "2:255" verse key.
+     *
+     * Runs off the main thread: the first call normalizes all 6236 ayahs to build the index, every
+     * later call scans it. The caller debounces, so this never runs once per keystroke.
+     */
+    suspend fun search(query: String, limit: Int = 60): List<SearchResult> =
+        withContext(Dispatchers.Default) {
+            val raw = query.trim()
+            if (raw.isEmpty()) return@withContext emptyList()
 
-        // Direct "surah:ayah" jump, e.g. 2:255.
-        Regex("""^\s*(\d{1,3})\s*[:：]\s*(\d{1,3})\s*$""").find(raw)?.let { mt ->
-            val key = "${mt.groupValues[1]}:${mt.groupValues[2]}"
-            ensureSearchIndex().firstOrNull { it.first.verseKey == key }?.let { (m, _) ->
-                return listOf(SearchResult(m.verseKey, m.surahNameAr, m.ayahNumber, m.page, m.textUthmani))
-            }
-        }
+            val entries = ensureSearchIndex()
 
-        val q = normalizeArabic(raw)
-        if (q.isEmpty()) return emptyList()
-        val results = ArrayList<SearchResult>()
-        for ((m, norm) in ensureSearchIndex()) {
-            if (norm.contains(q) || normalizeArabic(m.surahNameAr).contains(q)) {
-                results.add(SearchResult(m.verseKey, m.surahNameAr, m.ayahNumber, m.page, m.textUthmani))
-                if (results.size >= limit) break
+            // Direct "surah:ayah" jump, e.g. 2:255.
+            VerseKeyQuery.find(raw)?.let { mt ->
+                val key = "${mt.groupValues[1]}:${mt.groupValues[2]}"
+                entries.firstOrNull { it.marker.verseKey == key }?.let { entry ->
+                    return@withContext listOf(entry.marker.toSearchResult())
+                }
             }
+
+            val q = normalizeArabic(raw)
+            if (q.isEmpty()) return@withContext emptyList()
+            val results = ArrayList<SearchResult>()
+            for (entry in entries) {
+                if (entry.normalizedText.contains(q) || entry.normalizedSurah.contains(q)) {
+                    results.add(entry.marker.toSearchResult())
+                    if (results.size >= limit) break
+                }
+            }
+            results
         }
-        return results
-    }
 }
 
-/** Strip Arabic diacritics/tatweel and fold letter variants so search ignores tashkeel. */
-private fun normalizeArabic(s: String): String {
-    val sb = StringBuilder(s.length)
-    for (ch in s) {
-        when (ch) {
-            // harakat, tanwin, shadda, sukun, superscript alef, tatweel
-            'ً', 'ٌ', 'ٍ', 'َ', 'ُ', 'ِ', 'ّ',
-            'ْ', 'ٓ', 'ٔ', 'ٕ', 'ٰ', 'ـ' -> {}
-            'أ', 'إ', 'آ', 'ٱ' -> sb.append('ا')
-            'ى' -> sb.append('ي')
-            'ئ' -> sb.append('ي')
-            'ؤ' -> sb.append('و')
-            'ة' -> sb.append('ه')
-            else -> sb.append(ch)
-        }
-    }
-    return sb.toString()
-}
+private val VerseKeyQuery = Regex("""^\s*(\d{1,3})\s*[:：]\s*(\d{1,3})\s*$""")
+
+private fun AyahMarker.toSearchResult() =
+    SearchResult(verseKey, surahNameAr, ayahNumber, page, textUthmani)

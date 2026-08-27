@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mushaf.reader.data.JuzLayout
 import com.mushaf.reader.ui.components.MushafPanel
 import com.mushaf.reader.ui.components.MushafSegmentedTabs
 import com.mushaf.reader.ui.components.MushafTopBar
@@ -75,7 +76,7 @@ fun KhatmaMapScreen(
     val colors = khatmaPalette()
     var mode by remember { mutableStateOf(KhatmaMapMode.Juz) }
     val expandedJuzOverrides = remember { mutableStateMapOf<Int, Boolean>() }
-    val sections = remember(totalPages) { buildJuzSections(totalPages) }
+    val sections = remember(totalPages) { JuzLayout.sections(totalPages) }
     val validRange = 1..totalPages.coerceAtLeast(1)
     val readCount = readPages.count { it in validRange }
     val visitedCount = visitedPages.count { it in validRange }
@@ -86,7 +87,7 @@ fun KhatmaMapScreen(
     val nextUnread = remember(totalPages, visitedPages) {
         (1..totalPages).firstOrNull { it !in visitedPages }
     }
-    val currentInfo = remember(currentPage) { juzInfoForPage(currentPage.coerceIn(1, totalPages.coerceAtLeast(1))) }
+    val currentInfo = remember(currentPage, totalPages) { JuzLayout.positionOf(currentPage, totalPages) }
 
     Surface(modifier = Modifier.fillMaxSize(), color = colors.page) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -298,7 +299,7 @@ private fun CurrentPositionCard(
     currentPage: Int,
     bookmarkPage: Int?,
     nextUnread: Int?,
-    currentInfo: JuzPosition,
+    currentInfo: JuzLayout.Position,
     colors: KhatmaColors,
 ) {
     MapCard(colors) {
@@ -507,7 +508,7 @@ private fun LegendPill(color: Color, label: String, icon: ImageVector, modifier:
 
 @Composable
 private fun JuzCard(
-    section: JuzSection,
+    section: JuzLayout.Section,
     readPages: Set<Int>,
     visitedPages: Set<Int>,
     bookmarkPage: Int?,
@@ -812,12 +813,6 @@ private enum class KhatmaMapMode { Juz, Pages }
 
 private enum class PageState { Read, Visited, Bookmark, Empty }
 
-private data class JuzSection(val number: Int, val start: Int, val end: Int) {
-    val pages: List<Int> = (start..end).toList()
-}
-
-private data class JuzPosition(val juz: Int, val pageInJuz: Int, val pagesInJuz: Int)
-
 private fun pageState(page: Int, readPages: Set<Int>, visitedPages: Set<Int>, bookmarkPage: Int?): PageState =
     when {
         page == bookmarkPage -> PageState.Bookmark
@@ -826,33 +821,3 @@ private fun pageState(page: Int, readPages: Set<Int>, visitedPages: Set<Int>, bo
         else -> PageState.Empty
     }
 
-private fun buildJuzSections(totalPages: Int): List<JuzSection> {
-    if (totalPages <= 0) return emptyList()
-    val sections = ArrayList<JuzSection>(30)
-    var start = 1
-    for (juz in 1..30) {
-        val pagesInJuz = when (juz) {
-            1 -> 21
-            30 -> 23
-            else -> 20
-        }
-        val end = (start + pagesInJuz - 1).coerceAtMost(totalPages)
-        if (start <= totalPages) sections.add(JuzSection(juz, start, end))
-        start = end + 1
-    }
-    if (start <= totalPages) sections.add(JuzSection(sections.size + 1, start, totalPages))
-    return sections
-}
-
-private fun juzInfoForPage(page: Int): JuzPosition {
-    val p = page.coerceIn(1, 604)
-    return when {
-        p <= 21 -> JuzPosition(1, p, 21)
-        p >= 582 -> JuzPosition(30, p - 581, 23)
-        else -> {
-            val juz = 2 + (p - 22) / 20
-            val start = 22 + (juz - 2) * 20
-            JuzPosition(juz, p - start + 1, 20)
-        }
-    }
-}

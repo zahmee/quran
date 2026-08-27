@@ -33,7 +33,8 @@ import com.mushaf.reader.ui.theme.PageRecolor
 import kotlin.math.min
 
 /**
- * A single mushaf page.
+ * A single mushaf page: the printed scan recolored for the reading theme, with the ayah highlight
+ * overlay on top and a long-press hit test back onto the ayah under the finger.
  *
  * Default ([fillScreen] = false): the WHOLE page is fitted to the screen and centered, so the
  * entire page is always visible (with a margin on whichever side the screen aspect leaves spare).
@@ -51,7 +52,7 @@ import kotlin.math.min
  * ship in one light version only.
  */
 @Composable
-fun ZoomablePage(
+fun MushafPage(
     model: String,
     recolor: PageRecolor,
     markers: List<AyahMarker>,

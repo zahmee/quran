@@ -27,15 +27,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // Keep the screen awake while the reader is in the foreground — it's a reading app,
-        // so the device must not dim/lock and interrupt the user mid-read. The flag only
-        // applies while this window is visible; the screen locks normally once the app leaves.
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemBars()
         setContent {
             MushafTheme(paletteId = vm.themeId) {
                 val palette = paletteFor(vm.themeId)
                 LaunchedEffect(palette) { applyPalette(palette) }
+                LaunchedEffect(vm.keepScreenOn) { applyKeepScreenOn(vm.keepScreenOn) }
                 ReaderScreen(viewModel = vm)
             }
         }
@@ -57,6 +54,18 @@ class MainActivity : ComponentActivity() {
                 if (palette.dark) UiModeManager.MODE_NIGHT_YES else UiModeManager.MODE_NIGHT_NO
             )
         }
+    }
+
+    /**
+     * Holds the screen awake while the reader is in the foreground, when the reader asked for it.
+     *
+     * It's a reading app, so by default the device must not dim/lock and interrupt a long read —
+     * but that costs battery, so it is a setting. The flag only applies while this window is
+     * visible; the screen locks normally once the app leaves the foreground either way.
+     */
+    private fun applyKeepScreenOn(enabled: Boolean) {
+        if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     /** A foreground period starts a reading session. */

@@ -28,6 +28,9 @@ class ReadingStore(private val context: Context) {
         const val DEFAULT_SIDE_INDICATOR_OPACITY = 70
         /** Keep the restore-header button at its current visual strength until the user changes it. */
         const val DEFAULT_SHOW_HEADER_BUTTON_OPACITY = 100
+        /** The screen stayed awake unconditionally before this became a setting, so keep that
+         *  as the default: an upgrade must not start locking the screen mid-read. */
+        const val DEFAULT_KEEP_SCREEN_ON = true
         /** Palette id used before the user picks one, and the one the old dark_theme flag maps to.
          *  Kept as plain strings so this layer stays independent of the ui.theme palette table. */
         const val DEFAULT_THEME_ID = "light"
@@ -99,6 +102,8 @@ class ReadingStore(private val context: Context) {
     private val keyKhatmaStartedAt = longPreferencesKey("khatma_started_at")
     // Page turning direction: false = horizontal (default), true = vertical (up/down).
     private val keyVerticalPaging = booleanPreferencesKey("vertical_paging")
+    // Whether the screen is held awake while reading. On by default — that was the old behaviour.
+    private val keyKeepScreenOn = booleanPreferencesKey("keep_screen_on")
     // Local OAuth account selection. It is deliberately excluded from cloud backups.
     private val keyLastBackupAt = longPreferencesKey("last_backup_at")
     private val keyLastBackupName = stringPreferencesKey("last_backup_name")
@@ -145,6 +150,7 @@ class ReadingStore(private val context: Context) {
         val pageSideIndicatorOpacity: Int,
         val khatmaStartedAt: Long,
         val verticalPaging: Boolean,
+        val keepScreenOn: Boolean,
     )
 
     /** Complete user-owned state written to the backup file. Device-local metadata is excluded. */
@@ -197,6 +203,7 @@ class ReadingStore(private val context: Context) {
             pageSideIndicatorOpacity = prefs[keyPageSideIndicatorOpacity] ?: DEFAULT_SIDE_INDICATOR_OPACITY,
             khatmaStartedAt = prefs[keyKhatmaStartedAt] ?: 0L,
             verticalPaging = prefs[keyVerticalPaging] ?: false,
+            keepScreenOn = prefs[keyKeepScreenOn] ?: DEFAULT_KEEP_SCREEN_ON,
         )
     }
 
@@ -249,6 +256,7 @@ class ReadingStore(private val context: Context) {
             prefs[keyPageSideIndicatorOpacity] = value.pageSideIndicatorOpacity
             prefs[keyKhatmaStartedAt] = value.khatmaStartedAt
             prefs[keyVerticalPaging] = value.verticalPaging
+            prefs[keyKeepScreenOn] = value.keepScreenOn
         }
     }
 
@@ -426,6 +434,10 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setVerticalPaging(value: Boolean) {
         context.dataStore.edit { it[keyVerticalPaging] = value }
+    }
+
+    suspend fun setKeepScreenOn(value: Boolean) {
+        context.dataStore.edit { it[keyKeepScreenOn] = value }
     }
 
     suspend fun bookmarks(): Set<String> = context.dataStore.data.first()[keyBookmarks] ?: emptySet()

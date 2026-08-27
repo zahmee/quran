@@ -87,6 +87,9 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     debugImplementation(libs.androidx.ui.tooling)
+    // Local JVM tests only — the pure logic (juz layout, Arabic folding, day arithmetic) is kept
+    // free of Android types precisely so it can be tested without a device or Robolectric.
+    testImplementation(libs.junit)
 }
 
 // ── Distribution: collect signed release builds the "old way" ────────────────────

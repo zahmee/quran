@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.SwapVert
@@ -87,6 +88,8 @@ fun SettingsScreen(
     onBigButtonsChange: (Boolean) -> Unit,
     verticalPaging: Boolean,
     onVerticalPagingChange: (Boolean) -> Unit,
+    keepScreenOn: Boolean,
+    onKeepScreenOnChange: (Boolean) -> Unit,
     showClock: Boolean,
     onShowClockChange: (Boolean) -> Unit,
     showSessionTimer: Boolean,
@@ -173,6 +176,20 @@ fun SettingsScreen(
                         body = "تقليب الصفحات بالسحب لأعلى وأسفل بدل اليمين واليسار.",
                         checked = verticalPaging,
                         onCheckedChange = onVerticalPagingChange
+                    )
+                }
+
+                SettingsPanel(
+                    title = "أثناء القراءة",
+                    body = "سلوك الشاشة ما دام المصحف مفتوحاً أمامك.",
+                    icon = Icons.Outlined.LightMode
+                ) {
+                    ToggleSettingRow(
+                        icon = Icons.Outlined.LightMode,
+                        title = "إبقاء الشاشة مضاءة",
+                        body = "منع إطفاء الشاشة وقفلها أثناء القراءة. إطفاؤه يوفّر البطارية.",
+                        checked = keepScreenOn,
+                        onCheckedChange = onKeepScreenOnChange
                     )
                 }
 

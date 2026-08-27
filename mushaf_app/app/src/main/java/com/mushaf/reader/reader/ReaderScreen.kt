@@ -401,6 +401,8 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 onBigButtonsChange = { viewModel.updateBigButtons(it) },
                 verticalPaging = viewModel.verticalPaging,
                 onVerticalPagingChange = { viewModel.updateVerticalPaging(it) },
+                keepScreenOn = viewModel.keepScreenOn,
+                onKeepScreenOnChange = { viewModel.updateKeepScreenOn(it) },
                 showClock = viewModel.showClock,
                 onShowClockChange = { viewModel.updateShowClock(it) },
                 showSessionTimer = viewModel.showSessionTimer,
@@ -519,7 +521,7 @@ private fun ReaderPager(
         // Same page content for both orientations; only the pager axis differs.
         val pageContent: @Composable PagerScope.(Int) -> Unit = { index ->
             val pageNumber = index + 1
-            ZoomablePage(
+            MushafPage(
                 model = viewModel.assetModel(pageNumber),
                 recolor = recolor,
                 markers = viewModel.markersForPage(pageNumber),

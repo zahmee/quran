@@ -123,6 +123,7 @@ object BackupJsonCodec {
         .put("pageSideIndicatorOpacity", value.pageSideIndicatorOpacity)
         .put("khatmaStartedAt", value.khatmaStartedAt)
         .put("verticalPaging", value.verticalPaging)
+        .put("keepScreenOn", value.keepScreenOn)
 
     private fun decodeReading(root: JSONObject, pageCount: Int): ReadingStore.BackupState {
         val settingsJson = root.getJSONObject("settings")
@@ -187,6 +188,9 @@ object BackupJsonCodec {
                 if (it < 0L) throw BackupException("تاريخ بداية الختمة غير صالح.")
             },
             verticalPaging = settingsJson.optBoolean("verticalPaging", false),
+            // Added after schema v1 shipped; a backup written before the setting existed restores
+            // the behaviour it was taken with, which was always-on.
+            keepScreenOn = settingsJson.optBoolean("keepScreenOn", ReadingStore.DEFAULT_KEEP_SCREEN_ON),
         )
         return ReadingStore.BackupState(settings, bookmarks, bookmarks2)
     }

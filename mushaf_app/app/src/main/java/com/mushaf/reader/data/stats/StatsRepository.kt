@@ -137,37 +137,29 @@ class StatsRepository(context: Context) {
         val sessions = dao.allSessions()
         val pace = readingPace(sessions)
         val cal = Calendar.getInstance()
-        val dayMs = 86_400_000L
-
-        fun dayStart(t: Long): Long {
-            cal.timeInMillis = t
-            cal.set(Calendar.HOUR_OF_DAY, 0)
-            cal.set(Calendar.MINUTE, 0)
-            cal.set(Calendar.SECOND, 0)
-            cal.set(Calendar.MILLISECOND, 0)
-            return cal.timeInMillis
-        }
+        // Days are stepped through the calendar, never by adding a fixed 24h — see [DayGrid].
+        val days = DayGrid()
 
         data class Acc(var pages: Int = 0, var durationMs: Long = 0, var sessions: Int = 0)
         val byDay = HashMap<Long, Acc>()
         for (s in sessions) {
-            val acc = byDay.getOrPut(dayStart(s.startedAt)) { Acc() }
+            val acc = byDay.getOrPut(days.startOf(s.startedAt)) { Acc() }
             acc.pages += s.pagesRead
             acc.durationMs += (s.endedAt - s.startedAt).coerceAtLeast(0)
             acc.sessions += 1
         }
 
         val now = System.currentTimeMillis()
-        val today = dayStart(now)
+        val today = days.startOf(now)
         val todayAcc = byDay[today]
-        val yesterdayAcc = byDay[today - dayMs]
+        val yesterdayAcc = byDay[days.plusDays(today, -1)]
 
         val last7 = ArrayList<DayStat>(7)
         var weekPages = 0
         var weekDuration = 0L
         var weekActiveDays = 0
         for (i in 6 downTo 0) {
-            val k = today - i * dayMs
+            val k = days.plusDays(today, -i)
             val a = byDay[k]
             last7.add(DayStat(k, a?.pages ?: 0, a?.durationMs ?: 0L, a?.sessions ?: 0))
             weekPages += a?.pages ?: 0
@@ -210,10 +202,10 @@ class StatsRepository(context: Context) {
         // Streak: consecutive days with activity, counting back from today (or yesterday).
         var streak = 0
         var k = today
-        if ((byDay[k]?.sessions ?: 0) == 0) k -= dayMs
+        if ((byDay[k]?.sessions ?: 0) == 0) k = days.plusDays(k, -1)
         while ((byDay[k]?.sessions ?: 0) > 0) {
             streak++
-            k -= dayMs
+            k = days.plusDays(k, -1)
         }
 
         return FullStats(

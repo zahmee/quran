@@ -37,8 +37,17 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Build debug APK and run Android Lint
-        run: ./gradlew :app:assembleDebug :app:lintDebug --stacktrace
+      - name: Build debug APK, run unit tests and Android Lint
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --stacktrace
+
+      - name: Upload unit test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-report-${{ github.sha }}
+          path: mushaf_app/app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload debug APK
         if: success()
