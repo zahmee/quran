@@ -524,6 +524,7 @@ private fun ReaderPager(
             MushafPage(
                 model = viewModel.assetModel(pageNumber),
                 recolor = recolor,
+                palette = viewModel.palette,
                 markers = viewModel.markersForPage(pageNumber),
                 imageWidth = viewModel.imageWidth,
                 imageHeight = viewModel.imageHeight,
