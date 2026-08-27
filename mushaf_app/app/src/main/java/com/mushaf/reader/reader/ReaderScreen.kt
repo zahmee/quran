@@ -60,12 +60,14 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -257,7 +259,8 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                             viewModel.openStats()
                             showStatsScreen = true
                         },
-                        onPageClick = { showGoTo = true }
+                        onPageClick = { showGoTo = true },
+                        onAbout = { showAbout = true }
                     )
                 }
 
@@ -640,6 +643,7 @@ private fun ReaderHeader(
     onBookmark2Jump: () -> Unit,
     onStats: () -> Unit,
     onPageClick: () -> Unit,
+    onAbout: () -> Unit,
 ) {
     val headerColor = MaterialTheme.colorScheme.surface
     val contentColor = MaterialTheme.colorScheme.onSurface
@@ -822,7 +826,8 @@ private fun ReaderHeader(
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
-                        onHideHeader = onHideHeader
+                        onHideHeader = onHideHeader,
+                        onAbout = onAbout
                     )
                 }
             }
@@ -920,7 +925,8 @@ private fun ReaderHeader(
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
-                        onHideHeader = onHideHeader
+                        onHideHeader = onHideHeader,
+                        onAbout = onAbout
                     )
                 }
             }
@@ -975,8 +981,18 @@ private fun ReaderHeader(
     }
 }
 
-/** Overflow ("more") menu shared by both header layouts: the secondary reading actions live
- *  behind a single button so the strip stays uncluttered. Owns its own open/closed state. */
+/**
+ * Overflow ("more") menu shared by both header layouts: the secondary reading actions live behind a
+ * single button so the strip stays uncluttered. Owns its own open/closed state.
+ *
+ * "About" sits at the bottom, below a divider, and is NOT one of [HeaderActions]: it is not a
+ * reading tool you would ever want on the bar, and — being the answer to "what is this app, and
+ * who made it" — it has to be somewhere a reader can always find it. Everything above the divider
+ * can be moved or hidden from settings; this cannot, which is the point of it being here.
+ *
+ * Because of it the menu is never empty, so the overflow button no longer steps aside when every
+ * reading action has been moved onto the bar.
+ */
 @Composable
 private fun HeaderMoreMenu(
     btnSize: Dp,
@@ -997,11 +1013,10 @@ private fun HeaderMoreMenu(
     onPaletteChange: (String) -> Unit,
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
+    onAbout: () -> Unit,
 ) {
     // Actions assigned to the menu plus any preferred bar actions that did not fit this window.
-    // When every visible action fits on the bar, the overflow button steps aside.
     val menuActions = HeaderActions.filter { isVisible(it.id) && it.id !in visibleBarActionIds }
-    if (menuActions.isEmpty()) return
 
     var showMoreMenu by remember { mutableStateOf(false) }
     var showThemeMenu by remember { mutableStateOf(false) }
@@ -1050,6 +1065,22 @@ private fun HeaderMoreMenu(
                     }
                 )
             }
+
+            if (menuActions.isNotEmpty()) HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("حول التطبيق") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = null,
+                        tint = quietContentColor
+                    )
+                },
+                onClick = {
+                    showMoreMenu = false
+                    onAbout()
+                }
+            )
         }
         // Second menu on the same anchor: picking the theme without leaving the reader.
         PaletteMenu(
