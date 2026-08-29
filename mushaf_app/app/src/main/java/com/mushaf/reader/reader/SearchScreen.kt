@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.mushaf.reader.ui.components.MushafNavigationRow
+import com.mushaf.reader.ui.components.MushafSoftDivider
 import com.mushaf.reader.ui.components.MushafTopBar
 import com.mushaf.reader.ui.theme.ReadingType
 import kotlinx.coroutines.delay
@@ -97,12 +98,42 @@ fun SearchScreen(
                 }
                 results.isEmpty() -> Hint("لا توجد نتائج")
                 else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(results) { r ->
+                    itemsIndexed(results) { index, r ->
+                        // The widened matches are labelled once, where they begin. A reader who
+                        // found their ayah above the line never has to weigh them.
+                        // index == 0 is the real case where the exact pass found nothing at all.
+                        if (r.expanded && (index == 0 || !results[index - 1].expanded)) {
+                            ExpandedResultsLabel()
+                        }
                         SearchRow(r, onClick = { onJump(r.page) })
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * Marks where the exact matches end and the stemmed ones begin.
+ *
+ * Named rather than merely ruled off: a widened match can be a different word that happens to
+ * share a stem, and the reader is owed that warning before they read an ayah as an answer.
+ */
+@Composable
+private fun ExpandedResultsLabel() {
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        MushafSoftDivider(verticalPadding = 6.dp)
+        Text(
+            text = "نتائج قريبة",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "مشتقة من الكلمة نفسها، وقد لا تطابق ما تبحث عنه تمامًا",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
+        )
     }
 }
 

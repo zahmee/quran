@@ -26,7 +26,9 @@ AUDIT_IN = (
     ROOT / "docs" / "audits" / "ayah-boundaries-2026-08-15" /
     "ayah_boundary_audit_all_6236.csv"
 )
-PAGE_IMAGES = ROOT / "mushaf_app" / "app" / "src" / "main" / "assets" / "pages" / "light"
+# One set of page images ships since 0.6.0; the dark ones were dropped and the light/ subfolder
+# with them, so the pages now sit directly under assets/pages.
+PAGE_IMAGES = ROOT / "mushaf_app" / "app" / "src" / "main" / "assets" / "pages"
 OUT = ROOT / "mushaf_app" / "app" / "src" / "main" / "assets" / "data" / "ayah_regions.json"
 
 EXPECTED_AYAHS = 6236
@@ -217,6 +219,11 @@ def main() -> None:
                 "surah_name_en": source["surah_name_en"],
                 "ayah_number": source["ayah_number"],
                 "text_uthmani": source.get("ayah_text_uthmani", ""),
+                # Standard (imlaa'i) spelling, carried for SEARCH only — never displayed. The
+                # Uthmani script writes the long /aa/ as a superscript alef, so a reader typing
+                # الملائكة can never match ٱلْمَلَـٰٓئِكَةُ however the marks are folded. See
+                # AyahSearchIndex.kt for why the app indexes both.
+                "text_imlaei": source.get("ayah_text_simple", ""),
                 "juz": division(source, "juz").get("number"),
                 "hizb": division(source, "hizb").get("number"),
                 "rub": division(source, "rub_el_hizb").get("number"),

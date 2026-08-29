@@ -9,10 +9,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.AyahRepository
+import com.mushaf.reader.data.AyahSearchIndex
 import com.mushaf.reader.data.JuzLayout
 import com.mushaf.reader.data.PageRepository
 import com.mushaf.reader.data.ReadingStore
-import com.mushaf.reader.data.normalizeArabic
 import com.mushaf.reader.data.backup.BackupException
 import com.mushaf.reader.data.backup.BackupFileInfo
 import com.mushaf.reader.data.backup.BackupSnapshot
@@ -51,6 +51,9 @@ data class SearchResult(
     val ayahNumber: Int,
     val page: Int,
     val text: String,
+    /** True for a hit only the stemmed pass reached — a widened, less certain match that the
+     *  search screen separates from the exact ones. See [AyahSearchIndex]. */
+    val expanded: Boolean = false,
 )
 
 data class AyahExplanationUiState(
@@ -983,69 +986,31 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
      *  the split is even and therefore differs from the paper mushaf on two pages. */
     fun juzInfoForPage(page: Int): JuzLayout.Position = JuzLayout.positionOf(page, pageCount)
 
-    /** One searchable ayah: the marker plus its text and surah name pre-normalized, so a keystroke
-     *  never re-normalizes 6236 strings. Each distinct surah name is folded once, not once per ayah. */
-    private class SearchEntry(
-        val marker: AyahMarker,
-        val normalizedText: String,
-        val normalizedSurah: String,
-    )
-
     // Built once off the main thread, on the first search after the ayah data has loaded.
     @Volatile
-    private var searchEntries: List<SearchEntry> = emptyList()
+    private var searchIndex: AyahSearchIndex? = null
 
-    private fun ensureSearchIndex(): List<SearchEntry> {
-        searchEntries.takeIf { it.isNotEmpty() }?.let { return it }
+    private fun ensureSearchIndex(): AyahSearchIndex? {
+        searchIndex?.let { return it }
         val all = ayahData.byPage.values.flatten()
-        if (all.isEmpty()) return emptyList()
-        val foldedNames = HashMap<String, String>(128)
-        val built = all.map { m ->
-            SearchEntry(
-                marker = m,
-                normalizedText = normalizeArabic(m.textUthmani),
-                normalizedSurah = foldedNames.getOrPut(m.surahNameAr) { normalizeArabic(m.surahNameAr) },
-            )
-        }
-        searchEntries = built
-        return built
+        if (all.isEmpty()) return null
+        return AyahSearchIndex.build(all).also { searchIndex = it }
     }
 
     /**
      * Search ayah text and surah names (diacritic-insensitive). Also matches a "2:255" verse key.
      *
-     * Runs off the main thread: the first call normalizes all 6236 ayahs to build the index, every
-     * later call scans it. The caller debounces, so this never runs once per keystroke.
+     * Runs off the main thread: the first call folds all 6236 ayahs to build the index, every later
+     * call scans it. The caller debounces, so this never runs once per keystroke.
+     *
+     * See [AyahSearchIndex] for why the index carries both orthographies of the mushaf.
      */
-    suspend fun search(query: String, limit: Int = 60): List<SearchResult> =
+    suspend fun search(query: String, limit: Int = AyahSearchIndex.DEFAULT_LIMIT): List<SearchResult> =
         withContext(Dispatchers.Default) {
-            val raw = query.trim()
-            if (raw.isEmpty()) return@withContext emptyList()
-
-            val entries = ensureSearchIndex()
-
-            // Direct "surah:ayah" jump, e.g. 2:255.
-            VerseKeyQuery.find(raw)?.let { mt ->
-                val key = "${mt.groupValues[1]}:${mt.groupValues[2]}"
-                entries.firstOrNull { it.marker.verseKey == key }?.let { entry ->
-                    return@withContext listOf(entry.marker.toSearchResult())
-                }
-            }
-
-            val q = normalizeArabic(raw)
-            if (q.isEmpty()) return@withContext emptyList()
-            val results = ArrayList<SearchResult>()
-            for (entry in entries) {
-                if (entry.normalizedText.contains(q) || entry.normalizedSurah.contains(q)) {
-                    results.add(entry.marker.toSearchResult())
-                    if (results.size >= limit) break
-                }
-            }
-            results
+            val index = ensureSearchIndex() ?: return@withContext emptyList()
+            index.search(query, limit).map { it.marker.toSearchResult(it.expanded) }
         }
 }
 
-private val VerseKeyQuery = Regex("""^\s*(\d{1,3})\s*[:：]\s*(\d{1,3})\s*$""")
-
-private fun AyahMarker.toSearchResult() =
-    SearchResult(verseKey, surahNameAr, ayahNumber, page, textUthmani)
+private fun AyahMarker.toSearchResult(expanded: Boolean) =
+    SearchResult(verseKey, surahNameAr, ayahNumber, page, textUthmani, expanded)

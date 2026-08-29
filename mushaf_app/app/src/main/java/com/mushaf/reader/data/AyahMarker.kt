@@ -15,6 +15,9 @@ data class AyahMarker(
     val surahNameEn: String,
     val ayahNumber: Int,
     val textUthmani: String,
+    /** The same ayah in standard (imlaa'i) orthography — the spelling a reader types.
+     *  Search only: the page and the result rows always show [textUthmani]. */
+    val textImlaei: String,
     val juz: Int,
     val hizb: Int,
     val rub: Int,

@@ -57,6 +57,7 @@ class AyahRepository(private val context: Context) {
                     surahNameEn = r.optString("surah_name_en"),
                     ayahNumber = r.getInt("ayah_number"),
                     textUthmani = r.optString("text_uthmani"),
+                    textImlaei = r.optString("text_imlaei"),
                     juz = r.optInt("juz"),
                     hizb = r.optInt("hizb"),
                     rub = r.optInt("rub"),
