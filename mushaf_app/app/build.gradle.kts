@@ -23,8 +23,8 @@ android {
         applicationId = "com.mushaf.reader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 42
-        versionName = "0.6.1"
+        versionCode = 43
+        versionName = "0.6.2"
     }
 
     signingConfigs {
