@@ -139,7 +139,7 @@ function Get-ExclusionReason {
             return 'ملف سرّي استُبعد بطلب المستخدم'
         }
 
-        if ($fileName -in @('keystore.properties', 'google-services.json', 'credentials.json')) {
+        if ($fileName -in @('keystore.properties', 'google-services.json', 'credentials.json', 'play-service-account.json')) {
             return 'ملف سرّي استُبعد بطلب المستخدم'
         }
 
@@ -275,7 +275,8 @@ $requiredCandidates = @(
 if (-not $ExcludeSecrets) {
     $requiredCandidates += @(
         'mushaf_app\release.jks',
-        'mushaf_app\keystore.properties'
+        'mushaf_app\keystore.properties',
+        'mushaf_app\play-service-account.json'
     )
 }
 
