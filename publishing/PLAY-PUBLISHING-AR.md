@@ -43,6 +43,7 @@ mushaf_app/play-service-account.json
 
 | الأمر | ما يفعله |
 | --- | --- |
+| `python tools/check_play_auth.py` | يتحقق أن المفتاح والصلاحيات يعملان — بلا رفع أي شيء |
 | `./gradlew tasks --group publishing` | يعرض كل مهام النشر المتاحة |
 | `./gradlew :app:bundleRelease` | يبني AAB موقّعًا فقط، بلا رفع |
 | `./gradlew :app:publishReleaseBundle` | يبني AAB ويرفعه إلى المسار المضبوط |
