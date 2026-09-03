@@ -895,6 +895,12 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         store.setReadPages(emptySet())
         khatmaStartedAt = now
         store.setKhatmaStartedAt(now)
+        // A new cycle starts from the beginning: move the reader to page 1 and re-anchor the dwell
+        // there, so the page left behind can't be credited to the fresh khatma.
+        saveLastPage(1)
+        visiblePage = 1
+        pageEnteredAt = now
+        restorePageRequest = 1
         fullStats = statsRepo.fullStats(
             currentPage = lastPage,
             totalPages = pageCount,

@@ -348,8 +348,8 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 sessions = viewModel.sessions,
                 khatmas = viewModel.khatmas,
                 khatmaStartedAt = viewModel.khatmaStartedAt,
-                onCompleteKhatma = { viewModel.completeKhatma() },
-                onResetKhatma = { viewModel.resetKhatmaProgress() },
+                onCompleteKhatma = { viewModel.completeKhatma(); showStatsScreen = false },
+                onResetKhatma = { viewModel.resetKhatmaProgress(); showStatsScreen = false },
                 onBack = { showStatsScreen = false },
                 onOpenKhatmaMap = { showKhatmaMap = true },
             )
