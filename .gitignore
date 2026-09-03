@@ -5,6 +5,7 @@ keystore.properties
 *.jks
 *.keystore
 *.p12
+play-service-account*.json
 
 # =====================================================================
 #  Android / Gradle build outputs

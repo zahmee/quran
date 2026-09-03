@@ -1,3 +1,4 @@
+import com.github.triplet.gradle.androidpublisher.ReleaseStatus
 import java.util.Properties
 
 plugins {
@@ -5,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.play.publisher)
 }
 
 // Signing credentials are read from keystore.properties (gitignored) — never hardcoded.
@@ -14,6 +16,9 @@ val keystoreProperties = Properties().apply {
         keystorePropertiesFile.inputStream().use { load(it) }
     }
 }
+
+// Play Developer API credentials, same rule: play-service-account.json is gitignored.
+val playCredentialsFile = rootProject.file("play-service-account.json")
 
 android {
     namespace = "com.mushaf.reader"
@@ -67,6 +72,21 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+}
+
+// Uploads a signed AAB to Google Play over the Developer API — no browser involved.
+// Falls back to disabled if play-service-account.json is absent (fresh clone / CI),
+// mirroring how the release signingConfig degrades without keystore.properties.
+play {
+    enabled.set(playCredentialsFile.exists())
+    if (playCredentialsFile.exists()) {
+        serviceAccountCredentials.set(playCredentialsFile)
+    }
+    defaultToAppBundles.set(true)
+    track.set("internal")
+    // DRAFT: the build lands in Play as a draft and reaches no tester until it is
+    // rolled out by hand. Switch to COMPLETED once a release should go out directly.
+    releaseStatus.set(ReleaseStatus.DRAFT)
 }
 
 dependencies {

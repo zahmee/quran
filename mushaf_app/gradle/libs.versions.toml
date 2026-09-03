@@ -11,6 +11,7 @@ datastore = "1.2.1"
 room = "2.8.4"
 ksp = "2.0.21-1.0.28"
 junit = "4.13.2"
+playPublisher = "3.13.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -37,3 +38,4 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+play-publisher = { id = "com.github.triplet.play", version.ref = "playPublisher" }
