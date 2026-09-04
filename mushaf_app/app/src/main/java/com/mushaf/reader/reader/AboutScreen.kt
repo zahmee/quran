@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Business
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -56,10 +57,15 @@ import com.mushaf.reader.ui.components.MushafTopBar
 import com.mushaf.reader.update.AppUpdateState
 import com.mushaf.reader.update.AppUpdateUi
 
-/** "About" screen: app identity, trust notes, Mushaf source attribution, and the manual
- *  update check — the one place the reader can ask about updates on their own initiative. */
+/** "About" screen: app identity, trust notes, Mushaf source attribution, the manual update check
+ *  — the one place the reader can ask about updates on their own initiative — and a way through to
+ *  the backup screen, which is what an update they have to reinstall for depends on. */
 @Composable
-fun AboutScreen(onBack: () -> Unit, updates: AppUpdateUi? = null) {
+fun AboutScreen(
+    onBack: () -> Unit,
+    updates: AppUpdateUi? = null,
+    onOpenBackup: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
     val versionName = remember {
         runCatching {
@@ -92,6 +98,7 @@ fun AboutScreen(onBack: () -> Unit, updates: AppUpdateUi? = null) {
 
                 AppIdentityPanel(versionName)
                 if (updates != null) UpdatePanel(updates)
+                if (onOpenBackup != null) BackupPanel(onOpenBackup)
                 TrustPanel()
                 MushafSourcePanel(
                     onVisitSite = { openWeb("https://qurancomplex.gov.sa/quran-dev/") }
@@ -291,7 +298,8 @@ private fun UpdatePanel(updates: AppUpdateUi) {
                     "جارٍ التنزيل… ${state.percent.toArabicDigits()}٪"
                 AppUpdateState.ReadyToInstall -> "التحديث جاهز، أعد التشغيل لتثبيته."
                 AppUpdateState.Unavailable ->
-                    "تعذّر سؤال متجر قوقل. إن كنت ثبّت التطبيق من ملف مباشر فحدّثه من صفحة المتجر."
+                    "تعذّر سؤال متجر قوقل. والنسخة المثبّتة من ملف مباشر لا يحدّثها المتجر فوقها: " +
+                        "احفظ نسخة احتياطية أولاً، ثم احذف التطبيق وثبّته من صفحة المتجر واسترجع نسختك."
                 AppUpdateState.UpdateFailed ->
                     "تعذّر بدء التحديث. أعد المحاولة، أو حدّثه من صفحة التطبيق في المتجر."
                 AppUpdateState.StoreUnreachable ->
@@ -326,6 +334,26 @@ private fun UpdatePanel(updates: AppUpdateUi) {
             text = "فتح صفحة التطبيق في المتجر",
             icon = Icons.Outlined.Storefront,
             onClick = { updates.openStorePage() }
+        )
+    }
+}
+
+@Composable
+private fun BackupPanel(onOpenBackup: () -> Unit) {
+    Panel {
+        SectionTitle("النسخ الاحتياطي")
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "تُحفظ قراءتك وإحصاءاتك وختماتك على جهازك وحده، فلا يستعيدها أحد عنك. " +
+                "احفظ نسخة قبل تغيير الجهاز أو حذف التطبيق، واسترجعها بعد التثبيت.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(14.dp))
+        ActionButton(
+            text = "النسخ الاحتياطي والاسترجاع",
+            icon = Icons.Outlined.Backup,
+            onClick = onOpenBackup
         )
     }
 }

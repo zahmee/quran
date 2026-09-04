@@ -484,7 +484,15 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
         }
 
         if (showAbout) {
-            AboutScreen(onBack = { showAbout = false }, updates = updates)
+            AboutScreen(
+                onBack = { showAbout = false },
+                updates = updates,
+                // Backup renders below About in this stack, so About has to step aside for it.
+                onOpenBackup = {
+                    showAbout = false
+                    showBackup = true
+                },
+            )
         }
 
         if (showSearch) {
