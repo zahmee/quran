@@ -176,13 +176,18 @@ class ReadingStore(private val context: Context) {
 
     suspend fun settings(): Settings {
         val prefs = context.dataStore.data.first()
+        val readPages = prefs[keyReadPages].toIntSet()
         return Settings(
             lastPage = prefs[keyLastPage] ?: 1,
             themeId = prefs[keyThemeId]
                 ?: if (prefs[keyDarkTheme] == true) DARK_THEME_ID else DEFAULT_THEME_ID,
             fillScreen = prefs[keyFillScreen] ?: false,
-            visitedPages = prefs[keyVisitedPages].toIntSet(),
-            readPages = prefs[keyReadPages].toIntSet(),
+            // A page counted as read was necessarily opened. Builds before the rule was enforced
+            // at the point of writing could leave a read page with no visited entry, so the union
+            // is taken on the way out: the khatma map, and any backup made from it, stay
+            // self-consistent whatever is already on disk.
+            visitedPages = prefs[keyVisitedPages].toIntSet() + readPages,
+            readPages = readPages,
             hiddenButtons = prefs[keyHiddenButtons] ?: emptySet(),
             barButtons = prefs[keyBarButtons] ?: DEFAULT_BAR_BUTTONS,
             buttonColors = decodeButtonColors(prefs[keyButtonColors]),

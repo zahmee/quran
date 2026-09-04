@@ -778,11 +778,22 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setVisitedPages(next) }
     }
 
+    /** Marking a page read implies it was opened, so the khatma map's "read is a subset of visited"
+     *  rule is enforced here — at the one place that adds to the read set. Without it, any reset
+     *  that empties both sets while the dwell timer is still running (clearing the statistics, or
+     *  starting a khatma while already on page 1) leaves the next dwell writing a read page that
+     *  was never recorded as visited, and the backup taken afterwards carries the contradiction. */
     private fun markRead(page: Int) {
         if (readPagesAll.contains(page)) return
-        val next = readPagesAll + page
-        readPagesAll = next
-        viewModelScope.launch { store.setReadPages(next) }
+        val nextRead = readPagesAll + page
+        readPagesAll = nextRead
+        val nextVisited = visitedPagesAll + page
+        val visitedGrew = nextVisited.size != visitedPagesAll.size
+        visitedPagesAll = nextVisited
+        viewModelScope.launch {
+            store.setReadPages(nextRead)
+            if (visitedGrew) store.setVisitedPages(nextVisited)
+        }
     }
 
     /** Manually flip a page's "read" state on the khatma map (tap a cell to mark/unmark read).

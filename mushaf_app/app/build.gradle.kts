@@ -115,6 +115,9 @@ dependencies {
     // Local JVM tests only — the pure logic (juz layout, Arabic folding, day arithmetic) is kept
     // free of Android types precisely so it can be tested without a device or Robolectric.
     testImplementation(libs.junit)
+    // The real org.json, because android.jar's stub throws on every call. The backup codec is
+    // pure JSON over gzip, so this is what lets it be tested without a device.
+    testImplementation(libs.json)
 }
 
 // ── Distribution: collect signed release builds the "old way" ────────────────────

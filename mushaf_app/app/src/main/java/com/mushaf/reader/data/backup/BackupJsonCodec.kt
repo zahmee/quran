@@ -127,11 +127,12 @@ object BackupJsonCodec {
 
     private fun decodeReading(root: JSONObject, pageCount: Int): ReadingStore.BackupState {
         val settingsJson = root.getJSONObject("settings")
-        val visitedPages = intSet(settingsJson.getJSONArray("visitedPages"), pageCount)
         val readPages = intSet(settingsJson.getJSONArray("readPages"), pageCount)
-        if (!visitedPages.containsAll(readPages)) {
-            throw BackupException("تقدّم الختمة في النسخة الاحتياطية غير متناسق.")
-        }
+        // "read subset-of visited" is this app's own bookkeeping rule, not anything the reader can
+        // get wrong, and a page that was read was self-evidently opened. Backups taken while the
+        // rule could still be broken locally would otherwise be refused whole — losing every
+        // session, khatma and bookmark in them over a set the app can repair on the spot.
+        val visitedPages = intSet(settingsJson.getJSONArray("visitedPages"), pageCount) + readPages
 
         val bookmarks = stringSet(root.getJSONArray("bookmarks"), 16).also(::validateBookmarks)
         val bookmarks2 = stringSet(root.getJSONArray("bookmarks2"), 16).also(::validateBookmarks)
