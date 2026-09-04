@@ -153,7 +153,13 @@ fun SettingsScreen(
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxSize()) {
-            MushafTopBar(title = "الإعدادات", onBack = onBack)
+            // The tab strip is icons now, so the open tab is named here instead — the same
+            // quiet subtitle the backup and index screens use, not a second heading.
+            MushafTopBar(
+                title = "الإعدادات",
+                onBack = onBack,
+                subtitle = settingsTabTitles.getOrNull(tab),
+            )
 
             SettingsTabs(tab = tab, onTab = { tab = it })
 
@@ -501,6 +507,10 @@ fun SettingsScreen(
     }
 }
 
+/** The four tab names, in tab order. One list: the strip uses them as content descriptions and
+ *  the top bar shows the open one, so they can never drift apart. */
+private val settingsTabTitles = listOf("الواجهة", "القائمة", "المعلومات", "التطبيق")
+
 /** Top category tabs that split the settings into short, focused sections.
  *
  *  Icons, not words: at four tabs across a phone, "المعلومات" wrapped onto a second line and left
@@ -508,7 +518,6 @@ fun SettingsScreen(
  *  description. */
 @Composable
 private fun SettingsTabs(tab: Int, onTab: (Int) -> Unit) {
-    val titles = listOf("الواجهة", "القائمة", "المعلومات", "التطبيق")
     val icons = listOf(
         Icons.Outlined.Palette,
         Icons.Outlined.Menu,
@@ -516,7 +525,7 @@ private fun SettingsTabs(tab: Int, onTab: (Int) -> Unit) {
         Icons.Outlined.PhoneAndroid,
     )
     MushafSegmentedTabs(
-        labels = titles,
+        labels = settingsTabTitles,
         selectedIndex = tab,
         onSelected = onTab,
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
