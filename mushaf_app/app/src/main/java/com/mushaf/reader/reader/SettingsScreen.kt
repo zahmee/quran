@@ -29,13 +29,15 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material.icons.outlined.VerticalSplit
+import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material.icons.outlined.WidthFull
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -499,15 +501,26 @@ fun SettingsScreen(
     }
 }
 
-/** Top category tabs that split the settings into short, focused sections. */
+/** Top category tabs that split the settings into short, focused sections.
+ *
+ *  Icons, not words: at four tabs across a phone, "المعلومات" wrapped onto a second line and left
+ *  that tab visibly taller than its neighbours. The Arabic name stays as each tab's content
+ *  description. */
 @Composable
 private fun SettingsTabs(tab: Int, onTab: (Int) -> Unit) {
     val titles = listOf("الواجهة", "القائمة", "المعلومات", "التطبيق")
+    val icons = listOf(
+        Icons.Outlined.Palette,
+        Icons.Outlined.Menu,
+        Icons.Outlined.Info,
+        Icons.Outlined.PhoneAndroid,
+    )
     MushafSegmentedTabs(
         labels = titles,
         selectedIndex = tab,
         onSelected = onTab,
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+        icons = icons,
     )
 }
 

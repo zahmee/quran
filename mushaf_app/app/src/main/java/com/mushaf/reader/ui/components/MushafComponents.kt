@@ -186,12 +186,18 @@ fun MushafSoftDivider(
     )
 }
 
+/**
+ * Segmented tabs. Pass [icons] to show a glyph per tab instead of its label — for tab sets whose
+ * Arabic words are too long to sit on one line at four across; the label then becomes the tab's
+ * content description, so it is still announced and still findable.
+ */
 @Composable
 fun MushafSegmentedTabs(
     labels: List<String>,
     selectedIndex: Int,
     onSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    icons: List<ImageVector>? = null,
 ) {
     Row(
         modifier = modifier
@@ -213,12 +219,23 @@ fun MushafSegmentedTabs(
                 border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
             ) {
                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = label,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    )
+                    val icon = icons?.getOrNull(index)
+                    if (icon != null) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = label,
+                            modifier = Modifier
+                                .padding(horizontal = 8.dp, vertical = 9.dp)
+                                .size(22.dp),
+                        )
+                    } else {
+                        Text(
+                            text = label,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    }
                 }
             }
         }
