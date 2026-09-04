@@ -273,6 +273,7 @@ class BackupJsonCodecTest {
             settings.remove("buttonColors")
             settings.remove("pageSideIndicatorLength")
             settings.remove("verticalPaging")
+            settings.remove("edgeMargin")
         }
 
         val decoded = BackupJsonCodec.decode(data, pageCount).reading.settings
@@ -281,6 +282,20 @@ class BackupJsonCodecTest {
         assertEquals(ReadingStore.DEFAULT_BAR_BUTTONS, decoded.barButtons)
         assertEquals(40, decoded.pageSideIndicatorLength)
         assertFalse(decoded.verticalPaging)
+        // A backup from before curved-edge margins existed must not start moving the reader's
+        // layout on restore; "none" is the default precisely so nothing shifts.
+        assertEquals(ReadingStore.EDGE_MARGIN_NONE, decoded.edgeMargin)
+    }
+
+    @Test
+    fun `the curved-edge margin survives a round trip`() {
+        val decoded = BackupJsonCodec.decode(
+            BackupJsonCodec.encode(
+                snapshot(settings = settings().copy(edgeMargin = ReadingStore.EDGE_MARGIN_AUTO))
+            ),
+            pageCount,
+        )
+        assertEquals(ReadingStore.EDGE_MARGIN_AUTO, decoded.reading.settings.edgeMargin)
     }
 
     @Test
@@ -411,5 +426,6 @@ class BackupJsonCodecTest {
         khatmaStartedAt = 1_690_000_000_000,
         verticalPaging = true,
         keepScreenOn = false,
+        edgeMargin = ReadingStore.EDGE_MARGIN_MEDIUM,
     )
 }

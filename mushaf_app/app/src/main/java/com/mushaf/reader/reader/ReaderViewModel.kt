@@ -105,6 +105,11 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var keepScreenOn by mutableStateOf(initialSettings.keepScreenOn)
         private set
 
+    /** How far the corner controls and the page pull back from a curved screen edge; one of the
+     *  ReadingStore.EDGE_MARGIN_* ids. "none" is today's layout, and stays the default. */
+    var edgeMargin by mutableStateOf(initialSettings.edgeMargin)
+        private set
+
     /** Ids of the header buttons the user has hidden; any id NOT in this set is shown. */
     var hiddenButtons by mutableStateOf(initialSettings.hiddenButtons)
         private set
@@ -315,6 +320,12 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         if (value == keepScreenOn) return
         keepScreenOn = value
         viewModelScope.launch { store.setKeepScreenOn(value) }
+    }
+
+    fun updateEdgeMargin(value: String) {
+        if (value == edgeMargin) return
+        edgeMargin = value
+        viewModelScope.launch { store.setEdgeMargin(value) }
     }
 
     /** Whether the header button with [id] is currently shown. */
@@ -633,6 +644,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         fillScreen = value.fillScreen
         verticalPaging = value.verticalPaging
         keepScreenOn = value.keepScreenOn
+        edgeMargin = value.edgeMargin
         hiddenButtons = value.hiddenButtons
         barButtons = value.barButtons
         buttonColors = value.buttonColors

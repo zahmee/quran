@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.QueryStats
+import androidx.compose.material.icons.outlined.RoundedCorner
 import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
@@ -65,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import com.mushaf.reader.ui.components.MushafIconBadge
 import com.mushaf.reader.ui.components.MushafPanel
 import com.mushaf.reader.ui.components.MushafSectionHeader
+import com.mushaf.reader.data.ReadingStore
 import com.mushaf.reader.ui.components.MushafSegmentedTabs
 import com.mushaf.reader.ui.components.MushafSoftDivider
 import com.mushaf.reader.ui.components.MushafTopBar
@@ -142,6 +144,8 @@ fun SettingsScreen(
     onPageSideIndicatorLengthChange: (Int) -> Unit,
     pageSideIndicatorOpacity: Int,
     onPageSideIndicatorOpacityChange: (Int) -> Unit,
+    edgeMargin: String,
+    onEdgeMarginChange: (String) -> Unit,
     onBackup: () -> Unit,
     onAbout: () -> Unit,
     onClearAllStats: () -> Unit,
@@ -198,6 +202,17 @@ fun SettingsScreen(
                         body = "منع إطفاء الشاشة وقفلها أثناء القراءة. إطفاؤه يوفّر البطارية.",
                         checked = keepScreenOn,
                         onCheckedChange = onKeepScreenOnChange
+                    )
+                }
+
+                SettingsPanel(
+                    title = "حواف الشاشة",
+                    body = "للجوالات ذات الزوايا الدائرية أو الحواف المنحنية.",
+                    icon = Icons.Outlined.RoundedCorner
+                ) {
+                    EdgeMarginChoiceRow(
+                        selected = edgeMargin,
+                        onSelected = onEdgeMarginChange
                     )
                 }
 
@@ -968,6 +983,111 @@ private data class HeaderColorChoice(
 
 /** Bar-thickness picker, same dropdown shape as [ColorChoiceRow]. Each choice carries a sample line
  *  drawn at its own thickness, so the pick is visible before it is applied to the page. */
+private data class EdgeMarginChoice(
+    val id: String,
+    val label: String,
+    val body: String,
+)
+
+/**
+ * Chooses how far the corner controls and the page pull back from a curved screen edge.
+ *
+ * A dropdown rather than a toggle because "auto" cannot always be trusted: the corner radius is
+ * only readable from Android 12 onwards, and some phones under-report it. The fixed steps are the
+ * way out for a reader whose device the measurement fails.
+ */
+@Composable
+private fun EdgeMarginChoiceRow(selected: String, onSelected: (String) -> Unit) {
+    val choices = listOf(
+        EdgeMarginChoice(ReadingStore.EDGE_MARGIN_NONE, "بدون", "الوضع الحالي، بلا تغيير"),
+        EdgeMarginChoice(ReadingStore.EDGE_MARGIN_AUTO, "تلقائي", "يقيسه من انحناء جهازك"),
+        EdgeMarginChoice(ReadingStore.EDGE_MARGIN_SMALL, "صغير", "هامش خفيف"),
+        EdgeMarginChoice(ReadingStore.EDGE_MARGIN_MEDIUM, "متوسط", "هامش معتدل"),
+        EdgeMarginChoice(ReadingStore.EDGE_MARGIN_LARGE, "كبير", "لأشد الحواف انحناءً"),
+    )
+    val accent = MaterialTheme.colorScheme.primary
+    val current = choices.firstOrNull { it.id == selected } ?: choices[0]
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 10.dp)) {
+        Text(
+            text = "تُبعد النقاط الثلاث وزر الإعدادات وأطراف الصفحة عن الزاوية المنحنية قليلاً، " +
+                "فلا يقتطعها انحناء الشاشة. القياس التلقائي يحتاج أندرويد ١٢ فأحدث، وإلا عومل " +
+                "معاملة «متوسط».",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "هامش الحواف المنحنية",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            Box {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = accent.copy(alpha = 0.10f),
+                    border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
+                    modifier = Modifier.clickable { expanded = true }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = current.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = accent
+                        )
+                        Icon(
+                            imageVector = Icons.Filled.ArrowDropDown,
+                            contentDescription = "اختيار هامش الحواف",
+                            tint = accent
+                        )
+                    }
+                }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    choices.forEach { choice ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = choice.label,
+                                        color = if (choice.id == selected) accent
+                                        else MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = if (choice.id == selected) FontWeight.SemiBold
+                                        else FontWeight.Normal
+                                    )
+                                    Text(
+                                        text = choice.body,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            trailingIcon = if (choice.id == selected) {
+                                { Icon(Icons.Filled.Check, contentDescription = null, tint = accent) }
+                            } else null,
+                            onClick = {
+                                expanded = false
+                                onSelected(choice.id)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ThicknessChoiceRow(
     title: String,

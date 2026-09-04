@@ -124,6 +124,7 @@ object BackupJsonCodec {
         .put("khatmaStartedAt", value.khatmaStartedAt)
         .put("verticalPaging", value.verticalPaging)
         .put("keepScreenOn", value.keepScreenOn)
+        .put("edgeMargin", value.edgeMargin)
 
     private fun decodeReading(root: JSONObject, pageCount: Int): ReadingStore.BackupState {
         val settingsJson = root.getJSONObject("settings")
@@ -192,6 +193,7 @@ object BackupJsonCodec {
             // Added after schema v1 shipped; a backup written before the setting existed restores
             // the behaviour it was taken with, which was always-on.
             keepScreenOn = settingsJson.optBoolean("keepScreenOn", ReadingStore.DEFAULT_KEEP_SCREEN_ON),
+            edgeMargin = safeText(settingsJson, "edgeMargin", ReadingStore.DEFAULT_EDGE_MARGIN),
         )
         return ReadingStore.BackupState(settings, bookmarks, bookmarks2)
     }

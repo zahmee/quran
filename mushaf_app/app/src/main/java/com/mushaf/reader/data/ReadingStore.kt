@@ -31,6 +31,17 @@ class ReadingStore(private val context: Context) {
         /** The screen stayed awake unconditionally before this became a setting, so keep that
          *  as the default: an upgrade must not start locking the screen mid-read. */
         const val DEFAULT_KEEP_SCREEN_ON = true
+        /** How far the corner controls and the page pull back from a curved screen edge. A rounded
+         *  display corner is reported by neither the status-bar nor the display-cutout inset, so
+         *  nothing in the layout knows about it; this is the reader's own answer to that, and it
+         *  stays "none" — today's exact layout — until they choose otherwise. */
+        const val EDGE_MARGIN_NONE = "none"
+        const val EDGE_MARGIN_AUTO = "auto"
+        const val EDGE_MARGIN_SMALL = "small"
+        const val EDGE_MARGIN_MEDIUM = "medium"
+        const val EDGE_MARGIN_LARGE = "large"
+        const val DEFAULT_EDGE_MARGIN = EDGE_MARGIN_NONE
+
         /** Palette id used before the user picks one, and the one the old dark_theme flag maps to.
          *  Kept as plain strings so this layer stays independent of the ui.theme palette table. */
         const val DEFAULT_THEME_ID = "light"
@@ -109,6 +120,8 @@ class ReadingStore(private val context: Context) {
     private val keyLastBackupName = stringPreferencesKey("last_backup_name")
     private val keyLastBackupSize = longPreferencesKey("last_backup_size")
 
+    private val keyEdgeMargin = stringPreferencesKey("edge_margin")
+
     // Update-nudge bookkeeping. Device-local on purpose: it stays out of [Settings] so restoring a
     // backup on another phone can't silence (or re-trigger) that phone's update prompt.
     private val keyUpdateCheckedAt = longPreferencesKey("update_checked_at")
@@ -157,6 +170,7 @@ class ReadingStore(private val context: Context) {
         val khatmaStartedAt: Long,
         val verticalPaging: Boolean,
         val keepScreenOn: Boolean,
+        val edgeMargin: String,
     )
 
     /** When the app last asked Play about an update, and which version the reader waved away.
@@ -223,6 +237,7 @@ class ReadingStore(private val context: Context) {
             khatmaStartedAt = prefs[keyKhatmaStartedAt] ?: 0L,
             verticalPaging = prefs[keyVerticalPaging] ?: false,
             keepScreenOn = prefs[keyKeepScreenOn] ?: DEFAULT_KEEP_SCREEN_ON,
+            edgeMargin = prefs[keyEdgeMargin] ?: DEFAULT_EDGE_MARGIN,
         )
     }
 
@@ -276,6 +291,7 @@ class ReadingStore(private val context: Context) {
             prefs[keyKhatmaStartedAt] = value.khatmaStartedAt
             prefs[keyVerticalPaging] = value.verticalPaging
             prefs[keyKeepScreenOn] = value.keepScreenOn
+            prefs[keyEdgeMargin] = value.edgeMargin
         }
     }
 
@@ -325,6 +341,10 @@ class ReadingStore(private val context: Context) {
             it[keyUpdateDismissedVersion] = versionCode
             it[keyUpdateDismissedAt] = at
         }
+    }
+
+    suspend fun setEdgeMargin(value: String) {
+        context.dataStore.edit { it[keyEdgeMargin] = value }
     }
 
     suspend fun setVisitedPages(pages: Set<Int>) {

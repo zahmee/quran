@@ -150,6 +150,9 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
         pageCount = { pageCount }
     )
     val scope = rememberCoroutineScope()
+    // Pull-back from a curved screen edge. 0.dp unless the reader asks for it, so the default
+    // layout is untouched.
+    val edgeMargin = curvedEdgeMargin(viewModel.edgeMargin)
     var showGoTo by remember { mutableStateOf(false) }
     var showStatsScreen by remember { mutableStateOf(false) }
     var showKhatmaMap by remember { mutableStateOf(false) }
@@ -233,6 +236,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                         clockColor = viewModel.clockColor,
                         sessionTimerColor = viewModel.sessionTimerColor,
                         sessionStartedAt = viewModel.sessionStartedAt,
+                        edgeMargin = edgeMargin,
                         isVisible = { id -> viewModel.isButtonVisible(id) },
                         isInBar = { id -> viewModel.isButtonInBar(id) },
                         buttonTint = { id, fallback ->
@@ -285,7 +289,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 ReaderPager(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .weight(1f)
+                        .padding(horizontal = edgeMargin),
                     viewModel = viewModel,
                     pagerState = pagerState,
                     selected = selected,
@@ -302,6 +307,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     pageColorId = viewModel.buttonPageColor,
                     opacity = viewModel.showHeaderButtonOpacity / 100f,
                     posFraction = viewModel.buttonPosFraction,
+                    edgeMargin = edgeMargin,
                     onDrag = viewModel::dragButtonPosFraction,
                     onDragEnd = viewModel::saveButtonPosFraction,
                     onClick = { headerVisible = true }
@@ -469,6 +475,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 onPageSideIndicatorLengthChange = { viewModel.updatePageSideIndicatorLength(it) },
                 pageSideIndicatorOpacity = viewModel.pageSideIndicatorOpacity,
                 onPageSideIndicatorOpacityChange = { viewModel.updatePageSideIndicatorOpacity(it) },
+                edgeMargin = viewModel.edgeMargin,
+                onEdgeMarginChange = { viewModel.updateEdgeMargin(it) },
                 onBackup = { showBackup = true },
                 onAbout = { showAbout = true },
                 onClearAllStats = { viewModel.clearAllStats() },
@@ -650,6 +658,8 @@ private fun ReaderHeader(
     clockColor: String,
     sessionTimerColor: String,
     sessionStartedAt: Long,
+    /** Extra pull-back from the screen's side edges, for curved corners. 0.dp by default. */
+    edgeMargin: Dp,
     isVisible: (String) -> Boolean,
     isInBar: (String) -> Boolean,
     /** (action id, the tint it would have had) -> the color the user picked for it. */
@@ -731,7 +741,7 @@ private fun ReaderHeader(
                 modifier = Modifier
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
-                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                    .padding(horizontal = 8.dp + edgeMargin, vertical = 2.dp)
                     .height(btnSize)
             ) {
                 // Start group: settings · optional clock · surah identity.
@@ -858,6 +868,8 @@ private fun ReaderHeader(
                 .fillMaxWidth()
                 // Keep clear of a side notch in landscape; the top band is handled by the strip.
                 .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                // …and clear of a curved corner, which no inset reports.
+                .padding(horizontal = edgeMargin)
         ) {
             // Camera-safe top strip: every quick-access button lives here, split between the two
             // corners so the center stays clear for a punch-hole/notch. Trim a little of the inset
@@ -1544,6 +1556,8 @@ private fun ShowHeaderButton(
     pageColorId: String,
     opacity: Float,
     posFraction: Float,
+    /** Keeps the chip's travel clear of a curved top/bottom corner. 0.dp by default. */
+    edgeMargin: Dp,
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
     onClick: () -> Unit,
@@ -1567,9 +1581,11 @@ private fun ShowHeaderButton(
             // The chip stays flush to the LEFT edge (x = 0) and slides UP/DOWN only. Its spot comes
             // in as a 0..1 fraction of the travel below the top inset (-1 = untouched -> top), so
             // the saved position lands in the same relative place on any screen size/orientation.
-            val maxY = (maxHpx - btnSize.height).coerceAtLeast(topInsetPx)
-            val travel = maxY - topInsetPx
-            val y = topInsetPx + posFraction.coerceIn(0f, 1f) * travel
+            val edgePx = with(density) { edgeMargin.toPx() }
+            val floorPx = topInsetPx + edgePx
+            val maxY = (maxHpx - btnSize.height - edgePx).coerceAtLeast(floorPx)
+            val travel = maxY - floorPx
+            val y = floorPx + posFraction.coerceIn(0f, 1f) * travel
             // Read inside the (long-lived) gesture coroutine so it sees the current values without
             // restarting the gesture — keying pointerInput on them would cancel the drag mid-move.
             val currentTravel by rememberUpdatedState(travel)
