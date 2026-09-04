@@ -109,6 +109,12 @@ class ReadingStore(private val context: Context) {
     private val keyLastBackupName = stringPreferencesKey("last_backup_name")
     private val keyLastBackupSize = longPreferencesKey("last_backup_size")
 
+    // Update-nudge bookkeeping. Device-local on purpose: it stays out of [Settings] so restoring a
+    // backup on another phone can't silence (or re-trigger) that phone's update prompt.
+    private val keyUpdateCheckedAt = longPreferencesKey("update_checked_at")
+    private val keyUpdateDismissedVersion = intPreferencesKey("update_dismissed_version")
+    private val keyUpdateDismissedAt = longPreferencesKey("update_dismissed_at")
+
     /** The display/position settings + per-page progress read together in one pass at startup.
      *  [visitedPages] = pages opened at all; [readPages] = pages dwelt on long enough to count
      *  as read (read ⊆ visited). Drives the khatma map. */
@@ -151,6 +157,14 @@ class ReadingStore(private val context: Context) {
         val khatmaStartedAt: Long,
         val verticalPaging: Boolean,
         val keepScreenOn: Boolean,
+    )
+
+    /** When the app last asked Play about an update, and which version the reader waved away.
+     *  [dismissedVersion] is 0 when nothing was ever dismissed. */
+    data class UpdateNudge(
+        val checkedAt: Long,
+        val dismissedVersion: Int,
+        val dismissedAt: Long,
     )
 
     /** Complete user-owned state written to the backup file. Device-local metadata is excluded. */
@@ -287,6 +301,26 @@ class ReadingStore(private val context: Context) {
 
     private fun Set<String>?.toIntSet(): Set<Int> =
         this?.mapNotNullTo(HashSet()) { it.toIntOrNull() } ?: emptySet()
+
+    suspend fun updateNudge(): UpdateNudge {
+        val prefs = context.dataStore.data.first()
+        return UpdateNudge(
+            checkedAt = prefs[keyUpdateCheckedAt] ?: 0L,
+            dismissedVersion = prefs[keyUpdateDismissedVersion] ?: 0,
+            dismissedAt = prefs[keyUpdateDismissedAt] ?: 0L,
+        )
+    }
+
+    suspend fun setUpdateCheckedAt(value: Long) {
+        context.dataStore.edit { it[keyUpdateCheckedAt] = value }
+    }
+
+    suspend fun setUpdateDismissed(versionCode: Int, at: Long) {
+        context.dataStore.edit {
+            it[keyUpdateDismissedVersion] = versionCode
+            it[keyUpdateDismissedAt] = at
+        }
+    }
 
     suspend fun setVisitedPages(pages: Set<Int>) {
         context.dataStore.edit { it[keyVisitedPages] = pages.mapTo(HashSet()) { p -> p.toString() } }

@@ -106,6 +106,11 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+    // In-app updates: the Play Store app does the download; nothing here talks to the network.
+    implementation(libs.play.app.update.ktx)
+    // Play Core still drags in fragment 1.1.0, which predates the ActivityResult APIs the update
+    // flow is launched with (lint fails the release build over it). Pin a current one.
+    implementation(libs.androidx.fragment)
     debugImplementation(libs.androidx.ui.tooling)
     // Local JVM tests only — the pure logic (juz layout, Arabic folding, day arithmetic) is kept
     // free of Android types precisely so it can be tested without a device or Robolectric.

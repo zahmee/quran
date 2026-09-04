@@ -27,6 +27,8 @@ import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.PrivacyTip
+import androidx.compose.material.icons.outlined.Storefront
+import androidx.compose.material.icons.outlined.SystemUpdateAlt
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -35,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,10 +53,13 @@ import com.mushaf.reader.ui.components.MushafPanel
 import com.mushaf.reader.ui.components.MushafSectionHeader
 import com.mushaf.reader.ui.components.MushafSoftDivider
 import com.mushaf.reader.ui.components.MushafTopBar
+import com.mushaf.reader.update.AppUpdateState
+import com.mushaf.reader.update.AppUpdateUi
 
-/** "About" screen: app identity, trust notes, and Mushaf source attribution. */
+/** "About" screen: app identity, trust notes, Mushaf source attribution, and the manual
+ *  update check — the one place the reader can ask about updates on their own initiative. */
 @Composable
-fun AboutScreen(onBack: () -> Unit) {
+fun AboutScreen(onBack: () -> Unit, updates: AppUpdateUi? = null) {
     val context = LocalContext.current
     val versionName = remember {
         runCatching {
@@ -85,6 +91,7 @@ fun AboutScreen(onBack: () -> Unit) {
                 }
 
                 AppIdentityPanel(versionName)
+                if (updates != null) UpdatePanel(updates)
                 TrustPanel()
                 MushafSourcePanel(
                     onVisitSite = { openWeb("https://qurancomplex.gov.sa/quran-dev/") }
@@ -263,6 +270,62 @@ private fun MushafSourcePanel(onVisitSite: () -> Unit) {
             text = "زيارة الموقع الرسمي للمجمع",
             icon = Icons.Outlined.Verified,
             onClick = onVisitSite
+        )
+    }
+}
+
+@Composable
+private fun UpdatePanel(updates: AppUpdateUi) {
+    // Leaving this screen clears a stale "you are up to date" so re-entering starts neutral.
+    DisposableEffect(Unit) { onDispose { updates.clearMessage() } }
+
+    Panel {
+        SectionTitle("التحديثات")
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = when (val state = updates.state) {
+                AppUpdateState.Checking -> "جارٍ التحقق…"
+                AppUpdateState.UpToDate -> "أنت على أحدث إصدار."
+                is AppUpdateState.Available -> "يتوفّر إصدار أحدث في المتجر."
+                is AppUpdateState.Downloading ->
+                    "جارٍ التنزيل… ${state.percent.toArabicDigits()}٪"
+                AppUpdateState.ReadyToInstall -> "التحديث جاهز، أعد التشغيل لتثبيته."
+                AppUpdateState.Unavailable ->
+                    "تعذّر سؤال متجر قوقل. إن كنت ثبّت التطبيق من ملف مباشر فحدّثه من صفحة المتجر."
+                AppUpdateState.UpdateFailed ->
+                    "تعذّر بدء التحديث. أعد المحاولة، أو حدّثه من صفحة التطبيق في المتجر."
+                AppUpdateState.StoreUnreachable ->
+                    "تعذّر فتح صفحة المتجر: لا متجر ولا متصفح على هذا الجهاز يفتحها."
+                AppUpdateState.Idle ->
+                    "يتحقق التطبيق من التحديثات تلقائياً مرة كل يوم، ويمكنك التحقق الآن."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(14.dp))
+        when (updates.state) {
+            is AppUpdateState.Available -> ActionButton(
+                text = "تنزيل التحديث",
+                icon = Icons.Outlined.SystemUpdateAlt,
+                onClick = { updates.update() }
+            )
+            AppUpdateState.ReadyToInstall -> ActionButton(
+                text = "إعادة التشغيل والتثبيت",
+                icon = Icons.Outlined.SystemUpdateAlt,
+                onClick = { updates.install() }
+            )
+            is AppUpdateState.Downloading -> Unit
+            else -> ActionButton(
+                text = "التحقق من وجود تحديث",
+                icon = Icons.Outlined.SystemUpdateAlt,
+                onClick = { updates.checkNow() }
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        ActionButton(
+            text = "فتح صفحة التطبيق في المتجر",
+            icon = Icons.Outlined.Storefront,
+            onClick = { updates.openStorePage() }
         )
     }
 }

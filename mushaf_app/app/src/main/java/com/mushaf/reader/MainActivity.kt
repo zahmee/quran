@@ -7,15 +7,23 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
+import com.mushaf.reader.data.ReadingStore
 import com.mushaf.reader.reader.ReaderScreen
 import com.mushaf.reader.reader.ReaderViewModel
+import com.mushaf.reader.update.AppUpdateController
+import com.mushaf.reader.update.AppUpdateUi
 import com.mushaf.reader.ui.theme.MushafPalette
 import com.mushaf.reader.ui.theme.MushafTheme
 import com.mushaf.reader.ui.theme.paletteFor
@@ -24,8 +32,17 @@ class MainActivity : ComponentActivity() {
 
     private val vm: ReaderViewModel by viewModels()
 
+    private val updates by lazy {
+        AppUpdateController(this, ReadingStore(applicationContext), lifecycleScope)
+    }
+    /** Play hands back an IntentSender, so the consent sheet needs this contract, not a plain Intent. */
+    private lateinit var updateFlow: ActivityResultLauncher<IntentSenderRequest>
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        updateFlow = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
+            updates.onUpdateFlowResult(it.resultCode)
+        }
         enableEdgeToEdge()
         hideSystemBars()
         setContent {
@@ -33,7 +50,8 @@ class MainActivity : ComponentActivity() {
                 val palette = paletteFor(vm.themeId)
                 LaunchedEffect(palette) { applyPalette(palette) }
                 LaunchedEffect(vm.keepScreenOn) { applyKeepScreenOn(vm.keepScreenOn) }
-                ReaderScreen(viewModel = vm)
+                val updateUi = remember { AppUpdateUi(updates) { updates.startUpdate(updateFlow) } }
+                ReaderScreen(viewModel = vm, updates = updateUi)
             }
         }
     }
@@ -68,16 +86,22 @@ class MainActivity : ComponentActivity() {
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
-    /** A foreground period starts a reading session. */
+    /** A foreground period starts a reading session, and is when Play is asked about updates. */
     override fun onStart() {
         super.onStart()
         vm.beginSession()
+        updates.onForeground()
     }
 
     /** Leaving the foreground records the session (start/end time, pages read). */
     override fun onStop() {
         super.onStop()
         vm.commitSession()
+    }
+
+    override fun onDestroy() {
+        updates.dispose()
+        super.onDestroy()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

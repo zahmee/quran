@@ -121,6 +121,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mushaf.reader.update.AppUpdateUi
+import com.mushaf.reader.update.UpdateBanner
 import com.mushaf.reader.ui.components.MushafSegmentedTabs
 import com.mushaf.reader.ui.theme.BookmarkGoldColor
 import com.mushaf.reader.ui.theme.BookmarkVioletColor
@@ -141,7 +143,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 @Composable
-fun ReaderScreen(viewModel: ReaderViewModel) {
+fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     val pageCount = viewModel.pageCount.coerceAtLeast(1)
     val pagerState = rememberPagerState(
         initialPage = (viewModel.initialPage - 1).coerceIn(0, pageCount - 1),
@@ -329,6 +331,17 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                     opacity = viewModel.bottomJuzBarOpacity / 100f
                 )
             }
+
+            // Update nudge: drawn inside the page Box, before every full-screen overlay, so
+            // opening the index or the stats screen hides it instead of stacking on top of them.
+            // The bar reads the update state itself, so a download's progress ticks redraw the
+            // bar alone instead of invalidating this whole scope on every percent.
+            if (updates != null) {
+                UpdateBanner(
+                    updates = updates,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
         }
 
         if (showGoTo) {
@@ -471,7 +484,7 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
         }
 
         if (showAbout) {
-            AboutScreen(onBack = { showAbout = false })
+            AboutScreen(onBack = { showAbout = false }, updates = updates)
         }
 
         if (showSearch) {
