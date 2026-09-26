@@ -102,6 +102,7 @@ object BackupJsonCodec {
         .put("showSurahProgress", value.showSurahProgress)
         .put("showJuzProgressPercent", value.showJuzProgressPercent)
         .put("showJuzProgressPages", value.showJuzProgressPages)
+        .put("showReadingPosition", value.showReadingPosition)
         .put("clockColor", value.clockColor)
         .put("sessionTimerColor", value.sessionTimerColor)
         .put("showButtonPage", value.showButtonPage)
@@ -167,6 +168,7 @@ object BackupJsonCodec {
             showSurahProgress = settingsJson.optBoolean("showSurahProgress", false),
             showJuzProgressPercent = settingsJson.optBoolean("showJuzProgressPercent", false),
             showJuzProgressPages = settingsJson.optBoolean("showJuzProgressPages", false),
+            showReadingPosition = settingsJson.optBoolean("showReadingPosition", false),
             clockColor = safeText(settingsJson, "clockColor", "muted"),
             sessionTimerColor = safeText(settingsJson, "sessionTimerColor", "muted"),
             showButtonPage = settingsJson.optBoolean("showButtonPage", true),
@@ -208,6 +210,7 @@ object BackupJsonCodec {
                     .put("startPage", value.startPage)
                     .put("endPage", value.endPage)
                     .put("pagesRead", value.pagesRead)
+                    .put("durationMs", value.durationMs)
             )
         }
     }
@@ -221,8 +224,11 @@ object BackupJsonCodec {
             val startPage = value.getInt("startPage")
             val endPage = value.getInt("endPage")
             val pagesRead = value.getInt("pagesRead")
+            // Older backups only recorded the date interval, which remains their duration.
+            val intervalMs = (endedAt - startedAt).coerceAtLeast(0L)
+            val durationMs = if (value.has("durationMs")) value.getLong("durationMs") else intervalMs
             if (startedAt < 0L || endedAt < 0L || startPage !in 1..pageCount ||
-                endPage !in 1..pageCount || pagesRead !in 0..pageCount
+                endPage !in 1..pageCount || pagesRead !in 0..pageCount || durationMs !in 0L..intervalMs
             ) {
                 throw BackupException("تحتوي النسخة على جلسة قراءة غير صالحة.")
             }
@@ -235,6 +241,7 @@ object BackupJsonCodec {
                 startPage = startPage,
                 endPage = endPage,
                 pagesRead = pagesRead,
+                durationMs = durationMs,
             )
         }
     }

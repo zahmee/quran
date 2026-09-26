@@ -2,6 +2,7 @@ package com.mushaf.reader.reader
 
 import android.content.ClipData
 import android.content.Intent
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
@@ -117,10 +118,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.mushaf.reader.update.AppUpdateUi
 import com.mushaf.reader.update.UpdateBanner
 import com.mushaf.reader.ui.components.MushafSegmentedTabs
@@ -134,6 +140,7 @@ import com.mushaf.reader.ui.theme.StatusGreenColor
 import com.mushaf.reader.ui.theme.StatusRedColor
 import com.mushaf.reader.ui.theme.pageRecolor
 import com.mushaf.reader.data.AyahMarker
+import com.mushaf.reader.data.QuranPagePosition
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -164,6 +171,16 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     var showBackup by remember { mutableStateOf(false) }
     var headerVisible by remember { mutableStateOf(true) }
     val selected = viewModel.selectedAyah
+
+    // Screens are overlays in this activity, so its lifecycle alone cannot time reading.
+    // Focus also excludes system pickers, update dialogs and other windows covering the reader.
+    val canRead = !showStatsScreen && !showKhatmaMap && !showIndex && !showSearch &&
+        !showAbout && !showSettings && !showBackup && !showGoTo && selected == null &&
+        !viewModel.backupUiState.busy && LocalWindowInfo.current.isWindowFocused
+    LifecycleResumeEffect(viewModel, canRead) {
+        viewModel.setReaderVisible(canRead)
+        onPauseOrDispose { viewModel.setReaderVisible(false) }
+    }
 
     val jumpToPage: (Int) -> Unit = { page ->
         scope.launch { pagerState.scrollToPage((page - 1).coerceIn(0, pageCount - 1)) }
@@ -236,6 +253,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                         clockColor = viewModel.clockColor,
                         sessionTimerColor = viewModel.sessionTimerColor,
                         sessionStartedAt = viewModel.sessionStartedAt,
+                        sessionDurationMs = viewModel::currentSessionDurationMs,
                         edgeMargin = edgeMargin,
                         isVisible = { id -> viewModel.isButtonVisible(id) },
                         isInBar = { id -> viewModel.isButtonInBar(id) },
@@ -295,7 +313,9 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     pagerState = pagerState,
                     selected = selected,
                     fillScreen = viewModel.fillScreen,
-                    verticalPaging = viewModel.verticalPaging
+                    verticalPaging = viewModel.verticalPaging,
+                    readerVisible = canRead,
+                    updates = updates,
                 )
             }
 
@@ -439,6 +459,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 onShowJuzProgressPercentChange = { viewModel.updateShowJuzProgressPercent(it) },
                 showJuzProgressPages = viewModel.showJuzProgressPages,
                 onShowJuzProgressPagesChange = { viewModel.updateShowJuzProgressPages(it) },
+                showReadingPosition = viewModel.showReadingPosition,
+                onShowReadingPositionChange = viewModel::updateShowReadingPosition,
                 clockColor = viewModel.clockColor,
                 onClockColorChange = { viewModel.updateClockColor(it) },
                 sessionTimerColor = viewModel.sessionTimerColor,
@@ -516,9 +538,15 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     }
 }
 
-private enum class ExplanationTab(val title: String) {
-    Tafsir("التفسير الميسر"),
-    Meanings("معاني الكلمات"),
+private enum class ExplanationTab(val title: String, val sourceNote: String) {
+    Tafsir(
+        "التفسير الميسر",
+        "المصدر: التفسير الميسر، الإصدار 3.0 — مجمع الملك فهد لطباعة المصحف الشريف.",
+    ),
+    Meanings(
+        "معاني الكلمات",
+        "المصدر: الميسر في غريب القرآن الكريم، الطبعة الثانية — مجمع الملك فهد لطباعة المصحف الشريف.",
+    ),
 }
 
 private data class ExplanationRequest(
@@ -534,6 +562,8 @@ private fun ReaderPager(
     selected: AyahMarker?,
     fillScreen: Boolean,
     verticalPaging: Boolean,
+    readerVisible: Boolean,
+    updates: AppUpdateUi?,
 ) {
     var anchor by remember { mutableStateOf(Offset.Zero) }
     var longPressAyah by remember { mutableStateOf<AyahMarker?>(null) }
@@ -549,6 +579,17 @@ private fun ReaderPager(
         val boxW = constraints.maxWidth
         val boxH = constraints.maxHeight
         val recolor = remember(viewModel.palette) { viewModel.palette.pageRecolor() }
+        val settledPage = pagerState.settledPage + 1
+        val position = remember(settledPage, viewModel.ayahLoaded) {
+            QuranPagePosition.fromAyahs(viewModel.markersForPage(settledPage))
+        }
+        val hizbMarkers = viewModel.hizbMarkersForPage(settledPage)
+        val positionAllowed = readingPositionAllowed(
+            enabled = viewModel.showReadingPosition,
+            readerVisible = readerVisible && longPressAyah == null && explanationRequest == null,
+            scrolling = pagerState.isScrollInProgress,
+            updates = updates,
+        )
 
         // Same page content for both orientations; only the pager axis differs.
         val pageContent: @Composable PagerScope.(Int) -> Unit = { index ->
@@ -568,7 +609,19 @@ private fun ReaderPager(
                     anchor = off
                     longPressAyah = m
                 },
-                fillScreen = fillScreen
+                fillScreen = fillScreen,
+                pageOverlay = { scale, viewportTop, viewportHeight ->
+                    if (pageNumber == settledPage && hizbMarkers.isNotEmpty()) {
+                        HizbMarkerLabels(
+                            markers = hizbMarkers,
+                            baseScale = scale,
+                            viewportTop = viewportTop,
+                            viewportHeight = viewportHeight,
+                            allowed = positionAllowed,
+                            palette = viewModel.palette,
+                        )
+                    }
+                },
             )
         }
 
@@ -587,6 +640,24 @@ private fun ReaderPager(
                 pageContent = pageContent,
             )
         }
+
+        // Match the fitted image's bottom edge. This is an overlay sibling of the pager:
+        // it never reserves height or changes the page's scale, even in whole-page mode.
+        val imageHeight = viewModel.imageHeight.coerceAtLeast(1)
+        val imageWidth = viewModel.imageWidth.coerceAtLeast(1)
+        val fittedHeight = minOf(maxHeight.value, maxWidth.value * imageHeight / imageWidth).dp
+        val imageBottomMargin = if (fillScreen) 0.dp else (maxHeight - fittedHeight) / 2
+        ReadingPositionOverlay(
+            page = settledPage,
+            position = position,
+            allowed = positionAllowed && hizbMarkers.isEmpty(),
+            palette = viewModel.palette,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = imageBottomMargin)
+                .navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        )
 
         longPressAyah?.let { ayah ->
             AyahLongPressMenu(
@@ -658,6 +729,7 @@ private fun ReaderHeader(
     clockColor: String,
     sessionTimerColor: String,
     sessionStartedAt: Long,
+    sessionDurationMs: () -> Long,
     /** Extra pull-back from the screen's side edges, for curved corners. 0.dp by default. */
     edgeMargin: Dp,
     isVisible: (String) -> Boolean,
@@ -728,6 +800,7 @@ private fun ReaderHeader(
             delay(1000)
         }
     }
+    val readingDurationMs = remember(nowMs, sessionStartedAt, sessionDurationMs) { sessionDurationMs() }
 
     Surface(
         color = headerColor,
@@ -811,7 +884,7 @@ private fun ReaderHeader(
                     )
                     if (showSessionTimer && sessionStartedAt > 0L) {
                         Text(
-                            text = formatElapsed(nowMs - sessionStartedAt),
+                            text = formatElapsed(readingDurationMs),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = sessionTimerTextColor,
@@ -912,7 +985,7 @@ private fun ReaderHeader(
                     // Optional current-session duration (green), shown before the stats button.
                     if (showSessionTimer && sessionStartedAt > 0L) {
                         Text(
-                            text = formatElapsed(nowMs - sessionStartedAt),
+                            text = formatElapsed(readingDurationMs),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = sessionTimerTextColor,
@@ -1770,6 +1843,25 @@ private fun AyahExplanationSheet(
         mutableStateOf(request.initialTab)
     }
     val currentState = state.takeIf { it.verseKey == request.ayah.verseKey }
+    val shareText = remember(request.ayah, currentState, selectedTab) {
+        if (currentState == null || currentState.loading || currentState.errorMessage != null) {
+            null
+        } else {
+            val content = when (selectedTab) {
+                ExplanationTab.Tafsir -> currentState.tafsirHtml?.let {
+                    formatTafsirText(it, Color.Unspecified).text
+                }
+                ExplanationTab.Meanings -> currentState.meanings.joinToString("\n\n") {
+                    "${it.word}: ${it.meaning}"
+                }
+            }
+            content?.takeIf { it.isNotBlank() }?.let {
+                "${selectedTab.title}\n" +
+                    "سورة ${request.ayah.surahNameAr} • الآية ${request.ayah.ayahNumber.toArabicDigits()}\n\n" +
+                    "$it\n\n${selectedTab.sourceNote}"
+            }
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1801,6 +1893,8 @@ private fun AyahExplanationSheet(
                 onSelected = { selectedTab = ExplanationTab.entries[it] },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
+
+            ExplanationActions(text = shareText, title = selectedTab.title)
 
             when {
                 currentState == null || currentState.loading -> {
@@ -1855,7 +1949,7 @@ private fun AyahExplanationSheet(
                             }
                         }
                         item {
-                            SourceNote("المصدر: التفسير الميسر، الإصدار 3.0 — مجمع الملك فهد لطباعة المصحف الشريف.")
+                            SourceNote(ExplanationTab.Tafsir.sourceNote)
                         }
                     }
                 }
@@ -1894,11 +1988,59 @@ private fun AyahExplanationSheet(
                             }
                         }
                         item {
-                            SourceNote("المصدر: الميسر في غريب القرآن الكريم، الطبعة الثانية — مجمع الملك فهد لطباعة المصحف الشريف.")
+                            SourceNote(ExplanationTab.Meanings.sourceNote)
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ExplanationActions(text: String?, title: String) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TextButton(
+            onClick = {
+                text?.let { content ->
+                    scope.launch {
+                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(title, content)))
+                        // Android 13 and newer already show a clipboard confirmation.
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                            Toast.makeText(context, "تم نسخ $title", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            },
+            enabled = text != null,
+            modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp),
+        ) {
+            Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text("نسخ", modifier = Modifier.padding(start = 8.dp))
+        }
+        TextButton(
+            onClick = {
+                text?.let { content ->
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, title)
+                        putExtra(Intent.EXTRA_TEXT, content)
+                    }
+                    context.startActivity(Intent.createChooser(send, null))
+                }
+            },
+            enabled = text != null,
+            modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp),
+        ) {
+            Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text("مشاركة", modifier = Modifier.padding(start = 8.dp))
         }
     }
 }
@@ -1966,173 +2108,196 @@ private fun AyahLongPressMenu(
     val reference = "﴿${ayah.surahNameAr} • آية ${ayah.ayahNumber.toArabicDigits()}﴾"
     val shareText = if (ayah.textUthmani.isNotBlank()) "${ayah.textUthmani}\n$reference" else reference
 
-    var menuSize by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
     val margin = with(density) { 10.dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
-
-    val x = (anchor.x - menuSize.width / 2f)
-        .coerceIn(margin, (boxWidthPx - menuSize.width - margin).coerceAtLeast(margin))
-    val above = anchor.y - menuSize.height - gap
-    val y = (if (above >= margin) above else anchor.y + gap)
-        .coerceIn(margin, (boxHeightPx - menuSize.height - margin).coerceAtLeast(margin))
+    val positionProvider = remember(anchor, boxWidthPx, boxHeightPx, margin, gap) {
+        object : PopupPositionProvider {
+            override fun calculatePosition(
+                anchorBounds: IntRect,
+                windowSize: IntSize,
+                layoutDirection: LayoutDirection,
+                popupContentSize: IntSize,
+            ): IntOffset {
+                // The long-press coordinates are physical pixels within the pager, even in RTL.
+                val x = (anchor.x - popupContentSize.width / 2f)
+                    .coerceIn(margin, (boxWidthPx - popupContentSize.width - margin).coerceAtLeast(margin))
+                val above = anchor.y - popupContentSize.height - gap
+                val y = (if (above >= margin) above else anchor.y + gap)
+                    .coerceIn(margin, (boxHeightPx - popupContentSize.height - margin).coerceAtLeast(margin))
+                return IntOffset(
+                    (anchorBounds.left + x.roundToInt())
+                        .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
+                    (anchorBounds.top + y.roundToInt())
+                        .coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0)),
+                )
+            }
+        }
+    }
 
     val ink = MaterialTheme.colorScheme.onSurface
     val accent = MaterialTheme.colorScheme.primary
     val hasText = ayah.textUthmani.isNotBlank()
 
-    Surface(
-        modifier = Modifier
-            .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
-            .onSizeChanged { menuSize = it }
-            .widthIn(min = 280.dp, max = 320.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.14f)),
-        shadowElevation = 12.dp,
-        tonalElevation = 2.dp,
+    Popup(
+        popupPositionProvider = positionProvider,
+        onDismissRequest = onClose,
+        properties = PopupProperties(
+            focusable = true,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+        ),
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                AyahMedallion(ayahNumber = ayah.ayahNumber, accent = accent, ornate = hasText)
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = ayah.surahNameAr,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = ink,
-                            maxLines = 1
-                        )
-                        if (ayah.isSajdah) SajdahBadge()
-                    }
-                    Text(
-                        text = "الآية ${ayah.ayahNumber.toArabicDigits()} • صفحة ${ayah.page.toArabicDigits()}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                }
-                IconButton(
-                    onClick = onClose,
-                    modifier = Modifier.size(40.dp),
+        Surface(
+            modifier = Modifier.widthIn(min = 280.dp, max = 320.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, accent.copy(alpha = 0.14f)),
+            shadowElevation = 12.dp,
+            tonalElevation = 2.dp,
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = "إغلاق",
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            if (hasText) {
-                Text(
-                    text = ayah.textUthmani,
-                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 21.sp),
-                    color = ink.copy(alpha = 0.82f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-            Text(
-                text = "الجزء ${ayah.juz.toArabicDigits()} • الحزب ${ayah.hizb.toArabicDigits()}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-
-            MenuSectionLabel("استكشف الآية")
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                ReadingAction(
-                    modifier = Modifier.weight(1f),
-                    title = "التفسير",
-                    subtitle = "التفسير الميسر",
-                    icon = Icons.AutoMirrored.Filled.MenuBook,
-                    onClick = onTafsir,
-                )
-                ReadingAction(
-                    modifier = Modifier.weight(1f),
-                    title = "المعاني",
-                    subtitle = "غريب القرآن",
-                    icon = Icons.AutoMirrored.Outlined.ManageSearch,
-                    onClick = onMeanings,
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 11.dp)
-                    .height(1.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)),
-            )
-
-            MenuSectionLabel("إجراءات سريعة")
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                if (showBookmark) {
-                    CompactAyahAction(
-                        modifier = Modifier.weight(1f),
-                        title = "علامة ١",
-                        icon = if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                        tint = BookmarkGoldColor,
-                        selected = bookmarked,
-                        onClick = onBookmark,
-                    )
-                }
-                if (showBookmark2) {
-                    CompactAyahAction(
-                        modifier = Modifier.weight(1f),
-                        title = "علامة ٢",
-                        icon = if (bookmarked2) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                        tint = BookmarkVioletColor,
-                        selected = bookmarked2,
-                        onClick = onBookmark2,
-                    )
-                }
-                CompactAyahAction(
-                    modifier = Modifier.weight(1f),
-                    title = "نسخ",
-                    icon = Icons.Filled.ContentCopy,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    onClick = {
-                        clipboardScope.launch {
-                            clipboard.setClipEntry(
-                                ClipEntry(ClipData.newPlainText("آية قرآنية", shareText)),
+                    AyahMedallion(ayahNumber = ayah.ayahNumber, accent = accent, ornate = hasText)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = ayah.surahNameAr,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = ink,
+                                maxLines = 1
                             )
-                            Toast.makeText(context, "تم نسخ الآية", Toast.LENGTH_SHORT).show()
+                            if (ayah.isSajdah) SajdahBadge()
                         }
-                    },
+                        Text(
+                            text = "الآية ${ayah.ayahNumber.toArabicDigits()} • صفحة ${ayah.page.toArabicDigits()}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                    IconButton(
+                        onClick = onClose,
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "إغلاق",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                if (hasText) {
+                    Text(
+                        text = ayah.textUthmani,
+                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 21.sp),
+                        color = ink.copy(alpha = 0.82f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+                Text(
+                    text = "الجزء ${ayah.juz.toArabicDigits()} • الحزب ${ayah.hizb.toArabicDigits()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
                 )
-                CompactAyahAction(
-                    modifier = Modifier.weight(1f),
-                    title = "مشاركة",
-                    icon = Icons.Filled.Share,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    onClick = {
-                        val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, shareText)
-                        }
-                        context.startActivity(Intent.createChooser(send, null))
-                    },
+
+                MenuSectionLabel("استكشف الآية")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ReadingAction(
+                        modifier = Modifier.weight(1f),
+                        title = "التفسير",
+                        subtitle = "التفسير الميسر",
+                        icon = Icons.AutoMirrored.Filled.MenuBook,
+                        onClick = onTafsir,
+                    )
+                    ReadingAction(
+                        modifier = Modifier.weight(1f),
+                        title = "المعاني",
+                        subtitle = "غريب القرآن",
+                        icon = Icons.AutoMirrored.Outlined.ManageSearch,
+                        onClick = onMeanings,
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 11.dp)
+                        .height(1.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)),
                 )
+
+                MenuSectionLabel("إجراءات سريعة")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (showBookmark) {
+                        CompactAyahAction(
+                            modifier = Modifier.weight(1f),
+                            title = "علامة ١",
+                            icon = if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                            tint = BookmarkGoldColor,
+                            selected = bookmarked,
+                            onClick = onBookmark,
+                        )
+                    }
+                    if (showBookmark2) {
+                        CompactAyahAction(
+                            modifier = Modifier.weight(1f),
+                            title = "علامة ٢",
+                            icon = if (bookmarked2) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                            tint = BookmarkVioletColor,
+                            selected = bookmarked2,
+                            onClick = onBookmark2,
+                        )
+                    }
+                    CompactAyahAction(
+                        modifier = Modifier.weight(1f),
+                        title = "نسخ",
+                        icon = Icons.Filled.ContentCopy,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        onClick = {
+                            clipboardScope.launch {
+                                clipboard.setClipEntry(
+                                    ClipEntry(ClipData.newPlainText("آية قرآنية", shareText)),
+                                )
+                                Toast.makeText(context, "تم نسخ الآية", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    )
+                    CompactAyahAction(
+                        modifier = Modifier.weight(1f),
+                        title = "مشاركة",
+                        icon = Icons.Filled.Share,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        onClick = {
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, shareText)
+                            }
+                            context.startActivity(Intent.createChooser(send, null))
+                        },
+                    )
+                }
             }
         }
     }

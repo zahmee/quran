@@ -23,7 +23,7 @@ interface SessionDao {
     @Query("SELECT COUNT(*) FROM sessions")
     suspend fun sessionCount(): Int
 
-    @Query("SELECT COALESCE(SUM(endedAt - startedAt), 0) FROM sessions")
+    @Query("SELECT COALESCE(SUM(durationMs), 0) FROM sessions")
     suspend fun totalDurationMs(): Long
 
     @Query("SELECT COALESCE(SUM(pagesRead), 0) FROM sessions")

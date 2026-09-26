@@ -34,7 +34,7 @@ sealed interface AppUpdateState {
     data object ReadyToInstall : AppUpdateState
     /** Only ever set by a check the reader asked for, so silence stays silent. */
     data object UpToDate : AppUpdateState
-    /** No Play Store to ask — a sideloaded APK, or Play is unavailable on this device. */
+    /** The check failed; this does not identify the install source or require reinstallation. */
     data object Unavailable : AppUpdateState
     /** Play's own update sheet could not be opened, or it came back reporting failure. */
     data object UpdateFailed : AppUpdateState
@@ -50,8 +50,8 @@ sealed interface AppUpdateState {
  * full-screen "you must update now" — so the immediate flow is deliberately not used here.
  *
  * Nothing in this class touches the network: it asks the installed Play Store app over IPC, which
- * is why the app still needs no INTERNET permission. On a device with no Play Store (a sideloaded
- * APK) every call fails quietly and the reader is left alone.
+ * is why the app still needs no INTERNET permission. Automatic check failures stay quiet;
+ * a manual check offers a retry and the store listing without guessing the cause.
  */
 @Stable
 class AppUpdateController(
@@ -254,7 +254,7 @@ class AppUpdateController(
         }
     }
 
-    /** The store listing — the only route left for anyone who installed the APK directly. */
+    /** Open the store listing so Play can determine which update options are available. */
     fun openStorePage() {
         val id = appContext.packageName
         val opened = openView("market://details?id=$id") ||

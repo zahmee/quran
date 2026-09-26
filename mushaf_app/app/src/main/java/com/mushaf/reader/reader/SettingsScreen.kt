@@ -108,6 +108,8 @@ fun SettingsScreen(
     onShowJuzProgressPercentChange: (Boolean) -> Unit,
     showJuzProgressPages: Boolean,
     onShowJuzProgressPagesChange: (Boolean) -> Unit,
+    showReadingPosition: Boolean,
+    onShowReadingPositionChange: (Boolean) -> Unit,
     clockColor: String,
     onClockColorChange: (String) -> Unit,
     sessionTimerColor: String,
@@ -403,6 +405,19 @@ fun SettingsScreen(
                 }
                 }
                 2 -> SettingsTabScroll {
+                SettingsPanel(
+                    title = "موضع القراءة",
+                    body = "بيان مؤقت عند علامة الحزب المطبوعة في المصحف.",
+                    icon = Icons.AutoMirrored.Outlined.MenuBook
+                ) {
+                    ToggleSettingRow(
+                        icon = Icons.Outlined.Info,
+                        title = "إظهار الجزء والحزب",
+                        body = "يظهر البيان أسفل علامة الحزب لمدة ٣ ثوانٍ، أو أسفل الصفحة إذا لم توجد علامة.",
+                        checked = showReadingPosition,
+                        onCheckedChange = onShowReadingPositionChange
+                    )
+                }
                 SettingsPanel(
                     title = "معلومات رأس الصفحة",
                     body = "تفاصيل السورة والجزء في السطر الهادئ أسفل الأزرار.",

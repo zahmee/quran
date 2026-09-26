@@ -67,23 +67,7 @@ class StatsRepository(context: Context) {
     private val dao = AppDatabase.get(context).sessionDao()
     private val khatmaDao = AppDatabase.get(context).khatmaDao()
 
-    suspend fun commitSession(
-        startedAt: Long,
-        endedAt: Long,
-        startPage: Int,
-        endPage: Int,
-        pagesRead: Int,
-    ) {
-        dao.insert(
-            SessionEntity(
-                startedAt = startedAt,
-                endedAt = endedAt,
-                startPage = startPage,
-                endPage = endPage,
-                pagesRead = pagesRead,
-            )
-        )
-    }
+    suspend fun commitSession(session: SessionEntity) { dao.insert(session) }
 
     suspend fun summary(
         currentPage: Int,
@@ -96,7 +80,7 @@ class StatsRepository(context: Context) {
             sessionCount = dao.sessionCount(),
             totalDurationMs = dao.totalDurationMs(),
             totalPagesRead = dao.totalPagesRead(),
-            lastSessionDurationMs = last?.let { it.endedAt - it.startedAt } ?: 0L,
+            lastSessionDurationMs = last?.durationMs ?: 0L,
             lastSessionPages = last?.pagesRead ?: 0,
             currentPage = currentPage,
             totalPages = totalPages,
@@ -145,7 +129,7 @@ class StatsRepository(context: Context) {
         for (s in sessions) {
             val acc = byDay.getOrPut(days.startOf(s.startedAt)) { Acc() }
             acc.pages += s.pagesRead
-            acc.durationMs += (s.endedAt - s.startedAt).coerceAtLeast(0)
+            acc.durationMs += s.durationMs
             acc.sessions += 1
         }
 
@@ -222,11 +206,11 @@ class StatsRepository(context: Context) {
             yearPages = yearPages,
             streakDays = streak,
             bestDayPages = byDay.values.maxOfOrNull { it.pages } ?: 0,
-            longestSessionMs = sessions.maxOfOrNull { (it.endedAt - it.startedAt).coerceAtLeast(0) } ?: 0L,
+            longestSessionMs = sessions.maxOfOrNull { it.durationMs } ?: 0L,
             activeDays = byDay.size,
             totalSessions = sessions.size,
             totalPages = sessions.sumOf { it.pagesRead },
-            totalDurationMs = sessions.sumOf { (it.endedAt - it.startedAt).coerceAtLeast(0) },
+            totalDurationMs = sessions.sumOf { it.durationMs },
             last7Days = last7,
             monthDays = monthDays,
             yearMonthPages = yearMonthPages.toList(),
@@ -246,7 +230,7 @@ class StatsRepository(context: Context) {
         var totalMs = 0L
         var totalPages = 0
         for (s in sessions) {
-            val dur = s.endedAt - s.startedAt
+            val dur = s.durationMs
             if (dur < 20_000L || s.pagesRead <= 0) continue
             totalMs += dur
             totalPages += s.pagesRead

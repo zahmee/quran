@@ -76,6 +76,7 @@ fun MushafPage(
     bookmarkedKeys2: Set<String>,
     onLongPressAyah: (AyahMarker, Offset) -> Unit,
     fillScreen: Boolean = false,
+    pageOverlay: @Composable (Float, () -> Float, Float) -> Unit = { _, _, _ -> },
 ) {
     val highlight = selectedAyah?.takeIf { markers.contains(it) }
     val bookmarked = remember(markers, bookmarkedKeys) {
@@ -105,17 +106,17 @@ fun MushafPage(
         when {
             !fillScreen -> WholePage(
                 model, recolor, markers, fitScale, wPx, hPx, imgW, imgH,
-                bookmarked, bookmarked2, highlight, onLongPressAyah
+                bookmarked, bookmarked2, highlight, onLongPressAyah, pageOverlay
             )
 
             widthConstrained -> StretchedPage(
                 model, recolor, markers, fitScale, wPx, hPx, imgW, imgH,
-                bookmarked, bookmarked2, highlight, onLongPressAyah
+                bookmarked, bookmarked2, highlight, onLongPressAyah, pageOverlay
             )
 
             else -> FilledWidthPage(
-                model, recolor, palette, markers, wPx, imgW, imgH,
-                bookmarked, bookmarked2, highlight, onLongPressAyah
+                model, recolor, palette, markers, wPx, hPx, imgW, imgH,
+                bookmarked, bookmarked2, highlight, onLongPressAyah, pageOverlay
             )
         }
     }
@@ -136,6 +137,7 @@ private fun WholePage(
     bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
     onLongPressAyah: (AyahMarker, Offset) -> Unit,
+    pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
 ) {
     val density = LocalDensity.current
     val contentW = imgW * fitScale
@@ -169,7 +171,10 @@ private fun WholePage(
             baseScale = fitScale,
             bookmarked = bookmarked,
             bookmarked2 = bookmarked2,
-            highlight = highlight
+            highlight = highlight,
+            pageOverlay = pageOverlay,
+            viewportTop = { 0f },
+            viewportHeight = contentH,
         )
     }
 }
@@ -189,6 +194,7 @@ private fun StretchedPage(
     bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
     onLongPressAyah: (AyahMarker, Offset) -> Unit,
+    pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
 ) {
     val density = LocalDensity.current
     val contentW = imgW * fitScale
@@ -228,7 +234,10 @@ private fun StretchedPage(
             baseScale = fitScale,
             bookmarked = bookmarked,
             bookmarked2 = bookmarked2,
-            highlight = highlight
+            highlight = highlight,
+            pageOverlay = pageOverlay,
+            viewportTop = { 0f },
+            viewportHeight = contentH,
         )
     }
 }
@@ -247,12 +256,14 @@ private fun FilledWidthPage(
     palette: MushafPalette,
     markers: List<AyahMarker>,
     wPx: Float,
+    hPx: Float,
     imgW: Float,
     imgH: Float,
     bookmarked: List<AyahMarker>,
     bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
     onLongPressAyah: (AyahMarker, Offset) -> Unit,
+    pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
 ) {
     val density = LocalDensity.current
     val scale = wPx / imgW
@@ -290,7 +301,10 @@ private fun FilledWidthPage(
                 baseScale = scale,
                 bookmarked = bookmarked,
                 bookmarked2 = bookmarked2,
-                highlight = highlight
+                highlight = highlight,
+                pageOverlay = pageOverlay,
+                viewportTop = { scrollState.value.toFloat() },
+                viewportHeight = hPx,
             )
         }
 
@@ -318,7 +332,7 @@ private val MoreBelowFadeHeight = 64.dp
  * pure black it still separates clearly at this strength.
  */
 private const val ScrimMaxLight = 0.60f
-private const val ScrimMaxDark = 0.38f
+private const val ScrimMaxDark = 0.45f
 
 /**
  * The one cue that a scrolled page has more of itself below the screen edge.
@@ -396,6 +410,9 @@ private fun PageContent(
     bookmarked: List<AyahMarker>,
     bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
+    pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
+    viewportTop: () -> Float,
+    viewportHeight: Float,
 ) {
     Box(modifier = modifier) {
         AsyncImage(
@@ -456,5 +473,6 @@ private fun PageContent(
                 }
             }
         }
+        pageOverlay(baseScale, viewportTop, viewportHeight)
     }
 }

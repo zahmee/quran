@@ -1,6 +1,7 @@
 package com.mushaf.reader.reader
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.core.net.toUri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -59,7 +60,7 @@ import com.mushaf.reader.update.AppUpdateUi
 
 /** "About" screen: app identity, trust notes, Mushaf source attribution, the manual update check
  *  — the one place the reader can ask about updates on their own initiative — and a way through to
- *  the backup screen, which is what an update they have to reinstall for depends on. */
+ *  the backup screen for saving and restoring the reader's own data. */
 @Composable
 fun AboutScreen(
     onBack: () -> Unit,
@@ -95,6 +96,28 @@ fun AboutScreen(
                     }
                     runCatching { context.startActivity(mail) }
                 }
+                val openAnaa: () -> Unit = {
+                    val opened = runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, "market://details?id=com.sakinah.tasbih".toUri())
+                                .setPackage("com.android.vending")
+                        )
+                    }.isSuccess || runCatching {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                "https://play.google.com/store/apps/details?id=com.sakinah.tasbih".toUri()
+                            )
+                        )
+                    }.isSuccess
+                    if (!opened) {
+                        Toast.makeText(
+                            context,
+                            "تعذّر فتح رابط التحميل. تأكد من وجود متجر أو متصفح على الجهاز.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
 
                 AppIdentityPanel(versionName)
                 if (updates != null) UpdatePanel(updates)
@@ -106,6 +129,7 @@ fun AboutScreen(
                 DeveloperPanel(
                     onVisitSite = { openWeb("https://cdit.co") }
                 )
+                OurAppsPanel(onOpenAnaa = openAnaa)
                 ContactPanel(
                     onWhatsapp = { openWeb("https://wa.me/966502010911") },
                     onEmail = openEmail,
@@ -229,6 +253,59 @@ private fun DeveloperPanel(onVisitSite: () -> Unit) {
 }
 
 @Composable
+private fun OurAppsPanel(onOpenAnaa: () -> Unit) {
+    Panel {
+        SectionTitle("من تطبيقاتنا")
+        Spacer(Modifier.height(16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Image(
+                painter = painterResource(R.drawable.anaa_app_icon),
+                contentDescription = "شعار تطبيق آناء",
+                modifier = Modifier.size(68.dp).clip(RoundedCornerShape(18.dp))
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "آناء",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "أذكار يومية ومسبحة",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Text(
+            text = "أذكار الصباح والمساء والنوم وما بعد الصلاة، وكتاب حصن المسلم، " +
+                "ومسبحة شخصية تحفظ عدّاداتك وتقدّمك.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "يعمل دون إنترنت، بلا حساب أو إعلانات أو اشتراكات.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(16.dp))
+        ActionButton(
+            text = "تحميل آناء من متجر قوقل",
+            icon = Icons.Outlined.Storefront,
+            onClick = onOpenAnaa
+        )
+    }
+}
+
+@Composable
 private fun ContactPanel(
     onWhatsapp: () -> Unit,
     onEmail: () -> Unit,
@@ -298,8 +375,8 @@ private fun UpdatePanel(updates: AppUpdateUi) {
                     "جارٍ التنزيل… ${state.percent.toArabicDigits()}٪"
                 AppUpdateState.ReadyToInstall -> "التحديث جاهز، أعد التشغيل لتثبيته."
                 AppUpdateState.Unavailable ->
-                    "تعذّر سؤال متجر قوقل. والنسخة المثبّتة من ملف مباشر لا يحدّثها المتجر فوقها: " +
-                        "احفظ نسخة احتياطية أولاً، ثم احذف التطبيق وثبّته من صفحة المتجر واسترجع نسختك."
+                    "تعذّر التحقق من التحديث الآن. أعد المحاولة، أو افتح صفحة التطبيق في المتجر " +
+                        "للتحقق من توفر تحديث."
                 AppUpdateState.UpdateFailed ->
                     "تعذّر بدء التحديث. أعد المحاولة، أو حدّثه من صفحة التطبيق في المتجر."
                 AppUpdateState.StoreUnreachable ->
@@ -323,6 +400,11 @@ private fun UpdatePanel(updates: AppUpdateUi) {
                 onClick = { updates.install() }
             )
             is AppUpdateState.Downloading -> Unit
+            AppUpdateState.Unavailable -> ActionButton(
+                text = "إعادة المحاولة",
+                icon = Icons.Outlined.SystemUpdateAlt,
+                onClick = { updates.checkNow() }
+            )
             else -> ActionButton(
                 text = "التحقق من وجود تحديث",
                 icon = Icons.Outlined.SystemUpdateAlt,

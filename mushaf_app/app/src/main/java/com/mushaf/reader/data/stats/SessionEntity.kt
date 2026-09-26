@@ -1,5 +1,6 @@
 package com.mushaf.reader.data.stats
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -12,4 +13,7 @@ data class SessionEntity(
     val startPage: Int,
     val endPage: Int,
     val pagesRead: Int,
+    /** Reading time only; the interval between the dates can also contain pauses. */
+    @ColumnInfo(defaultValue = "0")
+    val durationMs: Long = (endedAt - startedAt).coerceAtLeast(0L),
 )

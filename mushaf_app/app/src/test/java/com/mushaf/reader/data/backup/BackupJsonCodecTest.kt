@@ -274,6 +274,7 @@ class BackupJsonCodecTest {
             settings.remove("pageSideIndicatorLength")
             settings.remove("verticalPaging")
             settings.remove("edgeMargin")
+            settings.remove("showReadingPosition")
         }
 
         val decoded = BackupJsonCodec.decode(data, pageCount).reading.settings
@@ -282,6 +283,7 @@ class BackupJsonCodecTest {
         assertEquals(ReadingStore.DEFAULT_BAR_BUTTONS, decoded.barButtons)
         assertEquals(40, decoded.pageSideIndicatorLength)
         assertFalse(decoded.verticalPaging)
+        assertFalse(decoded.showReadingPosition)
         // A backup from before curved-edge margins existed must not start moving the reader's
         // layout on restore; "none" is the default precisely so nothing shifts.
         assertEquals(ReadingStore.EDGE_MARGIN_NONE, decoded.edgeMargin)
@@ -325,6 +327,38 @@ class BackupJsonCodecTest {
         assertEquals(24, decoded.topSurahBarThickness)
         assertEquals(25, decoded.showHeaderButtonOpacity)
         assertEquals(1f, decoded.buttonPosFraction, 0.0001f)
+    }
+
+    @Test
+    fun `actual reading duration survives pauses and backup round trip`() {
+        val original = snapshot()
+        val session = original.sessions.single().copy(durationMs = 30_000L)
+        val restored = BackupJsonCodec.decode(
+            BackupJsonCodec.encode(original.copy(sessions = listOf(session))), pageCount
+        )
+        assertEquals(session, restored.sessions.single())
+    }
+
+    @Test
+    fun `old backups retain the historical session duration`() {
+        val bytes = mutateRoot { it.getJSONArray("sessions").getJSONObject(0).remove("durationMs") }
+        val session = BackupJsonCodec.decode(bytes, pageCount).sessions.single()
+        assertEquals(session.endedAt - session.startedAt, session.durationMs)
+    }
+
+    @Test(expected = BackupException::class)
+    fun `negative reading duration is rejected`() {
+        val bytes = mutateRoot { it.getJSONArray("sessions").getJSONObject(0).put("durationMs", -1L) }
+        BackupJsonCodec.decode(bytes, pageCount)
+    }
+
+    @Test(expected = BackupException::class)
+    fun `reading duration longer than the session interval is rejected`() {
+        val bytes = mutateRoot {
+            val session = it.getJSONArray("sessions").getJSONObject(0)
+            session.put("durationMs", session.getLong("endedAt") - session.getLong("startedAt") + 1L)
+        }
+        BackupJsonCodec.decode(bytes, pageCount)
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -404,6 +438,7 @@ class BackupJsonCodecTest {
         showSurahProgress = true,
         showJuzProgressPercent = true,
         showJuzProgressPages = true,
+        showReadingPosition = true,
         clockColor = "red",
         sessionTimerColor = "green",
         showButtonPage = false,

@@ -899,7 +899,7 @@ private fun CalendarTab(sessions: List<SessionEntity>, colors: StatsColors) {
                     day.sessions.sortedBy { it.startedAt }.forEach { s ->
                         SessionRow(
                             timeLabel = "الساعة ${timeFmt.format(Date(s.startedAt))}",
-                            valueLabel = "${formatDuration(s.endedAt - s.startedAt)} • ${s.pagesRead.toArabicDigits()} صفحة",
+                            valueLabel = "${formatDuration(s.durationMs)} • ${s.pagesRead.toArabicDigits()} صفحة",
                             colors = colors,
                         )
                     }
@@ -1082,7 +1082,7 @@ private fun DaySection(
         day.sessions.forEach { s ->
             SessionRow(
                 timeLabel = "الساعة ${timeFmt.format(Date(s.startedAt))}",
-                valueLabel = "${formatDuration(s.endedAt - s.startedAt)} • ${s.pagesRead.toArabicDigits()} صفحة",
+                valueLabel = "${formatDuration(s.durationMs)} • ${s.pagesRead.toArabicDigits()} صفحة",
                 colors = colors,
             )
         }
@@ -1207,7 +1207,7 @@ private fun formatPace(pagesPerMinute: Double): String {
 private class DayG(val anchorMillis: Long) {
     val sessions = mutableListOf<SessionEntity>()
     val pages: Int get() = sessions.sumOf { it.pagesRead }
-    val durationMs: Long get() = sessions.sumOf { (it.endedAt - it.startedAt).coerceAtLeast(0) }
+    val durationMs: Long get() = sessions.sumOf { it.durationMs }
 }
 
 private class MonthG(val anchorMillis: Long) {

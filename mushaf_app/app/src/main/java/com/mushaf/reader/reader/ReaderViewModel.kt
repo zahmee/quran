@@ -2,6 +2,7 @@ package com.mushaf.reader.reader
 
 import android.app.Application
 import android.net.Uri
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -24,6 +25,7 @@ import com.mushaf.reader.data.content.QuranContentRepository
 import com.mushaf.reader.data.stats.FullStats
 import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.ReadingStats
+import com.mushaf.reader.data.stats.ReadingSessionTracker
 import com.mushaf.reader.data.stats.SessionEntity
 import com.mushaf.reader.data.stats.StatsRepository
 import com.mushaf.reader.ui.theme.MushafPalette
@@ -149,6 +151,9 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var showJuzProgressPages by mutableStateOf(initialSettings.showJuzProgressPages)
         private set
 
+    var showReadingPosition by mutableStateOf(initialSettings.showReadingPosition)
+        private set
+
     var clockColor by mutableStateOf(initialSettings.clockColor)
         private set
 
@@ -226,7 +231,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var khatmas by mutableStateOf<List<KhatmaEntity>>(emptyList())
         private set
 
-    /** Start time (ms) of the current foreground reading session; 0 when none is running.
+    /** Start time (ms) of the current reading session; 0 when none has started.
      *  Observable so the header timer updates when a new session begins. */
     var sessionStartedAt by mutableStateOf(0L)
         private set
@@ -276,17 +281,16 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var restorePageRequest by mutableStateOf<Int?>(null)
         private set
 
-    // Session tracking (one row per foreground period, committed on stop).
-    private var sessionStart = 0L
-    private var sessionStartPage = initialPage
-    private val visitedPages = linkedSetOf(initialPage)
     private var lastPage = initialPage
-
-    // Per-page dwell tracking: a page becomes "read" once it stays visible this long (20s),
-    // so genuine reading counts but quick flips stay merely "visited".
-    private val readDwellMs = 20_000L
-    private var pageEnteredAt = 0L
-    private var visiblePage = initialPage
+    private val readingSession = ReadingSessionTracker(
+        initialPage = initialPage,
+        elapsedRealtime = SystemClock::elapsedRealtime,
+        wallTimeMillis = System::currentTimeMillis,
+        onPageVisited = ::markVisited,
+        onPageRead = ::markRead,
+    )
+    private var pendingProgressWrite: Job? = null
+    private var pendingSessionWrite: Job? = null
 
     init {
         viewModelScope.launch { ayahData = withContext(Dispatchers.IO) { ayahRepo.loadAll() } }
@@ -405,6 +409,12 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         if (value == showJuzProgressPages) return
         showJuzProgressPages = value
         viewModelScope.launch { store.setShowJuzProgressPages(value) }
+    }
+
+    fun updateShowReadingPosition(value: Boolean) {
+        if (value == showReadingPosition) return
+        showReadingPosition = value
+        viewModelScope.launch { store.setShowReadingPosition(value) }
     }
 
     fun updateClockColor(value: String) {
@@ -557,6 +567,8 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             startBackupOperation(BackupStage.Importing)
             try {
+                // Finish and await old writes before replacing the database and preferences.
+                checkpointCurrentSessionForBackup()
                 val restored = backupRepo.importFrom(source)
                 applyRestoredSnapshot(restored.snapshot)
                 backupUiState = backupUiState.copy(
@@ -609,33 +621,11 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     private fun formatBackupDate(time: Long): String =
         SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.forLanguageTag("ar")).format(Date(time))
 
-    /** Persist the active reading slice before exporting, then continue with a fresh slice. */
+    /** A file picker can stop the activity first, so await that commit as well as this one. */
     private suspend fun checkpointCurrentSessionForBackup() {
-        val now = System.currentTimeMillis()
-        if (pageEnteredAt > 0L && now - pageEnteredAt >= readDwellMs &&
-            !readPagesAll.contains(visiblePage)
-        ) {
-            readPagesAll = readPagesAll + visiblePage
-            visitedPagesAll = visitedPagesAll + visiblePage
-            store.setReadPages(readPagesAll)
-            store.setVisitedPages(visitedPagesAll)
-        }
-        if (sessionStart > 0L && now - sessionStart >= 1_000L) {
-            statsRepo.commitSession(
-                startedAt = sessionStart,
-                endedAt = now,
-                startPage = sessionStartPage,
-                endPage = lastPage,
-                pagesRead = visitedPages.size,
-            )
-        }
-        sessionStart = now
-        sessionStartedAt = now
-        sessionStartPage = lastPage
-        visitedPages.clear()
-        visitedPages.add(lastPage)
-        visiblePage = lastPage
-        pageEnteredAt = now
+        commitSession()
+        pendingSessionWrite?.join()
+        pendingProgressWrite?.join()
     }
 
     private suspend fun applyRestoredSnapshot(snapshot: BackupSnapshot) {
@@ -656,6 +646,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         showSurahProgress = value.showSurahProgress
         showJuzProgressPercent = value.showJuzProgressPercent
         showJuzProgressPages = value.showJuzProgressPages
+        showReadingPosition = value.showReadingPosition
         clockColor = value.clockColor
         sessionTimerColor = value.sessionTimerColor
         showButtonPage = value.showButtonPage
@@ -686,20 +677,16 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         stats = statsRepo.summary(lastPage, pageCount, bookmarkPage())
         fullStats = statsRepo.fullStats(lastPage, pageCount, bookmarkPage())
 
-        val now = System.currentTimeMillis()
-        sessionStart = now
-        sessionStartedAt = now
-        sessionStartPage = lastPage
-        visitedPages.clear()
-        visitedPages.add(lastPage)
-        visiblePage = lastPage
-        pageEnteredAt = now
+        readingSession.reset(lastPage)
+        sessionStartedAt = 0L
         restorePageRequest = lastPage
     }
 
     fun assetModel(pageNumber: Int): String = pageRepo.assetUri(pageNumber)
 
     fun markersForPage(pageNumber: Int): List<AyahMarker> = ayahData.byPage[pageNumber].orEmpty()
+
+    fun hizbMarkersForPage(pageNumber: Int) = ayahData.hizbMarkersByPage[pageNumber].orEmpty()
 
     fun selectAyah(ayah: AyahMarker?) { selectedAyah = ayah }
 
@@ -762,32 +749,29 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveLastPage(page: Int) {
         lastPage = page
-        visitedPages.add(page)
         viewModelScope.launch { store.setLastPage(page) }
     }
 
     /** Called when [page] becomes the visible page: records the dwell time on the page just left
      *  (→ "read" if long enough), marks the new page visited, and persists the reading position. */
     fun onPageVisible(page: Int) {
-        val now = System.currentTimeMillis()
-        finalizeDwell(now)
-        visiblePage = page
-        pageEnteredAt = now
-        markVisited(page)
+        readingSession.changePage(page)
         saveLastPage(page)
     }
 
-    /** Promote the currently-visible page to "read" if it has been on screen long enough. */
-    private fun finalizeDwell(now: Long) {
-        if (pageEnteredAt <= 0L) return
-        if (now - pageEnteredAt >= readDwellMs) markRead(visiblePage)
+    /** Only the resumed, focused and unobscured reader runs either reading clock. */
+    fun setReaderVisible(visible: Boolean) {
+        readingSession.setReading(visible)
+        sessionStartedAt = readingSession.startedAt ?: 0L
     }
+
+    fun currentSessionDurationMs(): Long = readingSession.durationMs()
 
     private fun markVisited(page: Int) {
         if (visitedPagesAll.contains(page)) return
         val next = visitedPagesAll + page
         visitedPagesAll = next
-        viewModelScope.launch { store.setVisitedPages(next) }
+        persistPageProgress()
     }
 
     /** Marking a page read implies it was opened, so the khatma map's "read is a subset of visited"
@@ -800,12 +784,8 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         val nextRead = readPagesAll + page
         readPagesAll = nextRead
         val nextVisited = visitedPagesAll + page
-        val visitedGrew = nextVisited.size != visitedPagesAll.size
         visitedPagesAll = nextVisited
-        viewModelScope.launch {
-            store.setReadPages(nextRead)
-            if (visitedGrew) store.setVisitedPages(nextVisited)
-        }
+        persistPageProgress()
     }
 
     /** Manually flip a page's "read" state on the khatma map (tap a cell to mark/unmark read).
@@ -817,45 +797,44 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         val nextVisited = if (markRead) visitedPagesAll + page else visitedPagesAll - page
         readPagesAll = nextRead
         visitedPagesAll = nextVisited
-        viewModelScope.launch {
-            store.setReadPages(nextRead)
-            store.setVisitedPages(nextVisited)
+        persistPageProgress()
+    }
+
+    private fun persistPageProgress() {
+        val read = readPagesAll
+        val visited = visitedPagesAll
+        val previous = pendingProgressWrite
+        pendingProgressWrite = viewModelScope.launch {
+            previous?.join()
+            store.setReadPages(read)
+            store.setVisitedPages(visited)
         }
     }
 
-    fun beginSession() {
-        sessionStart = System.currentTimeMillis()
-        sessionStartedAt = sessionStart
-        sessionStartPage = lastPage
-        visitedPages.clear()
-        visitedPages.add(lastPage)
-        // Resume dwell timing for the page on screen.
-        visiblePage = lastPage
-        pageEnteredAt = sessionStart
-    }
-
     fun commitSession() {
-        // Settle the current page's dwell before the app leaves the foreground.
-        finalizeDwell(System.currentTimeMillis())
-        pageEnteredAt = 0L
-        if (sessionStart <= 0L) return
-        val start = sessionStart
-        val startPage = sessionStartPage
-        val end = System.currentTimeMillis()
-        val endPage = lastPage
-        val pages = visitedPages.size
-        sessionStart = 0L
-        viewModelScope.launch { statsRepo.commitSession(start, end, startPage, endPage, pages) }
+        val session = readingSession.finish()
+        sessionStartedAt = 0L
+        if (session != null) {
+            val previous = pendingSessionWrite
+            pendingSessionWrite = viewModelScope.launch {
+                previous?.join()
+                statsRepo.commitSession(session)
+            }
+        }
     }
 
     /** Wipe ALL statistics: every session plus the khatma-map progress (visited/read pages). */
     fun clearAllStats() {
         viewModelScope.launch {
+            pendingSessionWrite?.join()
+            pendingProgressWrite?.join()
             statsRepo.clearAllSessions()
             visitedPagesAll = emptySet()
             readPagesAll = emptySet()
             store.setVisitedPages(emptySet())
             store.setReadPages(emptySet())
+            readingSession.reset(lastPage)
+            sessionStartedAt = readingSession.startedAt ?: 0L
             sessions = statsRepo.allSessions()
             fullStats = statsRepo.fullStats(
                 currentPage = lastPage,
@@ -880,8 +859,8 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openStats() {
-        // Credit dwell on the page being read before the stats/khatma map are shown.
-        finalizeDwell(System.currentTimeMillis())
+        // Stop immediately on the tap; composing the screen will keep the reader paused.
+        setReaderVisible(false)
         viewModelScope.launch {
             sessions = statsRepo.allSessions()
             khatmas = statsRepo.allKhatmas()
@@ -912,6 +891,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun resetKhatmaProgressInternal(now: Long) {
+        pendingProgressWrite?.join()
         visitedPagesAll = emptySet()
         readPagesAll = emptySet()
         store.setVisitedPages(emptySet())
@@ -921,8 +901,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         // A new cycle starts from the beginning: move the reader to page 1 and re-anchor the dwell
         // there, so the page left behind can't be credited to the fresh khatma.
         saveLastPage(1)
-        visiblePage = 1
-        pageEnteredAt = now
+        readingSession.resetPage(1)
         restorePageRequest = 1
         fullStats = statsRepo.fullStats(
             currentPage = lastPage,

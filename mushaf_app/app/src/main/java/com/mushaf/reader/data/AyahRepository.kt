@@ -15,6 +15,7 @@ class AyahRepository(private val context: Context) {
         val keyToPage: Map<String, Int>,
         val imageWidth: Int,
         val imageHeight: Int,
+        val hizbMarkersByPage: Map<Int, List<HizbMarker>> = emptyMap(),
     )
 
     fun loadAll(): Data {
@@ -74,6 +75,11 @@ class AyahRepository(private val context: Context) {
             keyToPage = list.associate { it.verseKey to it.page },
             imageWidth = imageWidth,
             imageHeight = imageHeight,
+            hizbMarkersByPage = runCatching {
+                val anchors = context.assets.open("data/hizb_markers.json")
+                    .bufferedReader().use { it.readText() }
+                HizbMarker.fromJson(anchors, list, imageWidth, imageHeight).groupBy { it.page }
+            }.getOrDefault(emptyMap()),
         )
     }
 }

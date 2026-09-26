@@ -84,6 +84,7 @@ class ReadingStore(private val context: Context) {
     private val keyShowSurahProgress = booleanPreferencesKey("show_surah_progress")
     private val keyShowJuzProgressPercent = booleanPreferencesKey("show_juz_progress_percent")
     private val keyShowJuzProgressPages = booleanPreferencesKey("show_juz_progress_pages")
+    private val keyShowReadingPosition = booleanPreferencesKey("show_reading_position")
     private val keyClockColor = stringPreferencesKey("clock_color")
     private val keySessionTimerColor = stringPreferencesKey("session_timer_color")
     // Full-screen restore-header chip + bottom-of-page juz bar.
@@ -171,6 +172,7 @@ class ReadingStore(private val context: Context) {
         val verticalPaging: Boolean,
         val keepScreenOn: Boolean,
         val edgeMargin: String,
+        val showReadingPosition: Boolean = false,
     )
 
     /** When the app last asked Play about an update, and which version the reader waved away.
@@ -213,6 +215,7 @@ class ReadingStore(private val context: Context) {
             showSurahProgress = prefs[keyShowSurahProgress] ?: false,
             showJuzProgressPercent = prefs[keyShowJuzProgressPercent] ?: false,
             showJuzProgressPages = prefs[keyShowJuzProgressPages] ?: false,
+            showReadingPosition = prefs[keyShowReadingPosition] ?: false,
             clockColor = prefs[keyClockColor] ?: "muted",
             sessionTimerColor = prefs[keySessionTimerColor] ?: "muted",
             showButtonPage = prefs[keyShowButtonPage] ?: true,
@@ -269,6 +272,7 @@ class ReadingStore(private val context: Context) {
             prefs[keyShowSurahProgress] = value.showSurahProgress
             prefs[keyShowJuzProgressPercent] = value.showJuzProgressPercent
             prefs[keyShowJuzProgressPages] = value.showJuzProgressPages
+            prefs[keyShowReadingPosition] = value.showReadingPosition
             prefs[keyClockColor] = value.clockColor
             prefs[keySessionTimerColor] = value.sessionTimerColor
             prefs[keyShowButtonPage] = value.showButtonPage
@@ -409,6 +413,10 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setShowJuzProgressPages(value: Boolean) {
         context.dataStore.edit { it[keyShowJuzProgressPages] = value }
+    }
+
+    suspend fun setShowReadingPosition(value: Boolean) {
+        context.dataStore.edit { it[keyShowReadingPosition] = value }
     }
 
     suspend fun setClockColor(value: String) {

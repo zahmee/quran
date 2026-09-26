@@ -86,10 +86,9 @@ class MainActivity : ComponentActivity() {
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
-    /** A foreground period starts a reading session, and is when Play is asked about updates. */
+    /** Play is checked on foreground; ReaderScreen separately controls actual reading time. */
     override fun onStart() {
         super.onStart()
-        vm.beginSession()
         updates.onForeground()
     }
 
