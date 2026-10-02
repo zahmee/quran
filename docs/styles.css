@@ -179,8 +179,8 @@ h1 em { color: var(--forest); font-style: normal; }
   margin: 0;
   padding: 1rem;
   border: 1px solid rgba(255, 255, 255, .65);
-  border-radius: 45% 45% 1.5rem 1.5rem;
-  background: var(--sage-pale);
+  border-radius: 1.5rem;
+  background: var(--paper-deep);
   box-shadow: var(--shadow);
 }
 
@@ -194,7 +194,7 @@ h1 em { color: var(--forest); font-style: normal; }
   opacity: .5;
 }
 
-.hero-art img { width: 100%; min-height: 450px; object-fit: cover; border-radius: 44% 44% .8rem .8rem; }
+.hero-art img { width: 100%; height: auto; aspect-ratio: 1024 / 500; object-fit: contain; border-radius: .8rem; }
 .hero-art figcaption { padding: .85rem .5rem .15rem; color: rgba(23, 49, 38, .65); font-size: .78rem; text-align: center; }
 
 .manifesto {
@@ -301,7 +301,7 @@ footer p { margin: .35rem 0 0; color: rgba(23, 49, 38, .65); }
   nav a:not(.nav-github):nth-child(-n+2) { display: none; }
   .hero { min-height: auto; margin-top: -5rem; padding-top: 9.5rem; }
   h1 { font-size: clamp(3.2rem, 17vw, 5rem); }
-  .hero-art img { min-height: 300px; }
+  .hero-art img { min-height: 0; }
   .hero-facts { flex-wrap: wrap; row-gap: 1.5rem; }
   .hero-facts div { min-width: 7rem; }
   .manifesto { grid-template-columns: 1fr; padding-block: 4rem; }

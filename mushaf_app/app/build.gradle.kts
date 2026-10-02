@@ -28,8 +28,8 @@ android {
         applicationId = "com.mushaf.reader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 48
-        versionName = "0.6.7"
+        versionCode = 50
+        versionName = "0.6.9"
     }
 
     signingConfigs {
@@ -123,17 +123,17 @@ dependencies {
 
 // ── Distribution: collect signed release builds the "old way" ────────────────────
 // After every release assembly, drop a versioned copy of the signed APK into the
-// parent folder (D:\new project\quran_01) named QuranAlQari-<versionName>.apk.
+// parent folder (D:\new project\quran_01) named Natlu-<versionName>.apk.
 // A plain task with an ad-hoc copy {} is used (not a Copy task) so the repo root is
 // not declared as a tracked task output — that would overlap the whole build tree.
 tasks.register("copyReleaseApk") {
-    description = "Copies the signed release APK to ../ as QuranAlQari-<versionName>.apk"
+    description = "Copies the signed release APK to ../ as Natlu-<versionName>.apk"
     group = "distribution"
     doLast {
         copy {
             from(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
             into(rootDir.parentFile)
-            rename { "QuranAlQari-${android.defaultConfig.versionName}.apk" }
+            rename { "Natlu-${android.defaultConfig.versionName}.apk" }
         }
     }
 }

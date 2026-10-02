@@ -1,0 +1,18 @@
+{
+  "brand": "نتلو",
+  "selectedConcept": 2,
+  "generatedOn": "2026-10-02",
+  "method": "built-in image_gen",
+  "prompts": [
+    {
+      "key": "natlu_foreground",
+      "transparent": true,
+      "prompt": "Use case: background-extraction.\nThe input is the FINAL APPROVED icon for the Quran reading app نتلو. Edit ONLY the background.\nRemove the warm ivory background entirely and preserve exactly the dark emerald Arabic noon/book monogram AND its single circular dot. Preserve both disconnected foreground components. Produce real alpha transparency, including all negative space inside the letter and between the letter and the dot. Retain the original silhouette, size, position, proportions, emerald color and smooth edges. Same square composition as the input. Do not crop, zoom, rotate, redraw, simplify, embellish, change the letter, add outlines, add text, or add shadows. Nothing but the original green mark on a transparent canvas. This becomes the Android adaptive launcher foreground and must match the approved icon."
+    },
+    {
+      "key": "natlu_feature",
+      "transparent": false,
+      "prompt": "Use case: logo-brand.\nAsset type: Android app store feature graphic and website brand banner, wide landscape 1024x500 composition (aspect 2.048:1).\nInput image role: exact approved brand logo reference. Reuse this distinctive dark emerald Arabic noon/book monogram and the single circular dot, without changing its silhouette.\nCreate a refined, restrained brand banner for an Arabic Quran reader named exactly \"نتلو\". Warm ivory background, deep emerald typography, very subtle paper texture. Horizontally centered balanced lockup: the supplied monogram on the right, and the Arabic name \"نتلو\" in large elegant legible Arabic lettering to its left. Text (verbatim): \"نتلو\". No other words, no subtitles, no English, no device mockup, no border or rounded outer corners, no invented scripture, no decorative arches. The name and mark are separate with clear comfortable spacing. Main lockup occupies only central 70% width and central 62% height, with generous margins so it remains readable in a wide crop. Keep the approved monogram aesthetically faithful, solid emerald, no plastic effects or drop shadows. High clarity and calm dignity."
+    }
+  ]
+}

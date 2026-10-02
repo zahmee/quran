@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -68,6 +69,7 @@ fun AboutScreen(
     onOpenBackup: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    val feedbackEmailSubject = stringResource(R.string.feedback_email_subject, stringResource(R.string.app_name))
     val versionName = remember {
         runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
@@ -92,7 +94,10 @@ fun AboutScreen(
                 }
                 val openEmail: () -> Unit = {
                     val mail = Intent(Intent.ACTION_SENDTO, "mailto:info@cdit.co".toUri()).apply {
-                        putExtra(Intent.EXTRA_SUBJECT, "ملاحظات حول تطبيق قرآن القارئ")
+                        putExtra(
+                            Intent.EXTRA_SUBJECT,
+                            feedbackEmailSubject
+                        )
                     }
                     runCatching { context.startActivity(mail) }
                 }
@@ -166,7 +171,7 @@ private fun AppIdentityPanel(versionName: String) {
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = "قرآن القارئ",
+                        text = stringResource(R.string.app_name),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
@@ -235,7 +240,7 @@ private fun DeveloperPanel(onVisitSite: () -> Unit) {
         InfoHeader(
             icon = Icons.Outlined.Business,
             title = "الجهة المطوّرة",
-            body = "تطبيق قرآن القارئ من تطوير مؤسسة إبداع التطوير والبرمجة لتقنية المعلومات (CDIT)، مؤسسة سعودية متخصصة في تطوير البرمجيات وحلول الأعمال الرقمية من خميس مشيط."
+            body = stringResource(R.string.about_developer_body, stringResource(R.string.app_name))
         )
         Spacer(Modifier.height(10.dp))
         Text(

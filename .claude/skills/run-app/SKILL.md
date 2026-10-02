@@ -1,9 +1,9 @@
 ---
 name: run-app
-description: Launch قرآن القارئ on the Android emulator and drive it — install, navigate, and above all type ARABIC into the app (the search box). Use when asked to run, start, screenshot, or manually verify the app, or to confirm a change works in the real app rather than in tests.
+description: Launch Natlu on the Android emulator and drive it — install, navigate, and above all type ARABIC into the app (the search box). Use when asked to run, start, screenshot, or manually verify the app, or to confirm a change works in the real app rather than in tests.
 ---
 
-# Running قرآن القارئ
+# Running Natlu
 
 Android app in `mushaf_app/`. Host is Windows; the shell here is Git Bash.
 

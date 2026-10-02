@@ -1,10 +1,10 @@
 <div align="center" dir="rtl">
 
-![غلاف مشروع قرآن القارئ](docs/assets/quran-al-qari-hero.png)
+![غلاف مشروع نتلو](docs/assets/natlu-hero.png)
 
-# قرآن القارئ
+# نتلو
 
-**مصحف أندرويد مفتوح المصدر، يعمل بالكامل دون إنترنت ومن غير إعلانات.**
+**القرآن الكريم ومصحف المدينة المنورة دون إنترنت، مع التفسير والبحث ومتابعة الختمة.**
 
 [![Google Play](https://img.shields.io/badge/Google_Play-com.mushaf.reader-3DDC84?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.mushaf.reader)
 [![Latest release](https://img.shields.io/github/v/release/zahmee/quran?display_name=tag&label=release&color=1f7a5a)](https://github.com/zahmee/quran/releases/latest)
@@ -14,6 +14,8 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)](mushaf_app/app/src/main/java)
 
 [التطبيق على المتجر](https://play.google.com/store/apps/details?id=com.mushaf.reader) · [صفحة المشروع](https://zahmee.github.io/quran/) · [سجل التغييرات](CHANGELOG.md) · [سياسة الخصوصية](https://zahmee.github.io/quran/privacy-policy.html) · [المساهمة](CONTRIBUTING.md)
+
+[تنزيل نتلو — الإصدار 0.6.9](https://github.com/zahmee/quran/releases/download/v0.6.9/Natlu-0.6.9.apk)
 
 </div>
 
@@ -29,10 +31,10 @@
   <img src="docs/assets/reader.png" width="23%" alt="واجهة القراءة">
   <img src="docs/assets/index.png" width="23%" alt="فهرس السور">
   <img src="docs/assets/search.png" width="23%" alt="البحث في القرآن">
-  <img src="docs/assets/stats.png" width="23%" alt="إحصائيات القراءة">
+  <img src="docs/assets/about.png" width="23%" alt="نتلو — الاسم والأيقونة الجديدة">
 </div>
 
-> لقطات توضيحية؛ قد تختلف تفاصيل الواجهة مع الإصدارات الأحدث.
+> لقطات فعلية من الإصدار 0.6.9. تتوفر صور إضافية للهاتف والجهاز اللوحي في مجلد مواد النشر.
 
 ## المميزات
 
@@ -155,7 +157,7 @@ python build_ayah_regions.py
 
 ### English
 
-Quran Al-Qari is an open-source, offline-first Android Mushaf reader built with Kotlin and Jetpack
+Natlu is an open-source, offline-first Android Mushaf reader built with Kotlin and Jetpack
 Compose. It ships all 604 page images, interactive ayah highlighting, bundled tafsir, full-text
 search over both the Uthmani and imlaei spellings, two bookmarks, reading statistics, khatma
 tracking, six reading themes, horizontal or vertical paging, and single-file backup and restore.
