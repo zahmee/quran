@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.absoluteOffset
+import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
@@ -106,6 +107,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -703,6 +705,42 @@ private fun ReaderPager(
     }
 }
 
+/** Extra room the single-row header gives each physical side to step past a camera hole. */
+private data class CutoutClearance(val left: Dp, val right: Dp)
+
+/**
+ * Clearance for a punch-hole that falls inside the top [bandHeight] and sits in the outer third
+ * of the window: that side is padded to just past the hole, minus whatever the horizontal cutout
+ * inset already reserves there. A hole near the middle is left alone.
+ */
+@Composable
+private fun cornerCutoutClearance(bandHeight: Dp): CutoutClearance {
+    val density = LocalDensity.current
+    // Reading the insets subscribes to cutout changes (fold, rotation) so the rects stay current.
+    val cutout = WindowInsets.displayCutout
+    val insetLeft = cutout.getLeft(density, LayoutDirection.Ltr)
+    val insetRight = cutout.getRight(density, LayoutDirection.Ltr)
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return CutoutClearance(0.dp, 0.dp)
+    val rects = LocalView.current.rootWindowInsets?.displayCutout?.boundingRects.orEmpty()
+    val width = LocalWindowInfo.current.containerSize.width
+    val bandPx = with(density) { bandHeight.roundToPx() }
+    var left = 0
+    var right = 0
+    for (rect in rects) {
+        if (rect.top >= bandPx || rect.isEmpty) continue
+        when {
+            rect.centerX() < width / 3 -> left = maxOf(left, rect.right)
+            rect.centerX() > width * 2 / 3 -> right = maxOf(right, width - rect.left)
+        }
+    }
+    return with(density) {
+        CutoutClearance(
+            left = (left - insetLeft).coerceAtLeast(0).toDp(),
+            right = (right - insetRight).coerceAtLeast(0).toDp(),
+        )
+    }
+}
+
 @Composable
 private fun ReaderHeader(
     page: Int,
@@ -808,12 +846,16 @@ private fun ReaderHeader(
         shadowElevation = 1.dp
     ) {
         if (singleRow) {
-            // One-row header for wide screens. Padded fully clear of the camera cutout — the top
-            // band in portrait, a side edge in landscape — so no control sits under the punch-hole.
+            // One-row header for wide screens. It sits in the camera band itself rather than below
+            // it, so an unfolded foldable shows a single line with the punch-hole inside it. A hole
+            // near either end pushes that end inward so no control lands under the lens; a side
+            // notch in landscape is kept clear by the horizontal inset.
+            val cornerHole = cornerCutoutClearance(bandHeight = btnSize + 4.dp)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
+                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                    .absolutePadding(left = cornerHole.left, right = cornerHole.right)
                     .padding(horizontal = 8.dp + edgeMargin, vertical = 2.dp)
                     .height(btnSize)
             ) {
@@ -854,7 +896,7 @@ private fun ReaderHeader(
                         )
                     }
                 }
-                // Center: page badge, kept off the cutout by the box's inset padding above.
+                // Center: page badge.
                 PageChip(
                     page = page,
                     contentColor = contentColor,

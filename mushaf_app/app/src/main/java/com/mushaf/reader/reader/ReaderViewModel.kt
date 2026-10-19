@@ -83,7 +83,13 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     // Persisted display/position settings, read once synchronously so the first frame already
     // reflects the user's last theme/fit choice (no flash of the default light/fitted view).
-    private val initialSettings = runBlocking(Dispatchers.IO) { store.settings() }
+    private val initialSettings = runBlocking(Dispatchers.IO) {
+        // Has to run before the first read, and before anything else writes: the reconciliation
+        // tells a fresh install from an existing one by whether this install has ever written a
+        // preference, which is only true of a fresh one at this exact point.
+        store.migrateDefaults()
+        store.settings()
+    }
     private val initialLastBackup = runBlocking(Dispatchers.IO) { store.lastBackup() }
 
     val initialPage: Int = initialSettings.lastPage.coerceIn(1, pageCount.coerceAtLeast(1))
