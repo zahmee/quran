@@ -44,10 +44,15 @@ mushaf_app/play-service-account.json
 | الأمر | ما يفعله |
 | --- | --- |
 | `python tools/check_play_auth.py` | يتحقق أن المفتاح والصلاحيات يعملان — بلا رفع أي شيء |
+| `python tools/check_play_tracks.py` | يعرض الإصدار الذي يخدمه كل مسار وحالته — قراءة فقط |
 | `./gradlew tasks --group publishing` | يعرض كل مهام النشر المتاحة |
 | `./gradlew :app:bundleRelease` | يبني AAB موقّعًا فقط، بلا رفع |
 | `./gradlew :app:publishReleaseBundle` | يبني AAB ويرفعه إلى المسار المضبوط |
 | `./gradlew :app:promoteReleaseArtifact --from-track internal --promote-track production` | يرقّي إصدارًا مرفوعًا من مسار إلى آخر |
+
+يقبل `check_play_tracks.py` خيارين: `--notes` ليطبع ملاحظات كل إصدار كاملة،
+و`--json` ليطبع رد الـAPI خامًا. يفتح معاملة تحرير مؤقتة ويحذفها بعد القراءة،
+فلا يرفع شيئًا ولا ينشره. المسارات المغلقة تظهر باسمها العربي كما أُنشئت في الكونسول.
 
 ## ٣. الإعدادات الحالية
 
