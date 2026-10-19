@@ -1,20 +1,20 @@
 [versions]
-agp = "8.12.3"
-kotlin = "2.0.21"
-coreKtx = "1.17.0"
-lifecycle = "2.10.0"
-activityCompose = "1.12.4"
-composeBom = "2026.06.01"
-navigationCompose = "2.9.8"
-coil = "3.0.4"
+agp = "9.4.1"
+kotlin = "2.4.20"
+coreKtx = "1.19.1"
+lifecycle = "2.11.0"
+activityCompose = "1.13.0"
+composeBom = "2026.09.00"
+navigationCompose = "2.10.2"
+coil = "3.6.3"
 datastore = "1.2.1"
-room = "2.8.4"
+room = "2.8.5"
 appUpdate = "2.1.0"
-fragment = "1.8.9"
-ksp = "2.0.21-1.0.28"
+fragment = "1.9.1"
+ksp = "2.3.12"
 junit = "4.13.2"
-json = "20240303"
-playPublisher = "3.13.0"
+json = "20260814"
+playPublisher = "4.1.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -42,7 +42,6 @@ json = { group = "org.json", name = "json", version.ref = "json" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 play-publisher = { id = "com.github.triplet.play", version.ref = "playPublisher" }
