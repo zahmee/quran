@@ -4,7 +4,6 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.play.publisher)
@@ -23,7 +22,7 @@ val playCredentialsFile = rootProject.file("play-service-account.json")
 
 android {
     namespace = "com.mushaf.reader"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.mushaf.reader"
