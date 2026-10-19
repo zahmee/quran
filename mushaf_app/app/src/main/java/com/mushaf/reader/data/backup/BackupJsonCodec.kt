@@ -195,7 +195,12 @@ object BackupJsonCodec {
             // Added after schema v1 shipped; a backup written before the setting existed restores
             // the behaviour it was taken with, which was always-on.
             keepScreenOn = settingsJson.optBoolean("keepScreenOn", ReadingStore.DEFAULT_KEEP_SCREEN_ON),
-            edgeMargin = safeText(settingsJson, "edgeMargin", ReadingStore.DEFAULT_EDGE_MARGIN),
+            // Deliberately NOT ReadingStore.DEFAULT_EDGE_MARGIN. A fresh install opens at "auto"
+            // so a curved screen never clips a control on first run, but a backup written before
+            // the setting existed describes a reader whose layout was "none" — restoring it as
+            // "auto" would move their page for them. A new install and a restore are different
+            // questions, so the two defaults are allowed to differ.
+            edgeMargin = safeText(settingsJson, "edgeMargin", ReadingStore.EDGE_MARGIN_NONE),
         )
         return ReadingStore.BackupState(settings, bookmarks, bookmarks2)
     }

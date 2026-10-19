@@ -33,22 +33,84 @@ class ReadingStore(private val context: Context) {
         const val DEFAULT_KEEP_SCREEN_ON = true
         /** How far the corner controls and the page pull back from a curved screen edge. A rounded
          *  display corner is reported by neither the status-bar nor the display-cutout inset, so
-         *  nothing in the layout knows about it; this is the reader's own answer to that, and it
-         *  stays "none" — today's exact layout — until they choose otherwise. */
+         *  nothing in the layout knows about it; this is the reader's own answer to that. It
+         *  defaults to "auto", which pulls back only as much as the device reports it needs, so a
+         *  curved screen does not clip a corner control on first run; "none" is one tap away for
+         *  a flat screen that wants every pixel. */
         const val EDGE_MARGIN_NONE = "none"
         const val EDGE_MARGIN_AUTO = "auto"
         const val EDGE_MARGIN_SMALL = "small"
         const val EDGE_MARGIN_MEDIUM = "medium"
         const val EDGE_MARGIN_LARGE = "large"
-        const val DEFAULT_EDGE_MARGIN = EDGE_MARGIN_NONE
+        const val DEFAULT_EDGE_MARGIN = EDGE_MARGIN_AUTO
 
         /** Palette id used before the user picks one, and the one the old dark_theme flag maps to.
          *  Kept as plain strings so this layer stays independent of the ui.theme palette table. */
         const val DEFAULT_THEME_ID = "light"
         const val DARK_THEME_ID = "dark"
         /** Header actions that sit on the bar itself until the user moves them into the More menu.
-         *  These two were bar buttons before the placement setting existed, so they stay there. */
-        val DEFAULT_BAR_BUTTONS = setOf("fill", "hide")
+         *  "fill" and "hide" were bar buttons before the placement setting existed; "bookmark" is
+         *  here because returning to the saved marker is the one action a reader reaches for from
+         *  the page itself, and a menu hop for it reads as friction. */
+        val DEFAULT_BAR_BUTTONS = setOf("bookmark", "fill", "hide")
+
+        /** Header actions hidden until the reader turns them on. The second (purple) marker is for
+         *  readers who keep two places at once; offering both out of the box only crowds the bar
+         *  for everyone else, so it starts hidden and the first marker stands alone. */
+        val DEFAULT_HIDDEN_BUTTONS = setOf("bookmark2")
+
+        /** The page fills the screen out of the box: the mushaf images carry almost no margin of
+         *  their own, so a fitted page leaves bands of paper around text that could be read bigger.
+         *  A reader who prefers the whole page framed turns it off once. */
+        const val DEFAULT_FILL_SCREEN = true
+
+        /** Header buttons are drawn at the larger size by default — they are touched mid-read, at
+         *  arm's length, often one-handed. */
+        const val DEFAULT_BIG_BUTTONS = true
+
+        /** The two progress bars are on by default: they are the only thing on the page that says
+         *  how far this surah and this juz have gone, and they cost a hairline each. */
+        const val DEFAULT_SHOW_TOP_SURAH_BAR = true
+        const val DEFAULT_SHOW_BOTTOM_JUZ_BAR = true
+
+        /** The juz bar is red against the surah bar's green so the two never read as one line. */
+        const val DEFAULT_BOTTOM_JUZ_BAR_COLOR = "red"
+
+        /** The session timer rides in the header by default; reading time is the statistic the
+         *  khatma screens are built on, and seeing it accrue is what makes it worth keeping. */
+        const val DEFAULT_SHOW_SESSION_TIMER = true
+
+        // ── Changing a default without moving anyone's reader ───────────────────────────────
+        //
+        // DataStore holds only the keys that were written. A reader who never opened a setting
+        // has no stored value at all and simply gets whatever the default is today — so changing
+        // a default silently rearranges the reader of every such user on the next update. That is
+        // the opposite of what a default is for.
+        //
+        // [migrateDefaults] closes that gap once per install: an install that already existed has
+        // the pre-v1 values written out explicitly, so nothing shifts under it, while a fresh one
+        // keeps the new defaults. After that the stored version says it has been handled, and the
+        // same mechanism carries the next change — bump [DEFAULTS_VERSION] and add a branch.
+
+        /** Name of the stamp key; shared with [isExistingInstall], which must ignore it. */
+        const val DEFAULTS_VERSION_KEY = "defaults_version"
+
+        /** Bumped whenever a default above changes in a way an existing reader would see.
+         *  v1 (0.7.0): fill-screen, big buttons, both progress bars, the juz bar's red, the
+         *  session timer, the bookmark on the bar, the hidden second marker, the auto edge
+         *  margin. */
+        const val DEFAULTS_VERSION = 1
+
+        /**
+         * True when these preferences belong to an install that existed before the stamp.
+         *
+         * The discriminator is "has this install ever written anything", read at the first
+         * settings load, before the reader itself writes its first page. The stamp is excluded
+         * because it is written by the migration, not by the reader — counting it would make
+         * every later migration believe it was looking at a fresh install.
+         */
+        fun isExistingInstall(storedKeys: Set<String>): Boolean =
+            storedKeys.any { it != DEFAULTS_VERSION_KEY }
 
         /** Per-button colors ride in a preference string set as "id=color" — DataStore has no map
          *  type, and the backup file reuses the same encoding. */
@@ -123,6 +185,9 @@ class ReadingStore(private val context: Context) {
 
     private val keyEdgeMargin = stringPreferencesKey("edge_margin")
 
+    /** Which generation of defaults this install has already been reconciled with. */
+    private val keyDefaultsVersion = intPreferencesKey(DEFAULTS_VERSION_KEY)
+
     // Update-nudge bookkeeping. Device-local on purpose: it stays out of [Settings] so restoring a
     // backup on another phone can't silence (or re-trigger) that phone's update prompt.
     private val keyUpdateCheckedAt = longPreferencesKey("update_checked_at")
@@ -190,6 +255,36 @@ class ReadingStore(private val context: Context) {
         val bookmarks2: Set<String>,
     )
 
+    /**
+     * Reconciles this install with [DEFAULTS_VERSION]. Called once, before the first settings read.
+     *
+     * An install that already existed keeps what it was actually showing: every default that moved
+     * in v1 is written out at its pre-v1 value — but only where the reader had not already chosen
+     * one, so a deliberate choice is never overwritten. A fresh install writes nothing but the
+     * stamp, and so picks up the new defaults.
+     *
+     * Writing the old value is what makes this permanent. Once a preference exists it is no longer
+     * at the mercy of the default, so no later change can move it either.
+     */
+    suspend fun migrateDefaults() {
+        context.dataStore.edit { prefs ->
+            if (prefs.contains(keyDefaultsVersion)) return@edit
+            if (isExistingInstall(prefs.asMap().keys.mapTo(mutableSetOf()) { it.name })) {
+                // The defaults exactly as they stood through 0.6.9.
+                if (!prefs.contains(keyFillScreen)) prefs[keyFillScreen] = false
+                if (!prefs.contains(keyBigButtons)) prefs[keyBigButtons] = false
+                if (!prefs.contains(keyShowSessionTimer)) prefs[keyShowSessionTimer] = false
+                if (!prefs.contains(keyShowTopSurahBar)) prefs[keyShowTopSurahBar] = false
+                if (!prefs.contains(keyShowBottomJuzBar)) prefs[keyShowBottomJuzBar] = false
+                if (!prefs.contains(keyBottomJuzBarColor)) prefs[keyBottomJuzBarColor] = "blue"
+                if (!prefs.contains(keyEdgeMargin)) prefs[keyEdgeMargin] = EDGE_MARGIN_NONE
+                if (!prefs.contains(keyBarButtons)) prefs[keyBarButtons] = setOf("fill", "hide")
+                if (!prefs.contains(keyHiddenButtons)) prefs[keyHiddenButtons] = emptySet()
+            }
+            prefs[keyDefaultsVersion] = DEFAULTS_VERSION
+        }
+    }
+
     suspend fun settings(): Settings {
         val prefs = context.dataStore.data.first()
         val readPages = prefs[keyReadPages].toIntSet()
@@ -197,19 +292,19 @@ class ReadingStore(private val context: Context) {
             lastPage = prefs[keyLastPage] ?: 1,
             themeId = prefs[keyThemeId]
                 ?: if (prefs[keyDarkTheme] == true) DARK_THEME_ID else DEFAULT_THEME_ID,
-            fillScreen = prefs[keyFillScreen] ?: false,
+            fillScreen = prefs[keyFillScreen] ?: DEFAULT_FILL_SCREEN,
             // A page counted as read was necessarily opened. Builds before the rule was enforced
             // at the point of writing could leave a read page with no visited entry, so the union
             // is taken on the way out: the khatma map, and any backup made from it, stay
             // self-consistent whatever is already on disk.
             visitedPages = prefs[keyVisitedPages].toIntSet() + readPages,
             readPages = readPages,
-            hiddenButtons = prefs[keyHiddenButtons] ?: emptySet(),
+            hiddenButtons = prefs[keyHiddenButtons] ?: DEFAULT_HIDDEN_BUTTONS,
             barButtons = prefs[keyBarButtons] ?: DEFAULT_BAR_BUTTONS,
             buttonColors = decodeButtonColors(prefs[keyButtonColors]),
-            bigButtons = prefs[keyBigButtons] ?: false,
+            bigButtons = prefs[keyBigButtons] ?: DEFAULT_BIG_BUTTONS,
             showClock = prefs[keyShowClock] ?: false,
-            showSessionTimer = prefs[keyShowSessionTimer] ?: false,
+            showSessionTimer = prefs[keyShowSessionTimer] ?: DEFAULT_SHOW_SESSION_TIMER,
             showSurahNumber = prefs[keyShowSurahNumber] ?: false,
             showSurahAyahCount = prefs[keyShowSurahAyahCount] ?: false,
             showSurahProgress = prefs[keyShowSurahProgress] ?: false,
@@ -224,11 +319,11 @@ class ReadingStore(private val context: Context) {
                 prefs[keyShowHeaderButtonOpacity] ?: DEFAULT_SHOW_HEADER_BUTTON_OPACITY
             ).coerceIn(25, 100),
             buttonPosFraction = prefs[keyButtonPosFraction] ?: -1f,
-            showBottomJuzBar = prefs[keyShowBottomJuzBar] ?: false,
-            bottomJuzBarColor = prefs[keyBottomJuzBarColor] ?: "blue",
+            showBottomJuzBar = prefs[keyShowBottomJuzBar] ?: DEFAULT_SHOW_BOTTOM_JUZ_BAR,
+            bottomJuzBarColor = prefs[keyBottomJuzBarColor] ?: DEFAULT_BOTTOM_JUZ_BAR_COLOR,
             bottomJuzBarThickness = prefs[keyBottomJuzBarThickness] ?: DEFAULT_BAR_THICKNESS,
             bottomJuzBarOpacity = prefs[keyBottomJuzBarOpacity] ?: DEFAULT_BAR_OPACITY,
-            showTopSurahBar = prefs[keyShowTopSurahBar] ?: false,
+            showTopSurahBar = prefs[keyShowTopSurahBar] ?: DEFAULT_SHOW_TOP_SURAH_BAR,
             topSurahBarColor = prefs[keyTopSurahBarColor] ?: "green",
             topSurahBarThickness = prefs[keyTopSurahBarThickness] ?: DEFAULT_BAR_THICKNESS,
             topSurahBarOpacity = prefs[keyTopSurahBarOpacity] ?: DEFAULT_BAR_OPACITY,
