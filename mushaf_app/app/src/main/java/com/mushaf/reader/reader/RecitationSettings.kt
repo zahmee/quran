@@ -1,5 +1,18 @@
 package com.mushaf.reader.reader
 
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.automirrored.filled.PlaylistAddCheck
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.mushaf.reader.data.normalizeArabic
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -78,6 +91,8 @@ internal fun RecitationSettingsTab(
     currentSurah: Int?,
     currentJuz: Int,
     juzSurahs: List<Int>,
+    /** All surahs, for choosing which to download. */
+    surahs: List<SurahEntry>,
     surahName: (Int) -> String,
     followPage: Boolean,
     onFollowPageChange: (Boolean) -> Unit,
@@ -107,6 +122,7 @@ internal fun RecitationSettingsTab(
     }
 
     var confirmWhole by remember { mutableStateOf(false) }
+    var pickSurahs by remember { mutableStateOf(false) }
     var confirmClearAuto by remember { mutableStateOf(false) }
     var confirmRemoveReciter by remember { mutableStateOf<Int?>(null) }
     val open = remember { mutableStateMapOf<Int, Boolean>() }
@@ -163,6 +179,9 @@ internal fun RecitationSettingsTab(
                     Hint("يشمل السور التي فيه كاملة، فالتلاوة ملف لكل سورة.")
                 }
                 DownloadButton("تنزيل المصحف كاملاً") { confirmWhole = true }
+                DownloadButton("اختيار سور للتنزيل", icon = Icons.AutoMirrored.Filled.PlaylistAddCheck) {
+                    pickSurahs = true
+                }
             }
         }
         if (downloads.waitingForNetwork) {
@@ -252,6 +271,20 @@ internal fun RecitationSettingsTab(
     MushafPanel {
         MushafSectionHeader(title = "بيانات الجوال", icon = Icons.Outlined.NetworkCell)
         MobileDataChoiceRow(selected = mobileDataPolicy, onSelected = onMobileDataPolicyChange)
+    }
+
+    if (pickSurahs && reciter != null) {
+        val mine = downloads.items.filter { it.reciterId == reciter.id }.associateBy { it.surah }
+        SurahDownloadPicker(
+            reciterName = reciter.name,
+            surahs = surahs,
+            status = mine,
+            onDownload = { chosen ->
+                pickSurahs = false
+                start(chosen)
+            },
+            onDismiss = { pickSurahs = false },
+        )
     }
 
     if (confirmWhole && reciter != null) {
@@ -366,9 +399,13 @@ private fun MobileDataChoiceRow(
 }
 
 @Composable
-private fun DownloadButton(text: String, onClick: () -> Unit) {
+private fun DownloadButton(
+    text: String,
+    icon: ImageVector = Icons.Filled.Download,
+    onClick: () -> Unit,
+) {
     FilledTonalButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
         Text(text, modifier = Modifier.padding(start = 8.dp))
     }
 }
@@ -444,4 +481,126 @@ private fun surahsLabel(n: Int): String = when {
     n == 2 -> "سورتين"
     n in 3..10 -> "${n.toArabicDigits()} سور"
     else -> "${n.toArabicDigits()} سورة"
+}
+
+/**
+ * Choosing surahs to download for the current reciter: all 114 with a checkbox, searchable by
+ * name or number, with select-all and clear for what the search shows. Surahs already on the
+ * device, or on their way, are marked instead of offered again.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SurahDownloadPicker(
+    reciterName: String,
+    surahs: List<SurahEntry>,
+    /** This reciter's downloads by surah. */
+    status: Map<Int, RecitationDownloads.Item>,
+    onDownload: (List<Int>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var query by remember { mutableStateOf("") }
+    val chosen = remember { mutableStateListOf<Int>() }
+    fun available(number: Int) = status[number]?.let { !it.done && !it.pending } ?: true
+    val shown = remember(surahs, query) {
+        val q = normalizeArabic(query.trim())
+        val number = query.trim().toIntOrNull() ?: query.trim().fromArabicDigits()
+        when {
+            q.isEmpty() -> surahs
+            number != null -> surahs.filter { it.number == number }
+            else -> surahs.filter { normalizeArabic(it.nameAr).contains(q) }
+        }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Text(
+                text = "اختيار سور للتنزيل",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Hint("بصوت $reciterName. ما نُزِّل من قبل مُعلَّم ولا يُنزَّل مرة أخرى.")
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
+                placeholder = { Text("ابحث باسم السورة أو رقمها") },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = {
+                    shown.forEach { if (available(it.number) && it.number !in chosen) chosen += it.number }
+                }) { Text(if (query.isBlank()) "تحديد الكل" else "تحديد النتائج") }
+                TextButton(
+                    onClick = { chosen.clear() },
+                    enabled = chosen.isNotEmpty(),
+                ) { Text("إلغاء التحديد") }
+            }
+        }
+        LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f, fill = false)) {
+            items(shown, key = { it.number }) { surah ->
+                val entry = status[surah.number]
+                val free = available(surah.number)
+                val checked = surah.number in chosen
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = free) {
+                            if (checked) chosen -= surah.number else chosen += surah.number
+                        }
+                        .padding(horizontal = 12.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (free) {
+                        Checkbox(checked = checked, onCheckedChange = null, modifier = Modifier.padding(12.dp))
+                    } else {
+                        Icon(
+                            imageVector = if (entry?.done == true) Icons.Filled.DownloadDone else Icons.Filled.Download,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(12.dp).size(24.dp),
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "${surah.number.toArabicDigits()}. سورة ${surah.nameAr}",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = when {
+                                entry?.done == true -> "منزّلة • ${formatByteSize(entry.bytes)}"
+                                entry?.pending == true -> statusText(entry)
+                                else -> "${surah.ayahCount.toArabicDigits()} آية"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        Button(
+            onClick = { onDownload(chosen.sorted()) },
+            enabled = chosen.isNotEmpty(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text(
+                text = if (chosen.isEmpty()) "اختر سوراً للتنزيل" else "تنزيل ${surahsLabel(chosen.size)}",
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+    }
+}
+
+/** "١١٤" -> 114, for searching by a number typed with Arabic-Indic digits. */
+private fun String.fromArabicDigits(): Int? {
+    if (isEmpty() || any { it !in '\u0660'..'\u0669' }) return null
+    return map { it - '\u0660' }.fold(0) { acc, d -> acc * 10 + d }
 }
