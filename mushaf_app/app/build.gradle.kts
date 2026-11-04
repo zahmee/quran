@@ -1,4 +1,5 @@
 import com.github.triplet.gradle.androidpublisher.ReleaseStatus
+import groovy.json.JsonSlurper
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
@@ -20,6 +21,39 @@ val keystoreProperties = Properties().apply {
 // Play Developer API credentials, same rule: play-service-account.json is gitignored.
 val playCredentialsFile = rootProject.file("play-service-account.json")
 
+// Cloud backup's Firebase project, from the google-services.json the Firebase console hands out
+// (gitignored too). Its values become the string resources Firebase initialises itself from —
+// the one job the google-services plugin would do — so a fresh clone without the file still
+// builds, with cloud backup simply hidden.
+val googleServicesFile = file("google-services.json")
+// Debug builds can point cloud backup at the Firebase Local Emulator Suite instead:
+//   ./gradlew :app:installDebug -PfirebaseEmulatorHost=10.0.2.2
+val firebaseEmulatorHost: String? = providers.gradleProperty("firebaseEmulatorHost").orNull
+val firebaseResources: Map<String, String> = if (googleServicesFile.exists()) {
+    val root = JsonSlurper().parse(googleServicesFile) as Map<*, *>
+    val project = root["project_info"] as Map<*, *>
+    val client = (root["client"] as List<*>).map { it as Map<*, *> }.first { client ->
+        val info = client["client_info"] as Map<*, *>
+        (info["android_client_info"] as Map<*, *>)["package_name"] == "com.mushaf.reader"
+    }
+    mapOf(
+        "google_app_id" to (client["client_info"] as Map<*, *>)["mobilesdk_app_id"] as String,
+        "google_api_key" to ((client["api_key"] as List<*>).first() as Map<*, *>)["current_key"] as String,
+        "gcm_defaultSenderId" to project["project_number"] as String,
+        "project_id" to project["project_id"] as String,
+    )
+} else if (firebaseEmulatorHost != null) {
+    // No real project needed against the local emulators: a "demo-" project id never leaves them.
+    mapOf(
+        "google_app_id" to "1:000000000000:android:0000000000000000",
+        "google_api_key" to "demo-api-key",
+        "gcm_defaultSenderId" to "000000000000",
+        "project_id" to "demo-natlu",
+    )
+} else {
+    emptyMap()
+}
+
 android {
     namespace = "com.mushaf.reader"
     compileSdk = 37
@@ -28,8 +62,11 @@ android {
         applicationId = "com.mushaf.reader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 51
-        versionName = "0.7.0"
+        versionCode = 52
+        versionName = "0.8.0"
+
+        firebaseResources.forEach { (name, value) -> resValue("string", name, value) }
+        buildConfigField("String", "FIREBASE_EMULATOR_HOST", "null")
     }
 
     signingConfigs {
@@ -44,6 +81,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (firebaseEmulatorHost != null) {
+                buildConfigField("String", "FIREBASE_EMULATOR_HOST", "\"$firebaseEmulatorHost\"")
+            }
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -63,6 +105,8 @@ android {
     }
     buildFeatures {
         compose = true
+        resValues = true
+        buildConfig = true
     }
     packaging {
         resources {
@@ -117,6 +161,13 @@ dependencies {
     // Play Core still drags in fragment 1.1.0, which predates the ActivityResult APIs the update
     // flow is launched with (lint fails the release build over it). Pin a current one.
     implementation(libs.androidx.fragment)
+    // Cloud backup: password sign-in plus one document store. Nothing reaches the network until
+    // the reader creates an account or signs in.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
+    // The daily cloud backup runs while the app is closed.
+    implementation(libs.androidx.work.runtime.ktx)
     debugImplementation(libs.androidx.ui.tooling)
     // Local JVM tests only — the pure logic (juz layout, Arabic folding, day arithmetic) is kept
     // free of Android types precisely so it can be tested without a device or Robolectric.

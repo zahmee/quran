@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
+import java.util.UUID
 
 private val Context.dataStore by preferencesDataStore(name = "reading")
 
@@ -193,6 +194,16 @@ class ReadingStore(private val context: Context) {
     private val keyUpdateCheckedAt = longPreferencesKey("update_checked_at")
     private val keyUpdateDismissedVersion = intPreferencesKey("update_dismissed_version")
     private val keyUpdateDismissedAt = longPreferencesKey("update_dismissed_at")
+
+    // Cloud-backup bookkeeping, device-local for the same reason: an account and a schedule belong
+    // to this install, so they never travel inside a backup. The device id tells this install's
+    // backups apart from another device's in the shared list.
+    private val keyCloudDeviceId = stringPreferencesKey("cloud_device_id")
+    private val keyCloudUsername = stringPreferencesKey("cloud_username")
+    private val keyCloudAutoBackup = booleanPreferencesKey("cloud_auto_backup")
+    private val keyCloudLastUploadAt = longPreferencesKey("cloud_last_upload_at")
+    // Digest of the last uploaded content, so the daily upload skips a day with nothing new.
+    private val keyCloudFingerprint = stringPreferencesKey("cloud_fingerprint")
 
     /** The display/position settings + per-page progress read together in one pass at startup.
      *  [visitedPages] = pages opened at all; [readPages] = pages dwelt on long enough to count
@@ -429,6 +440,58 @@ class ReadingStore(private val context: Context) {
             dismissedVersion = prefs[keyUpdateDismissedVersion] ?: 0,
             dismissedAt = prefs[keyUpdateDismissedAt] ?: 0L,
         )
+    }
+
+    data class CloudPrefs(
+        val username: String?,
+        val autoBackup: Boolean,
+        val lastUploadAt: Long,
+        val fingerprint: String?,
+    )
+
+    suspend fun cloudPrefs(): CloudPrefs {
+        val prefs = context.dataStore.data.first()
+        return CloudPrefs(
+            username = prefs[keyCloudUsername]?.takeIf { it.isNotBlank() },
+            autoBackup = prefs[keyCloudAutoBackup] ?: false,
+            lastUploadAt = prefs[keyCloudLastUploadAt] ?: 0L,
+            fingerprint = prefs[keyCloudFingerprint],
+        )
+    }
+
+    /** Created on first use and kept for the life of the install. */
+    suspend fun cloudDeviceId(): String {
+        var id: String? = null
+        context.dataStore.edit { prefs ->
+            id = prefs[keyCloudDeviceId] ?: UUID.randomUUID().toString().also { prefs[keyCloudDeviceId] = it }
+        }
+        return id!!
+    }
+
+    /** Signing in turns the daily upload on; signing out ([username] null) forgets the account. */
+    suspend fun setCloudAccount(username: String?) {
+        context.dataStore.edit { prefs ->
+            if (username == null) {
+                prefs.remove(keyCloudUsername)
+                prefs.remove(keyCloudAutoBackup)
+                prefs.remove(keyCloudLastUploadAt)
+                prefs.remove(keyCloudFingerprint)
+            } else {
+                prefs[keyCloudUsername] = username
+                prefs[keyCloudAutoBackup] = true
+            }
+        }
+    }
+
+    suspend fun setCloudAutoBackup(value: Boolean) {
+        context.dataStore.edit { it[keyCloudAutoBackup] = value }
+    }
+
+    suspend fun setCloudUploaded(at: Long, fingerprint: String) {
+        context.dataStore.edit {
+            it[keyCloudLastUploadAt] = at
+            it[keyCloudFingerprint] = fingerprint
+        }
     }
 
     suspend fun setUpdateCheckedAt(value: Long) {

@@ -473,7 +473,7 @@ fun SettingsScreen(
                     ActionRow(
                         icon = Icons.Outlined.CloudSync,
                         title = "النسخ الاحتياطي",
-                        body = "حفظ التقدم والإشارات والجلسات في ملف تختار مكانه.",
+                        body = "حفظ التقدم والإشارات والجلسات في حسابك السحابي أو في ملف تختار مكانه.",
                         onClick = onBackup
                     )
                     SoftDivider()

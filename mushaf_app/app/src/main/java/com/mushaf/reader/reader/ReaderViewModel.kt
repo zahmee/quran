@@ -19,6 +19,11 @@ import com.mushaf.reader.data.backup.BackupFileInfo
 import com.mushaf.reader.data.backup.BackupSnapshot
 import com.mushaf.reader.data.backup.BackupStage
 import com.mushaf.reader.data.backup.BackupUiState
+import com.mushaf.reader.data.backup.CloudBackupInfo
+import com.mushaf.reader.data.backup.CloudBackupRepository
+import com.mushaf.reader.data.backup.CloudBackupWorker
+import com.mushaf.reader.data.backup.CloudStage
+import com.mushaf.reader.data.backup.CloudUiState
 import com.mushaf.reader.data.backup.FileBackupRepository
 import com.mushaf.reader.data.content.GharibMeaning
 import com.mushaf.reader.data.content.QuranContentRepository
@@ -74,6 +79,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     private val store = ReadingStore(app)
     private val statsRepo = StatsRepository(app)
     private val backupRepo = FileBackupRepository(app)
+    private val cloudRepo = CloudBackupRepository(app)
 
     val pageCount: Int = pageRepo.pageCount()
 
@@ -283,6 +289,9 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     )
         private set
 
+    var cloudUiState by mutableStateOf(CloudUiState(available = cloudRepo.isAvailable))
+        private set
+
     /** A restored page is consumed by ReaderScreen so the live pager follows the imported state. */
     var restorePageRequest by mutableStateOf<Int?>(null)
         private set
@@ -303,6 +312,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { bookmarks = withContext(Dispatchers.IO) { store.bookmarks() } }
         viewModelScope.launch { bookmarks2 = withContext(Dispatchers.IO) { store.bookmarks2() } }
         viewModelScope.launch { khatmas = withContext(Dispatchers.IO) { statsRepo.allKhatmas() } }
+        if (cloudRepo.isAvailable) viewModelScope.launch { loadCloudAccount() }
         // Anchor the current khatma cycle on first run of the feature so its duration is meaningful.
         if (initialSettings.khatmaStartedAt <= 0L) {
             viewModelScope.launch { store.setKhatmaStartedAt(khatmaStartedAt) }
@@ -569,13 +579,13 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun importBackup(source: Uri) {
+    fun importBackup(source: Uri, takeDisplaySettings: Boolean) {
         viewModelScope.launch {
             startBackupOperation(BackupStage.Importing)
             try {
-                // Finish and await old writes before replacing the database and preferences.
+                // Finish and await old writes before folding the backup into the database and preferences.
                 checkpointCurrentSessionForBackup()
-                val restored = backupRepo.importFrom(source)
+                val restored = backupRepo.importFrom(source, takeDisplaySettings)
                 applyRestoredSnapshot(restored.snapshot)
                 backupUiState = backupUiState.copy(
                     busy = false,
@@ -626,6 +636,113 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun formatBackupDate(time: Long): String =
         SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.forLanguageTag("ar")).format(Date(time))
+
+    // ── Cloud backup ────────────────────────────────────────────────────────────
+
+    private suspend fun loadCloudAccount() {
+        val username = cloudRepo.reconcileAccount()
+        val prefs = store.cloudPrefs()
+        cloudUiState = cloudUiState.copy(
+            username = username,
+            autoBackup = username != null && prefs.autoBackup,
+            lastUploadAt = prefs.lastUploadAt,
+        )
+    }
+
+    /** Called when the backup screen opens, so the list reflects the other device's uploads. */
+    fun refreshCloudBackups() {
+        if (cloudUiState.username == null || cloudUiState.busy) return
+        runCloud(CloudStage.Loading) {
+            cloudUiState = cloudUiState.copy(backups = cloudRepo.list(), listLoaded = true)
+            null
+        }
+    }
+
+    fun cloudSignUp(name: String, password: String) = runCloud(CloudStage.SigningUp) {
+        val username = cloudRepo.signUp(name, password)
+        CloudBackupWorker.schedule(getApplication(), enabled = true)
+        cloudUiState = cloudUiState.copy(username = username, autoBackup = true)
+        // The first backup right away: an account with nothing in it protects nothing.
+        checkpointCurrentSessionForBackup()
+        cloudRepo.upload(auto = false)
+        loadCloudAccount()
+        cloudUiState = cloudUiState.copy(backups = cloudRepo.list(), listLoaded = true)
+        "أُنشئ حسابك «$username» وحُفظت أول نسخة. احفظ كلمة المرور جيداً."
+    }
+
+    fun cloudSignIn(name: String, password: String) = runCloud(CloudStage.SigningIn) {
+        val username = cloudRepo.signIn(name, password)
+        CloudBackupWorker.schedule(getApplication(), enabled = true)
+        loadCloudAccount()
+        val backups = cloudRepo.list()
+        cloudUiState = cloudUiState.copy(backups = backups, listLoaded = true)
+        if (backups.isEmpty()) "مرحباً $username. لا توجد نسخ في حسابك بعد."
+        else "مرحباً $username. اختر نسخة لاستعادتها على هذا الجهاز."
+    }
+
+    fun cloudSignOut() {
+        if (cloudUiState.busy) return
+        viewModelScope.launch {
+            CloudBackupWorker.schedule(getApplication(), enabled = false)
+            cloudRepo.signOut()
+            cloudUiState = CloudUiState(available = cloudRepo.isAvailable)
+        }
+    }
+
+    fun cloudBackupNow() = runCloud(CloudStage.Uploading) {
+        checkpointCurrentSessionForBackup()
+        cloudRepo.upload(auto = false)
+        loadCloudAccount()
+        cloudUiState = cloudUiState.copy(backups = cloudRepo.list(), listLoaded = true)
+        "حُفظت نسخة جديدة في حسابك."
+    }
+
+    fun cloudRestore(backup: CloudBackupInfo, takeDisplaySettings: Boolean) = runCloud(CloudStage.Restoring) {
+        // Finish and await old writes before folding the backup into the database and preferences.
+        checkpointCurrentSessionForBackup()
+        applyRestoredSnapshot(cloudRepo.restore(backup, takeDisplaySettings))
+        "اكتملت الاستعادة من نسخة ${formatBackupDate(backup.createdAt)} (${backup.deviceName})."
+    }
+
+    fun setCloudAutoBackup(enabled: Boolean) {
+        if (cloudUiState.username == null || enabled == cloudUiState.autoBackup) return
+        cloudUiState = cloudUiState.copy(autoBackup = enabled)
+        viewModelScope.launch {
+            store.setCloudAutoBackup(enabled)
+            CloudBackupWorker.schedule(getApplication(), enabled)
+        }
+    }
+
+    fun cloudDeleteAccount(password: String) = runCloud(CloudStage.Deleting) {
+        cloudRepo.deleteAccount(password)
+        CloudBackupWorker.schedule(getApplication(), enabled = false)
+        cloudUiState = CloudUiState(available = cloudRepo.isAvailable)
+        "حُذف حسابك وجميع نسخه من الخادم. بياناتك على هذا الجهاز باقية كما هي."
+    }
+
+    fun clearCloudFeedback() {
+        cloudUiState = cloudUiState.copy(message = null, error = null)
+    }
+
+    /** Runs one cloud operation behind the busy state; [block] returns the success message. */
+    private fun runCloud(stage: CloudStage, block: suspend () -> String?) {
+        if (cloudUiState.busy || backupUiState.busy) return
+        cloudUiState = cloudUiState.copy(busy = true, stage = stage, message = null, error = null)
+        viewModelScope.launch {
+            try {
+                val message = block()
+                cloudUiState = cloudUiState.copy(busy = false, stage = null, message = message)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                cloudUiState = cloudUiState.copy(
+                    busy = false,
+                    stage = null,
+                    error = (error as? BackupException)?.message ?: "تعذر إكمال العملية. أعد المحاولة بعد قليل.",
+                )
+            }
+        }
+    }
 
     /** A file picker can stop the activity first, so await that commit as well as this one. */
     private suspend fun checkpointCurrentSessionForBackup() {

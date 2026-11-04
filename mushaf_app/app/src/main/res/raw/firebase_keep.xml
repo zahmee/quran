@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Firebase looks its project settings up by name at startup, which the resource shrinker cannot
+     see, so a release build would strip them and quietly hide cloud backup. The values themselves
+     are generated from google-services.json in app/build.gradle.kts. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/google_app_id,@string/google_api_key,@string/gcm_defaultSenderId,@string/project_id" />

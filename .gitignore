@@ -6,6 +6,12 @@ keystore.properties
 *.keystore
 *.p12
 play-service-account*.json
+google-services.json
+
+# Firebase Local Emulator Suite logs (cloud-backup testing)
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
 
 # =====================================================================
 #  Android / Gradle build outputs
