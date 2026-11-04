@@ -181,7 +181,6 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     var showBackup by remember { mutableStateOf(false) }
     var headerVisible by remember { mutableStateOf(true) }
     var showReciterPicker by remember { mutableStateOf(false) }
-    var showDownloads by remember { mutableStateOf(false) }
     // The ayah the memorisation sheet starts from, while it is open.
     var repeatFrom by remember { mutableStateOf<AyahRef?>(null) }
     val recitation = viewModel.recitation
@@ -192,7 +191,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     // Screens are overlays in this activity, so its lifecycle alone cannot time reading.
     // Focus also excludes system pickers, update dialogs and other windows covering the reader.
     val canRead = !showStatsScreen && !showKhatmaMap && !showIndex && !showSearch &&
-        !showAbout && !showSettings && !showBackup && !showDownloads && !showGoTo && selected == null &&
+        !showAbout && !showSettings && !showBackup && !showGoTo && selected == null &&
         !viewModel.backupUiState.busy && LocalWindowInfo.current.isWindowFocused
     LifecycleResumeEffect(viewModel, canRead) {
         viewModel.setReaderVisible(canRead)
@@ -211,13 +210,11 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     BackHandler(enabled = showSettings) { showSettings = false }
     // The backup screen opens above Settings, so Back returns to the Settings app tab.
     BackHandler(enabled = showBackup) { showBackup = false }
-    // So does the downloads screen.
-    BackHandler(enabled = showDownloads) { showDownloads = false }
     // Registered after index/settings so Back from About returns to the screen it was opened from.
     BackHandler(enabled = showAbout) { showAbout = false }
     // When the header is hidden, Back brings it back instead of leaving the app.
     BackHandler(enabled = !showStatsScreen && !showIndex && !showSearch && !showAbout &&
-        !showSettings && !showBackup && !showDownloads && !headerVisible
+        !showSettings && !showBackup && !headerVisible
     ) {
         headerVisible = true
     }
@@ -228,9 +225,10 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     }
 
     // The page follows the recitation: when the ayah being recited moves onto another page, turn
-    // to it — unless the reader is swiping right now.
+    // to it — unless the reader turned that off, or is swiping right now.
     val recitingAyah = recitation.current
-    LaunchedEffect(recitingAyah, viewModel.ayahLoaded) {
+    LaunchedEffect(recitingAyah, viewModel.ayahLoaded, viewModel.recitationFollowPage) {
+        if (!viewModel.recitationFollowPage) return@LaunchedEffect
         val page = recitingAyah?.let { viewModel.markerFor(it)?.page } ?: return@LaunchedEffect
         if (pagerState.currentPage != page - 1 && !pagerState.isScrollInProgress) {
             pagerState.animateScrollToPage((page - 1).coerceIn(0, pageCount - 1))
@@ -353,41 +351,6 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     updates = updates,
                     onOpenRepeat = { repeatFrom = it },
                 )
-
-                // Recitation bar: below the page rather than over it, so no line is covered.
-                if (recitation.active) {
-                    RecitationBar(
-                        surahName = recitingAyah?.let { viewModel.surahNameAr(it.surah) } ?: "",
-                        ayah = recitingAyah?.ayah,
-                        reciterName = recitation.reciter?.name,
-                        isPlaying = recitation.isPlaying,
-                        buffering = recitation.buffering,
-                        error = recitation.error,
-                        speed = recitation.speed,
-                        repeatLabel = recitation.clip?.let { c ->
-                            when {
-                                // "٣ من ٧" reads unambiguously; a slash between Arabic digits
-                                // does not.
-                                c.ayahTimes > 1 ->
-                                    "${c.ayahPass.toArabicDigits()} من ${c.ayahTimes.toArabicDigits()}"
-                                c.rangeTimes > 1 ->
-                                    "${c.rangePass.toArabicDigits()} من ${c.rangeTimes.toArabicDigits()}"
-                                c.rangeTimes == RepeatPlan.ENDLESS -> "∞"
-                                else -> null
-                            }
-                        },
-                        onToggle = recitation::togglePlay,
-                        onPrevious = recitation::previous,
-                        onNext = recitation::next,
-                        onClose = recitation::close,
-                        onPickReciter = {
-                            recitation.requestReciters()
-                            showReciterPicker = true
-                        },
-                        onSpeed = recitation::changeSpeed,
-                        onRepeat = { repeatFrom = recitingAyah },
-                    )
-                }
             }
 
             // When the header is hidden, a small draggable button restores it (and shows the page).
@@ -426,6 +389,44 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     colorId = viewModel.bottomJuzBarColor,
                     thickness = viewModel.bottomJuzBarThickness.dp,
                     opacity = viewModel.bottomJuzBarOpacity / 100f
+                )
+            }
+
+            // Recitation: a drawer on the right edge, over the page, so the page never resizes.
+            if (recitation.active) {
+                FloatingRecitationBar(
+                    surahName = recitingAyah?.let { viewModel.surahNameAr(it.surah) } ?: "",
+                    ayah = recitingAyah?.ayah,
+                    reciterName = recitation.reciter?.name,
+                    isPlaying = recitation.isPlaying,
+                    buffering = recitation.buffering,
+                    error = recitation.error,
+                    speed = recitation.speed,
+                    repeatLabel = recitation.clip?.let { c ->
+                        when {
+                            // "٣ من ٧" reads unambiguously; a slash between Arabic digits does not.
+                            c.ayahTimes > 1 ->
+                                "${c.ayahPass.toArabicDigits()} من ${c.ayahTimes.toArabicDigits()}"
+                            c.rangeTimes > 1 ->
+                                "${c.rangePass.toArabicDigits()} من ${c.rangeTimes.toArabicDigits()}"
+                            c.rangeTimes == RepeatPlan.ENDLESS -> "∞"
+                            else -> null
+                        }
+                    },
+                    startKey = recitation.startCount,
+                    handlePos = viewModel.recitationHandlePos,
+                    onHandleDrag = viewModel::dragRecitationHandle,
+                    onHandleDragEnd = viewModel::saveRecitationHandle,
+                    onToggle = recitation::togglePlay,
+                    onPrevious = recitation::previous,
+                    onNext = recitation::next,
+                    onClose = recitation::close,
+                    onPickReciter = {
+                        recitation.requestReciters()
+                        showReciterPicker = true
+                    },
+                    onSpeed = recitation::changeSpeed,
+                    onRepeat = { repeatFrom = recitingAyah },
                 )
             }
 
@@ -611,32 +612,28 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 onBackup = { showBackup = true },
                 onAbout = { showAbout = true },
                 onClearAllStats = { viewModel.clearAllStats() },
-                mobileDataPolicy = viewModel.mobileDataPolicy,
-                onMobileDataPolicyChange = viewModel::updateMobileDataPolicy,
-                onOpenDownloads = {
-                    recitation.prepareReciter()
-                    showDownloads = true
+                recitationTab = {
+                    val page = pagerState.currentPage + 1
+                    val juz = viewModel.juzInfoForPage(page).juz
+                    val juzSurahs = remember(juz, viewModel.ayahLoaded) { viewModel.surahsInJuz(juz) }
+                    RecitationSettingsTab(
+                        recitation = recitation,
+                        downloads = viewModel.recitationDownloads,
+                        currentSurah = viewModel.markersForPage(page).firstOrNull()?.surahNumber,
+                        currentJuz = juz,
+                        juzSurahs = juzSurahs,
+                        surahName = viewModel::surahNameAr,
+                        followPage = viewModel.recitationFollowPage,
+                        onFollowPageChange = viewModel::updateRecitationFollowPage,
+                        mobileDataPolicy = viewModel.mobileDataPolicy,
+                        onMobileDataPolicyChange = viewModel::updateMobileDataPolicy,
+                        onPickReciter = {
+                            recitation.requestReciters()
+                            showReciterPicker = true
+                        },
+                    )
                 },
                 onBack = { showSettings = false }
-            )
-        }
-
-        if (showDownloads) {
-            val page = pagerState.currentPage + 1
-            val juz = viewModel.juzInfoForPage(page).juz
-            val juzSurahs = remember(juz, viewModel.ayahLoaded) { viewModel.surahsInJuz(juz) }
-            DownloadsScreen(
-                downloads = viewModel.recitationDownloads,
-                reciter = recitation.reciter,
-                reciters = recitation.reciters,
-                reciterNames = recitation.reciterNames,
-                currentSurah = viewModel.markersForPage(page).firstOrNull()?.surahNumber,
-                currentJuz = juz,
-                juzSurahs = juzSurahs,
-                surahName = viewModel::surahNameAr,
-                mobileDataPolicy = viewModel.mobileDataPolicy,
-                onPickReciter = { showReciterPicker = true },
-                onBack = { showDownloads = false },
             )
         }
 

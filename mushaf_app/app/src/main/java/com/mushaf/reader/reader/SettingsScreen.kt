@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.CloudSync
-import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LightMode
@@ -69,7 +68,6 @@ import com.mushaf.reader.ui.components.MushafIconBadge
 import com.mushaf.reader.ui.components.MushafPanel
 import com.mushaf.reader.ui.components.MushafSectionHeader
 import com.mushaf.reader.data.ReadingStore
-import com.mushaf.reader.recitation.MobileDataPolicy
 import com.mushaf.reader.ui.components.MushafSegmentedTabs
 import com.mushaf.reader.ui.components.MushafSoftDivider
 import com.mushaf.reader.ui.components.MushafTopBar
@@ -156,9 +154,8 @@ fun SettingsScreen(
     onBackup: () -> Unit,
     onAbout: () -> Unit,
     onClearAllStats: () -> Unit,
-    mobileDataPolicy: MobileDataPolicy,
-    onMobileDataPolicyChange: (MobileDataPolicy) -> Unit,
-    onOpenDownloads: () -> Unit,
+    /** The «التلاوة» tab's content, built by the reader, which owns recitation. */
+    recitationTab: @Composable ColumnScope.() -> Unit,
     onBack: () -> Unit,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
@@ -473,25 +470,8 @@ fun SettingsScreen(
                     )
                 }
                 }
+                3 -> SettingsTabScroll { recitationTab() }
                 else -> SettingsTabScroll {
-                SettingsPanel(
-                    title = "التلاوة",
-                    body = "بيانات الجوال، والسور المنزّلة للاستماع دون اتصال.",
-                    icon = Icons.Outlined.Headphones
-                ) {
-                    MobileDataChoiceRow(
-                        selected = mobileDataPolicy,
-                        onSelected = onMobileDataPolicyChange
-                    )
-                    SoftDivider()
-                    ActionRow(
-                        icon = Icons.Outlined.Download,
-                        title = "تنزيل التلاوة",
-                        body = "تنزيل سورة أو جزء أو المصحف كاملاً، وإدارة ما على الجهاز.",
-                        onClick = onOpenDownloads
-                    )
-                }
-
                 SettingsPanel(
                     title = "معلومات التطبيق",
                     body = "النسخ الاحتياطي، مصدر المصحف، الخصوصية، وطرق التواصل.",
@@ -564,9 +544,9 @@ fun SettingsScreen(
     }
 }
 
-/** The four tab names, in tab order. One list: the strip uses them as content descriptions and
+/** The tab names, in tab order. One list: the strip uses them as content descriptions and
  *  the top bar shows the open one, so they can never drift apart. */
-private val settingsTabTitles = listOf("الواجهة", "القائمة", "المعلومات", "التطبيق")
+private val settingsTabTitles = listOf("الواجهة", "القائمة", "المعلومات", "التلاوة", "التطبيق")
 
 /** Top category tabs that split the settings into short, focused sections.
  *
@@ -579,6 +559,7 @@ private fun SettingsTabs(tab: Int, onTab: (Int) -> Unit) {
         Icons.Outlined.Palette,
         Icons.Outlined.Menu,
         Icons.Outlined.Info,
+        Icons.Outlined.Headphones,
         Icons.Outlined.PhoneAndroid,
     )
     MushafSegmentedTabs(
@@ -826,76 +807,6 @@ private fun ThemeChoiceTile(
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant
         )
-    }
-}
-
-/** Whether recitation audio may use mobile data. */
-@Composable
-private fun MobileDataChoiceRow(
-    selected: MobileDataPolicy,
-    onSelected: (MobileDataPolicy) -> Unit,
-) {
-    val choices = listOf(
-        MobileDataPolicy.ASK to "اسأل أول مرة",
-        MobileDataPolicy.ALLOW to "مسموح",
-        MobileDataPolicy.WIFI_ONLY to "الشبكة اللاسلكية فقط",
-    )
-    var expanded by remember { mutableStateOf(false) }
-    val accent = MaterialTheme.colorScheme.primary
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "بيانات الجوال",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = "التلاوة نحو ميغابايت في الدقيقة. ما سُمع أو نُزِّل لا يُحمَّل مرة أخرى.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Box {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = accent.copy(alpha = 0.10f),
-                border = BorderStroke(1.dp, accent.copy(alpha = 0.5f)),
-                modifier = Modifier.clickable { expanded = true }
-            ) {
-                Row(
-                    modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = choices.first { it.first == selected }.second,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = accent
-                    )
-                    Icon(Icons.Filled.ArrowDropDown, contentDescription = "اختيار", tint = accent)
-                }
-            }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                choices.forEach { (policy, label) ->
-                    DropdownMenuItem(
-                        text = { Text(label) },
-                        trailingIcon = if (policy == selected) {
-                            { Icon(Icons.Filled.Check, contentDescription = null) }
-                        } else null,
-                        onClick = {
-                            expanded = false
-                            onSelected(policy)
-                        }
-                    )
-                }
-            }
-        }
     }
 }
 

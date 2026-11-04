@@ -197,6 +197,9 @@ class ReadingStore(private val context: Context) {
     private val keyRecitationSpeed = floatPreferencesKey("recitation_speed")
     private val keyRecitationAyahTimes = intPreferencesKey("recitation_ayah_times")
     private val keyRecitationRangeTimes = intPreferencesKey("recitation_range_times")
+    private val keyRecitationFollowPage = booleanPreferencesKey("recitation_follow_page")
+    /** Where the floating recitation handle sits along the screen edge, 0 = top, 1 = bottom. */
+    private val keyRecitationHandlePos = floatPreferencesKey("recitation_handle_pos")
     private val keyUpdateDismissedVersion = intPreferencesKey("update_dismissed_version")
     private val keyUpdateDismissedAt = longPreferencesKey("update_dismissed_at")
 
@@ -518,6 +521,19 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setRecitationReciterId(id: Int) {
         context.dataStore.edit { it[keyRecitationReciterId] = id }
+    }
+
+    suspend fun recitationFollowPage(): Boolean =
+        context.dataStore.data.first()[keyRecitationFollowPage] ?: true
+
+    suspend fun setRecitationFollowPage(value: Boolean) {
+        context.dataStore.edit { it[keyRecitationFollowPage] = value }
+    }
+
+    suspend fun recitationHandlePos(): Float? = context.dataStore.data.first()[keyRecitationHandlePos]
+
+    suspend fun setRecitationHandlePos(value: Float) {
+        context.dataStore.edit { it[keyRecitationHandlePos] = value }
     }
 
     suspend fun recitationSpeed(): Float? = context.dataStore.data.first()[keyRecitationSpeed]
