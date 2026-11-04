@@ -172,6 +172,8 @@ dependencies {
     // so a surah keeps playing in the background with lock-screen and notification controls.
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.session)
+    // Downloads resume through WorkManager when the network they wait for comes back.
+    implementation(libs.androidx.media3.exoplayer.workmanager)
     debugImplementation(libs.androidx.ui.tooling)
     // Local JVM tests only — the pure logic (juz layout, Arabic folding, day arithmetic) is kept
     // free of Android types precisely so it can be tested without a device or Robolectric.

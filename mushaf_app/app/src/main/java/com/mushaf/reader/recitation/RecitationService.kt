@@ -7,8 +7,6 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
@@ -16,7 +14,6 @@ import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.mushaf.reader.R
-import com.mushaf.reader.data.recitation.RecitationRepository
 
 /**
  * Plays recitation in the background. The media session gives it the system's notification and
@@ -33,16 +30,13 @@ class RecitationService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val http = DefaultHttpDataSource.Factory()
-            .setUserAgent(RecitationRepository.USER_AGENT)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(20_000)
         // Files without a Xing header seek by bitrate; say so explicitly rather than rely on the
         // extractor's fallback.
         val extractors = DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true)
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(
-                DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http), extractors)
+                // The device cache first: what was heard or downloaded plays without the network.
+                DefaultMediaSourceFactory(RecitationStorage.playbackDataSourceFactory(this), extractors)
             )
             .setAudioAttributes(
                 AudioAttributes.Builder()

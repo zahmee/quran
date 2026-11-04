@@ -139,7 +139,8 @@ internal fun RecitationBar(
                     fontWeight = FontWeight.Bold,
                     color = if (error != null) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
+                    // An error says what to do about it, so it gets a second line.
+                    maxLines = if (error != null) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )

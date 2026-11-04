@@ -36,7 +36,10 @@ import com.mushaf.reader.data.stats.SessionEntity
 import com.mushaf.reader.data.stats.StatsRepository
 import com.mushaf.reader.data.recitation.AyahRef
 import com.mushaf.reader.data.recitation.RecitationRepository
+import com.mushaf.reader.recitation.MobileData
+import com.mushaf.reader.recitation.MobileDataPolicy
 import com.mushaf.reader.recitation.RecitationController
+import com.mushaf.reader.recitation.RecitationDownloads
 import com.mushaf.reader.ui.theme.MushafPalette
 import com.mushaf.reader.ui.theme.paletteFor
 import kotlinx.coroutines.Dispatchers
@@ -85,14 +88,35 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     private val backupRepo = FileBackupRepository(app)
     private val cloudRepo = CloudBackupRepository(app)
 
+    private val recitationRepo = RecitationRepository(app)
+
+    /** Recitation downloads and the audio kept from listening. */
+    val recitationDownloads = RecitationDownloads(app, viewModelScope, recitationRepo)
+
     /** Recitation: the player bar, the reciter list and the ayah being recited. */
     val recitation = RecitationController(
         app = app,
         scope = viewModelScope,
-        repo = RecitationRepository(app),
+        repo = recitationRepo,
         store = store,
+        downloads = recitationDownloads,
         surahName = ::surahNameAr,
     )
+
+    /** Whether recitation may use mobile data; read and written straight through. */
+    var mobileDataPolicy by mutableStateOf(MobileData.policy(app))
+        private set
+
+    fun updateMobileDataPolicy(value: MobileDataPolicy) {
+        MobileData.setPolicy(getApplication(), value)
+        mobileDataPolicy = value
+        recitationDownloads.applyMobileDataPolicy()
+    }
+
+    /** Re-read after the reader answered the first-time prompt in the bar. */
+    fun refreshMobileDataPolicy() {
+        mobileDataPolicy = MobileData.policy(getApplication())
+    }
 
     val pageCount: Int = pageRepo.pageCount()
 
@@ -1092,6 +1116,13 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
                 .associate { it.surahNumber to it.surahNameAr }
         }
         return surahNamesCache[surahNumber] ?: surahNumber.toString()
+    }
+
+    /** The surahs with at least one ayah in [juz], by this app's page split of the juz. */
+    fun surahsInJuz(juz: Int): List<Int> {
+        val first = juzIndex().firstOrNull { it.number == juz }?.firstPage ?: return emptyList()
+        val next = juzIndex().firstOrNull { it.number == juz + 1 }?.firstPage ?: (pageCount + 1)
+        return (first until next).flatMap { markersForPage(it) }.map { it.surahNumber }.distinct()
     }
 
     /** The marker of [ref] on its page, for highlighting the ayah being recited. */

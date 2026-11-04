@@ -178,6 +178,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     var showBackup by remember { mutableStateOf(false) }
     var headerVisible by remember { mutableStateOf(true) }
     var showReciterPicker by remember { mutableStateOf(false) }
+    var showDownloads by remember { mutableStateOf(false) }
     // The ayah the memorisation sheet starts from, while it is open.
     var repeatFrom by remember { mutableStateOf<AyahRef?>(null) }
     val recitation = viewModel.recitation
@@ -186,7 +187,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     // Screens are overlays in this activity, so its lifecycle alone cannot time reading.
     // Focus also excludes system pickers, update dialogs and other windows covering the reader.
     val canRead = !showStatsScreen && !showKhatmaMap && !showIndex && !showSearch &&
-        !showAbout && !showSettings && !showBackup && !showGoTo && selected == null &&
+        !showAbout && !showSettings && !showBackup && !showDownloads && !showGoTo && selected == null &&
         !viewModel.backupUiState.busy && LocalWindowInfo.current.isWindowFocused
     LifecycleResumeEffect(viewModel, canRead) {
         viewModel.setReaderVisible(canRead)
@@ -205,11 +206,13 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     BackHandler(enabled = showSettings) { showSettings = false }
     // The backup screen opens above Settings, so Back returns to the Settings app tab.
     BackHandler(enabled = showBackup) { showBackup = false }
+    // So does the downloads screen.
+    BackHandler(enabled = showDownloads) { showDownloads = false }
     // Registered after index/settings so Back from About returns to the screen it was opened from.
     BackHandler(enabled = showAbout) { showAbout = false }
     // When the header is hidden, Back brings it back instead of leaving the app.
     BackHandler(enabled = !showStatsScreen && !showIndex && !showSearch && !showAbout &&
-        !showSettings && !showBackup && !headerVisible
+        !showSettings && !showBackup && !showDownloads && !headerVisible
     ) {
         headerVisible = true
     }
@@ -601,7 +604,59 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 onBackup = { showBackup = true },
                 onAbout = { showAbout = true },
                 onClearAllStats = { viewModel.clearAllStats() },
+                mobileDataPolicy = viewModel.mobileDataPolicy,
+                onMobileDataPolicyChange = viewModel::updateMobileDataPolicy,
+                onOpenDownloads = {
+                    recitation.prepareReciter()
+                    showDownloads = true
+                },
                 onBack = { showSettings = false }
+            )
+        }
+
+        if (showDownloads) {
+            val page = pagerState.currentPage + 1
+            val juz = viewModel.juzInfoForPage(page).juz
+            val juzSurahs = remember(juz, viewModel.ayahLoaded) { viewModel.surahsInJuz(juz) }
+            DownloadsScreen(
+                downloads = viewModel.recitationDownloads,
+                reciter = recitation.reciter,
+                reciters = recitation.reciters,
+                currentSurah = viewModel.markersForPage(page).firstOrNull()?.surahNumber,
+                currentJuz = juz,
+                juzSurahs = juzSurahs,
+                surahName = viewModel::surahNameAr,
+                mobileDataPolicy = viewModel.mobileDataPolicy,
+                onPickReciter = { showReciterPicker = true },
+                onBack = { showDownloads = false },
+            )
+        }
+
+        // First time recitation would stream on mobile data: ask once, remember the answer.
+        if (recitation.mobileDataPrompt) {
+            AlertDialog(
+                onDismissRequest = {
+                    recitation.answerMobileData(null)
+                },
+                title = { Text("بيانات الجوال") },
+                text = {
+                    Text(
+                        "أنت متصل ببيانات الجوال. تستهلك التلاوة نحو ميغابايت في الدقيقة، " +
+                            "وما سُمع من قبل لا يُحمَّل مرة أخرى. يمكنك تغيير هذا من الإعدادات."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        recitation.answerMobileData(true)
+                        viewModel.refreshMobileDataPolicy()
+                    }) { Text("استخدم بيانات الجوال") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        recitation.answerMobileData(false)
+                        viewModel.refreshMobileDataPolicy()
+                    }) { Text("الشبكة اللاسلكية فقط") }
+                },
             )
         }
 

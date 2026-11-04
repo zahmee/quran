@@ -27,8 +27,11 @@ import com.mushaf.reader.data.recitation.RepeatPlanner
 import com.mushaf.reader.data.recitation.SurahTiming
 import com.mushaf.reader.reader.toArabicDigits
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -49,8 +52,14 @@ class RecitationController(
     private val scope: CoroutineScope,
     private val repo: RecitationRepository,
     private val store: ReadingStore,
+    private val downloads: RecitationDownloads,
     private val surahName: (Int) -> String,
 ) {
+    /** Asking whether recitation may use mobile data (the first time it would). */
+    var mobileDataPrompt by mutableStateOf(false)
+        private set
+    private var promptAnswer: CompletableDeferred<Boolean?>? = null
+
     /** Complete recitations with ayah timing, Hafs first, then by name. Empty until requested. */
     var reciters by mutableStateOf<List<Reciter>>(emptyList())
         private set
@@ -113,6 +122,7 @@ class RecitationController(
         playJob?.cancel()
         playJob = scope.launch {
             val chosen = ensureReciter() ?: run { buffering = false; return@launch }
+            if (!mayStream(chosen, ref.surah)) return@launch
             val timing = try {
                 timingFor(chosen.id, ref.surah)
             } catch (e: CancellationException) {
@@ -156,6 +166,7 @@ class RecitationController(
         playJob?.cancel()
         playJob = scope.launch {
             val chosen = ensureReciter() ?: run { buffering = false; return@launch }
+            if (!mayStream(chosen, passage.surah)) return@launch
             val timing = try {
                 timingFor(chosen.id, passage.surah)
             } catch (e: CancellationException) {
@@ -184,6 +195,53 @@ class RecitationController(
                 c.play()
             }
         }
+    }
+
+    /** The reader's answer to [mobileDataPrompt]: allow, Wi-Fi only, or null for "not now". */
+    fun answerMobileData(allow: Boolean?) {
+        mobileDataPrompt = false
+        if (allow != null) {
+            MobileData.setPolicy(app, if (allow) MobileDataPolicy.ALLOW else MobileDataPolicy.WIFI_ONLY)
+            downloads.applyMobileDataPolicy()
+        }
+        promptAnswer?.complete(allow)
+        promptAnswer = null
+    }
+
+    /**
+     * May this surah's audio be fetched now? Off mobile data, or with the whole file already on
+     * the device, always. On mobile data it follows the reader's choice, asking the first time.
+     * Leaves the bar showing why when the answer is no.
+     */
+    private suspend fun mayStream(reciter: Reciter, surah: Int): Boolean {
+        if (!MobileData.isMetered(app)) return true
+        val onDevice = withContext(Dispatchers.IO) {
+            RecitationStorage.isFullyCached(app, reciter.surahUrl(surah))
+        }
+        if (onDevice) return true
+        val allowed = when (MobileData.policy(app)) {
+            MobileDataPolicy.ALLOW -> true
+            MobileDataPolicy.WIFI_ONLY -> false
+            MobileDataPolicy.ASK -> {
+                val answer = CompletableDeferred<Boolean?>()
+                promptAnswer?.complete(null)
+                promptAnswer = answer
+                mobileDataPrompt = true
+                when (answer.await()) {
+                    true -> true
+                    false -> false
+                    null -> {
+                        close()
+                        return false
+                    }
+                }
+            }
+        }
+        if (!allowed) {
+            error = WIFI_ONLY_ERROR
+            buffering = false
+        }
+        return allowed
     }
 
     fun changeSpeed(value: Float) {
@@ -255,6 +313,12 @@ class RecitationController(
         scope.launch { loadReciters() }
     }
 
+    /** Load the list and settle on the saved (or default) reciter, for screens that need one
+     *  before anything has played, like downloads. */
+    fun prepareReciter() {
+        scope.launch { ensureReciter() }
+    }
+
     fun selectReciter(choice: Reciter) {
         if (choice.id == reciter?.id) return
         reciter = choice
@@ -281,7 +345,10 @@ class RecitationController(
     /** The reader is on screen: reconnect (picking up background playback) and follow along. */
     fun onForeground() {
         foreground = true
-        withController { }
+        withController { c ->
+            // Trim what listening kept only while nothing is playing from it.
+            if (c.mediaItemCount == 0) downloads.trimAutoCache()
+        }
         updateTicker()
     }
 
@@ -437,7 +504,13 @@ class RecitationController(
         override fun onPlayerError(e: PlaybackException) {
             buffering = false
             isPlaying = false
-            error = if (e.errorCode in NETWORK_CODES) NETWORK_ERROR else PLAYBACK_ERROR
+            val blocked = generateSequence<Throwable>(e) { it.cause }
+                .any { it is RecitationStorage.MobileDataBlockedException }
+            error = when {
+                blocked || MobileData.blocksStreaming(app) -> WIFI_ONLY_ERROR
+                e.errorCode in NETWORK_CODES -> NETWORK_ERROR
+                else -> PLAYBACK_ERROR
+            }
         }
     }
 
@@ -531,6 +604,8 @@ class RecitationController(
         private const val LIST_ERROR = "تعذّر تحميل قائمة القرّاء. تحقّق من الاتصال بالإنترنت."
         private const val PLAYBACK_ERROR = "تعذّر تشغيل التلاوة."
         private const val SERVICE_ERROR = "تعذّر تشغيل خدمة التلاوة."
+        private const val WIFI_ONLY_ERROR =
+            "التلاوة عبر بيانات الجوال متوقفة. نزّل السورة عبر الشبكة اللاسلكية أو غيّر ذلك من الإعدادات."
         private const val TOO_LONG_ERROR = "المقطع طويل على هذا العدد من التكرار. قلّل الآيات أو مرات التكرار."
         private val NETWORK_CODES = setOf(
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
