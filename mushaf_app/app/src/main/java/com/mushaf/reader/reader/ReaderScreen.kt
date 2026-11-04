@@ -616,12 +616,14 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     val page = pagerState.currentPage + 1
                     val juz = viewModel.juzInfoForPage(page).juz
                     val juzSurahs = remember(juz, viewModel.ayahLoaded) { viewModel.surahsInJuz(juz) }
+                    val allSurahs = remember(viewModel.ayahLoaded) { viewModel.surahIndex() }
                     RecitationSettingsTab(
                         recitation = recitation,
                         downloads = viewModel.recitationDownloads,
                         currentSurah = viewModel.markersForPage(page).firstOrNull()?.surahNumber,
                         currentJuz = juz,
                         juzSurahs = juzSurahs,
+                        surahs = allSurahs,
                         surahName = viewModel::surahNameAr,
                         followPage = viewModel.recitationFollowPage,
                         onFollowPageChange = viewModel::updateRecitationFollowPage,
