@@ -82,7 +82,9 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -172,6 +174,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     var showSettings by remember { mutableStateOf(false) }
     var showBackup by remember { mutableStateOf(false) }
     var headerVisible by remember { mutableStateOf(true) }
+    // Bar-placed header actions the current window has no room for; settings flags them.
+    var barOverflow by remember { mutableStateOf(emptySet<String>()) }
     val selected = viewModel.selectedAyah
 
     // Screens are overlays in this activity, so its lifecycle alone cannot time reading.
@@ -262,6 +266,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                         buttonTint = { id, fallback ->
                             headerStatusColor(viewModel.buttonColor(id), fallback)
                         },
+                        onBarOverflowChange = { barOverflow = it },
                         onOpenSettings = { showSettings = true },
                         onOpenIndex = { tab ->
                             indexTab = tab
@@ -439,6 +444,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 onPaletteChange = { viewModel.updateThemeId(it) },
                 isInBar = { id -> viewModel.isButtonInBar(id) },
                 onSetInBar = { id, v -> viewModel.setButtonInBar(id, v) },
+                barOverflow = barOverflow,
                 buttonColor = { id -> viewModel.buttonColor(id) },
                 onButtonColorChange = { id, c -> viewModel.updateButtonColor(id, c) },
                 bigButtons = viewModel.bigButtons,
@@ -705,6 +711,28 @@ private fun ReaderPager(
     }
 }
 
+/** Widths (px) the header's fixed pieces have been laid out at; 0 until first measured. */
+@Stable
+private class HeaderPieceWidths {
+    var page by mutableIntStateOf(0)
+    var juz by mutableIntStateOf(0)
+    var timer by mutableIntStateOf(0)
+    /** Two-row layout only: the settings · clock corner. */
+    var start by mutableIntStateOf(0)
+}
+
+/** Tells the reader screen which bar-placed actions this layout had to list in More instead. */
+@Composable
+private fun ReportBarOverflow(
+    requested: List<String>,
+    visible: Set<String>,
+    onChange: (Set<String>) -> Unit,
+) {
+    val overflow = requested.filterNotTo(LinkedHashSet()) { it in visible }
+    val latest by rememberUpdatedState(onChange)
+    LaunchedEffect(overflow) { latest(overflow) }
+}
+
 /** Extra room the single-row header gives each physical side to step past a camera hole. */
 private data class CutoutClearance(val left: Dp, val right: Dp)
 
@@ -774,6 +802,8 @@ private fun ReaderHeader(
     isInBar: (String) -> Boolean,
     /** (action id, the tint it would have had) -> the color the user picked for it. */
     buttonTint: (String, Color) -> Color,
+    /** Bar-placed actions this window has no room for (they are listed in More instead). */
+    onBarOverflowChange: (Set<String>) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenIndex: (Int) -> Unit,
     onOpenSearch: () -> Unit,
@@ -808,27 +838,20 @@ private fun ReaderHeader(
     val windowWidth = with(LocalDensity.current) { windowSize.width.toDp() }
     val singleRow = windowSize.width > windowSize.height || windowWidth >= 600.dp
 
-    // A placement preference means "keep this action on the bar when there is room". On a narrow
-    // window the remaining actions spill into More, otherwise eight requested buttons can cover the
-    // always-available Settings button. The budgets are deliberately conservative for the optional
-    // clock/session labels and for the page/juz chips in the single-row layout.
-    val requestedBarActions = HeaderActions.filter { isVisible(it.id) && isInBar(it.id) }
-    val hasDirectMenuActions = HeaderActions.any { isVisible(it.id) && !isInBar(it.id) }
-    val sessionReserve = if (showSessionTimer && sessionStartedAt > 0L) 72.dp else 0.dp
-    val actionWidthWithoutMenu = if (singleRow) {
-        windowWidth / 2 - 48.dp - 112.dp - sessionReserve
-    } else {
-        windowWidth - btnSize - (if (showClock) 64.dp else 0.dp) - sessionReserve - 6.dp
-    }
-    fun actionCapacity(reserveMore: Boolean): Int {
-        val width = actionWidthWithoutMenu - if (reserveMore) btnSize else 0.dp
-        return (width.value / btnSize.value).toInt().coerceAtLeast(0)
-    }
-    val capacityWithoutMenu = actionCapacity(reserveMore = false)
-    val needsMore = hasDirectMenuActions || requestedBarActions.size > capacityWithoutMenu
-    val visibleBarActionIds = requestedBarActions
-        .take(actionCapacity(reserveMore = needsMore))
-        .mapTo(LinkedHashSet()) { it.id }
+    // A placement preference means "keep this action on the bar when there is room". Each layout
+    // below works out the room its fixed pieces really leave and fits the requested actions into it
+    // with fitBarActions (fill/hide/bookmark keep their seats first); the rest are listed in More,
+    // and that overflow is reported so the settings screen can say so rather than look unsaved.
+    val requestedBarActions = HeaderActions.filter { isVisible(it.id) && isInBar(it.id) }.map { it.id }
+    val showTimer = showSessionTimer && sessionStartedAt > 0L
+    // Widest each fixed piece has been laid out at. Only growing keeps a ticking timer or a page
+    // turn from bouncing a button between the bar and More; it starts over when the content changes.
+    val pieces = remember(
+        singleRow, bigButtons, showClock, showTimer, showJuzProgressPercent, showJuzProgressPages
+    ) { HeaderPieceWidths() }
+    val density = LocalDensity.current
+    // A piece not laid out yet (the very first frame) counts at a conservative estimate.
+    fun Int.orDp(estimate: Dp): Dp = if (this > 0) with(density) { this@orDp.toDp() } else estimate
 
     // Live ticker for the optional clock / current-session timer (only loops while one is shown).
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -851,7 +874,7 @@ private fun ReaderHeader(
             // near either end pushes that end inward so no control lands under the lens; a side
             // notch in landscape is kept clear by the horizontal inset.
             val cornerHole = cornerCutoutClearance(bandHeight = btnSize + 4.dp)
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
@@ -859,6 +882,17 @@ private fun ReaderHeader(
                     .padding(horizontal = 8.dp + edgeMargin, vertical = 2.dp)
                     .height(btnSize)
             ) {
+                // The end group may grow toward the centred page badge but never under it. Its
+                // fixed pieces (juz chip, timer, the always-present More) are measured, and every
+                // bar action costs one button plus the row's spacing.
+                val gap = 4.dp
+                val endRoom = maxWidth / 2 - pieces.page.orDp(btnSize * 2) / 2 - gap * 2
+                val actionRoom = endRoom - pieces.juz.orDp(112.dp) - gap -
+                    (if (showTimer) pieces.timer.orDp(72.dp) + gap else 0.dp) - btnSize
+                val visibleBarActionIds = fitBarActions(
+                    requestedBarActions, barSlots(actionRoom.value, (btnSize + gap).value)
+                )
+                ReportBarOverflow(requestedBarActions, visibleBarActionIds, onBarOverflowChange)
                 // Start group: settings · optional clock · surah identity.
                 Row(
                     modifier = Modifier.align(Alignment.CenterStart),
@@ -903,7 +937,9 @@ private fun ReaderHeader(
                     quietContentColor = quietContentColor,
                     accentColor = activeContentColor,
                     big = bigButtons,
-                    modifier = Modifier.align(Alignment.Center),
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .onSizeChanged { if (it.width > pieces.page) pieces.page = it.width },
                     onClick = onPageClick
                 )
                 // End group: juz position · optional session timer · hide · overflow menu.
@@ -922,15 +958,18 @@ private fun ReaderHeader(
                         color = quietContentColor,
                         accentColor = activeContentColor,
                         big = bigButtons,
+                        modifier = Modifier.onSizeChanged { if (it.width > pieces.juz) pieces.juz = it.width },
                         onClick = { onOpenIndex(1) }
                     )
-                    if (showSessionTimer && sessionStartedAt > 0L) {
+                    if (showTimer) {
                         Text(
                             text = formatElapsed(readingDurationMs),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = sessionTimerTextColor,
-                            modifier = Modifier.padding(horizontal = 6.dp)
+                            modifier = Modifier
+                                .onSizeChanged { if (it.width > pieces.timer) pieces.timer = it.width }
+                                .padding(horizontal = 6.dp)
                         )
                     }
                     HeaderBarActions(
@@ -989,14 +1028,25 @@ private fun ReaderHeader(
             // Camera-safe top strip: every quick-access button lives here, split between the two
             // corners so the center stays clear for a punch-hole/notch. Trim a little of the inset
             // to tighten the top gap, but never below the icon height (32dp).
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(maxOf(topInset - 6.dp, btnSize))
             ) {
+                // Bar actions get whatever the start corner (settings · clock), the timer and the
+                // always-present More leave; this row has no spacing between its buttons.
+                val actionRoom = maxWidth -
+                    pieces.start.orDp(btnSize + if (showClock) 64.dp else 0.dp) - 6.dp -
+                    (if (showTimer) pieces.timer.orDp(72.dp) else 0.dp) - btnSize
+                val visibleBarActionIds = fitBarActions(
+                    requestedBarActions, barSlots(actionRoom.value, btnSize.value)
+                )
+                ReportBarOverflow(requestedBarActions, visibleBarActionIds, onBarOverflowChange)
                 // Start corner (top-right in RTL): keep the always-needed controls close and quiet.
                 Row(
-                    modifier = Modifier.align(Alignment.TopStart),
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .onSizeChanged { if (it.width > pieces.start) pieces.start = it.width },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // App settings — always shown so it can never hide itself away.
@@ -1025,13 +1075,15 @@ private fun ReaderHeader(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Optional current-session duration (green), shown before the stats button.
-                    if (showSessionTimer && sessionStartedAt > 0L) {
+                    if (showTimer) {
                         Text(
                             text = formatElapsed(readingDurationMs),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = sessionTimerTextColor,
-                            modifier = Modifier.padding(horizontal = 6.dp)
+                            modifier = Modifier
+                                .onSizeChanged { if (it.width > pieces.timer) pieces.timer = it.width }
+                                .padding(horizontal = 6.dp)
                         )
                     }
                     HeaderBarActions(
