@@ -100,6 +100,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -728,6 +729,8 @@ private fun ReaderPager(
     onOpenRepeat: (AyahRef) -> Unit,
 ) {
     var anchor by remember { mutableStateOf(Offset.Zero) }
+    // The long-pressed ayah's bounds on screen, so its menu can sit clear of it.
+    var ayahBounds by remember { mutableStateOf(Rect.Zero) }
     var longPressAyah by remember { mutableStateOf<AyahMarker?>(null) }
     var explanationRequest by remember { mutableStateOf<ExplanationRequest?>(null) }
 
@@ -767,9 +770,10 @@ private fun ReaderPager(
                 selectedAyah = selected,
                 bookmarkedKeys = if (viewModel.isButtonVisible("bookmark")) viewModel.bookmarks else emptySet(),
                 bookmarkedKeys2 = if (viewModel.isButtonVisible("bookmark2")) viewModel.bookmarks2 else emptySet(),
-                onLongPressAyah = { m, off ->
+                onLongPressAyah = { m, off, bounds ->
                     viewModel.selectAyah(m)
                     anchor = off
+                    ayahBounds = bounds
                     longPressAyah = m
                 },
                 fillScreen = fillScreen,
@@ -829,6 +833,7 @@ private fun ReaderPager(
             AyahLongPressMenu(
                 ayah = ayah,
                 anchor = anchor,
+                ayahBounds = ayahBounds,
                 boxWidthPx = boxW,
                 boxHeightPx = boxH,
                 bookmarked = viewModel.isBookmarked(ayah.verseKey),
@@ -2361,11 +2366,16 @@ private fun formatTafsirText(raw: String, accent: Color): AnnotatedString = buil
     append(raw.substring(cursor))
 }
 
-/** The single ayah menu. It is opened only by a long press and stays anchored to that press. */
+/**
+ * The single ayah menu, opened by a long press. It sits above the whole ayah when there is room,
+ * else below it, so the selected ayah stays visible; only an ayah too tall for either gets covered,
+ * and then on the roomier side. Horizontally it follows the finger.
+ */
 @Composable
 private fun AyahLongPressMenu(
     ayah: AyahMarker,
     anchor: Offset,
+    ayahBounds: Rect,
     boxWidthPx: Int,
     boxHeightPx: Int,
     bookmarked: Boolean,
@@ -2390,7 +2400,7 @@ private fun AyahLongPressMenu(
     val density = LocalDensity.current
     val margin = with(density) { 10.dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
-    val positionProvider = remember(anchor, boxWidthPx, boxHeightPx, margin, gap) {
+    val positionProvider = remember(anchor, ayahBounds, boxWidthPx, boxHeightPx, margin, gap) {
         object : PopupPositionProvider {
             override fun calculatePosition(
                 anchorBounds: IntRect,
@@ -2401,9 +2411,16 @@ private fun AyahLongPressMenu(
                 // The long-press coordinates are physical pixels within the pager, even in RTL.
                 val x = (anchor.x - popupContentSize.width / 2f)
                     .coerceIn(margin, (boxWidthPx - popupContentSize.width - margin).coerceAtLeast(margin))
-                val above = anchor.y - popupContentSize.height - gap
-                val y = (if (above >= margin) above else anchor.y + gap)
-                    .coerceIn(margin, (boxHeightPx - popupContentSize.height - margin).coerceAtLeast(margin))
+                val h = popupContentSize.height
+                val above = ayahBounds.top - h - gap
+                val below = ayahBounds.bottom + gap
+                val y = when {
+                    above >= margin -> above
+                    below + h <= boxHeightPx - margin -> below
+                    // Neither fits: cover as little as possible, on the roomier side.
+                    ayahBounds.top > boxHeightPx - ayahBounds.bottom -> margin
+                    else -> boxHeightPx - h - margin
+                }.coerceIn(margin, (boxHeightPx - h - margin).coerceAtLeast(margin))
                 return IntOffset(
                     (anchorBounds.left + x.roundToInt())
                         .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
@@ -2493,69 +2510,64 @@ private fun AyahLongPressMenu(
                     modifier = Modifier.padding(top = 4.dp),
                 )
 
-                MenuSectionLabel("استكشف الآية")
+                // One compact row: reading the ayah (green) and listening to it (blue). The menu
+                // used to take three labelled sections and covered the ayah it was opened on.
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ReadingAction(
-                        modifier = Modifier.weight(1f),
-                        title = "التفسير",
-                        subtitle = "التفسير الميسر",
-                        icon = Icons.AutoMirrored.Filled.MenuBook,
-                        onClick = onTafsir,
-                    )
-                    ReadingAction(
-                        modifier = Modifier.weight(1f),
-                        title = "المعاني",
-                        subtitle = "غريب القرآن",
-                        icon = Icons.AutoMirrored.Outlined.ManageSearch,
-                        onClick = onMeanings,
-                    )
-                }
-
-                MenuSectionLabel("الاستماع")
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ReadingAction(
-                        modifier = Modifier.weight(1f),
-                        title = "الآية وحدها",
-                        subtitle = "ثم تتوقف",
-                        icon = Icons.Filled.Headphones,
-                        onClick = onListenAyah,
-                    )
-                    ReadingAction(
-                        modifier = Modifier.weight(1f),
-                        title = "من هنا",
-                        subtitle = "وتستمر بعدها",
-                        icon = Icons.Filled.PlayArrow,
-                        onClick = onPlayFrom,
-                    )
-                }
-                ReadingAction(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    title = "التكرار والحفظ",
-                    subtitle = "كل آية عدداً من المرات، والمقطع كله",
-                    icon = Icons.Filled.Repeat,
-                    onClick = onRepeat,
-                )
+                        .padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    CompactAyahAction(
+                        modifier = Modifier.weight(1f),
+                        title = "التفسير",
+                        icon = Icons.AutoMirrored.Filled.MenuBook,
+                        tint = MaterialTheme.colorScheme.primary,
+                        maxLines = 2,
+                        onClick = onTafsir,
+                    )
+                    CompactAyahAction(
+                        modifier = Modifier.weight(1f),
+                        title = "المعاني",
+                        icon = Icons.AutoMirrored.Outlined.ManageSearch,
+                        tint = MaterialTheme.colorScheme.primary,
+                        maxLines = 2,
+                        onClick = onMeanings,
+                    )
+                    CompactAyahAction(
+                        modifier = Modifier.weight(1f),
+                        title = "الآية وحدها",
+                        icon = Icons.Filled.Headphones,
+                        tint = StatusBlueColor,
+                        maxLines = 2,
+                        onClick = onListenAyah,
+                    )
+                    CompactAyahAction(
+                        modifier = Modifier.weight(1f),
+                        title = "من هنا",
+                        icon = Icons.Filled.PlayArrow,
+                        tint = StatusBlueColor,
+                        maxLines = 2,
+                        onClick = onPlayFrom,
+                    )
+                    CompactAyahAction(
+                        modifier = Modifier.weight(1f),
+                        title = "التكرار",
+                        icon = Icons.Filled.Repeat,
+                        tint = StatusBlueColor,
+                        maxLines = 2,
+                        onClick = onRepeat,
+                    )
+                }
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 11.dp)
+                        .padding(vertical = 8.dp)
                         .height(1.dp)
                         .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)),
                 )
 
-                MenuSectionLabel("إجراءات سريعة")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -2614,76 +2626,13 @@ private fun AyahLongPressMenu(
 }
 
 @Composable
-private fun MenuSectionLabel(title: String) {
-    Text(
-        text = title,
-        modifier = Modifier.padding(top = 10.dp, bottom = 6.dp),
-        style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.82f),
-    )
-}
-
-@Composable
-private fun ReadingAction(
-    modifier: Modifier,
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-) {
-    Surface(
-        modifier = modifier
-            .defaultMinSize(minHeight = 56.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(30.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun CompactAyahAction(
     modifier: Modifier,
     title: String,
     icon: ImageVector,
     tint: Color,
     selected: Boolean = false,
+    maxLines: Int = 1,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -2718,7 +2667,8 @@ private fun CompactAyahAction(
                 modifier = Modifier.padding(top = 2.dp),
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
+                textAlign = TextAlign.Center,
+                maxLines = maxLines,
             )
         }
     }
