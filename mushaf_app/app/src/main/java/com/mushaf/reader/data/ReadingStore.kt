@@ -192,6 +192,8 @@ class ReadingStore(private val context: Context) {
     // Update-nudge bookkeeping. Device-local on purpose: it stays out of [Settings] so restoring a
     // backup on another phone can't silence (or re-trigger) that phone's update prompt.
     private val keyUpdateCheckedAt = longPreferencesKey("update_checked_at")
+    // The chosen recitation (an MP3Quran read id). Device-local like the update nudge.
+    private val keyRecitationReciterId = intPreferencesKey("recitation_reciter_id")
     private val keyUpdateDismissedVersion = intPreferencesKey("update_dismissed_version")
     private val keyUpdateDismissedAt = longPreferencesKey("update_dismissed_at")
 
@@ -507,6 +509,12 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setEdgeMargin(value: String) {
         context.dataStore.edit { it[keyEdgeMargin] = value }
+    }
+
+    suspend fun recitationReciterId(): Int? = context.dataStore.data.first()[keyRecitationReciterId]
+
+    suspend fun setRecitationReciterId(id: Int) {
+        context.dataStore.edit { it[keyRecitationReciterId] = id }
     }
 
     suspend fun setVisitedPages(pages: Set<Int>) {

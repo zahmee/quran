@@ -61,6 +61,7 @@ import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.filled.Share
@@ -143,6 +144,7 @@ import com.mushaf.reader.ui.theme.StatusRedColor
 import com.mushaf.reader.ui.theme.pageRecolor
 import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.QuranPagePosition
+import com.mushaf.reader.data.recitation.AyahRef
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -172,6 +174,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     var showSettings by remember { mutableStateOf(false) }
     var showBackup by remember { mutableStateOf(false) }
     var headerVisible by remember { mutableStateOf(true) }
+    var showReciterPicker by remember { mutableStateOf(false) }
+    val recitation = viewModel.recitation
     val selected = viewModel.selectedAyah
 
     // Screens are overlays in this activity, so its lifecycle alone cannot time reading.
@@ -208,6 +212,16 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     LaunchedEffect(pagerState.currentPage) {
         viewModel.clearSelection()
         viewModel.onPageVisible(pagerState.currentPage + 1)
+    }
+
+    // The page follows the recitation: when the ayah being recited moves onto another page, turn
+    // to it — unless the reader is swiping right now.
+    val recitingAyah = recitation.current
+    LaunchedEffect(recitingAyah, viewModel.ayahLoaded) {
+        val page = recitingAyah?.let { viewModel.markerFor(it)?.page } ?: return@LaunchedEffect
+        if (pagerState.currentPage != page - 1 && !pagerState.isScrollInProgress) {
+            pagerState.animateScrollToPage((page - 1).coerceIn(0, pageCount - 1))
+        }
     }
 
     val restoredPage = viewModel.restorePageRequest
@@ -270,6 +284,11 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                         onOpenSearch = { showSearch = true },
                         onToggleFillScreen = { viewModel.toggleFillScreen() },
                         onHideHeader = { headerVisible = false },
+                        onListen = {
+                            viewModel.markersForPage(currentPage).firstOrNull()?.let {
+                                recitation.playFrom(AyahRef(it.surahNumber, it.ayahNumber))
+                            }
+                        },
                         onPaletteChange = { viewModel.updateThemeId(it) },
                         onBookmarkJump = {
                             viewModel.bookmarkJumpPage()?.let { p ->
@@ -319,6 +338,26 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     readerVisible = canRead,
                     updates = updates,
                 )
+
+                // Recitation bar: below the page rather than over it, so no line is covered.
+                if (recitation.active) {
+                    RecitationBar(
+                        surahName = recitingAyah?.let { viewModel.surahNameAr(it.surah) } ?: "",
+                        ayah = recitingAyah?.ayah,
+                        reciterName = recitation.reciter?.name,
+                        isPlaying = recitation.isPlaying,
+                        buffering = recitation.buffering,
+                        error = recitation.error,
+                        onToggle = recitation::togglePlay,
+                        onPrevious = recitation::previous,
+                        onNext = recitation::next,
+                        onClose = recitation::close,
+                        onPickReciter = {
+                            recitation.requestReciters()
+                            showReciterPicker = true
+                        },
+                    )
+                }
             }
 
             // When the header is hidden, a small draggable button restores it (and shows the page).
@@ -380,6 +419,21 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     showGoTo = false
                     scope.launch { pagerState.scrollToPage((n - 1).coerceIn(0, pageCount - 1)) }
                 }
+            )
+        }
+
+        if (showReciterPicker) {
+            ReciterPickerSheet(
+                reciters = recitation.reciters,
+                selectedId = recitation.reciter?.id,
+                loading = recitation.listLoading,
+                error = recitation.error,
+                onRetry = recitation::requestReciters,
+                onPick = { choice ->
+                    showReciterPicker = false
+                    recitation.selectReciter(choice)
+                },
+                onDismiss = { showReciterPicker = false },
             )
         }
 
@@ -586,6 +640,7 @@ private fun ReaderPager(
             QuranPagePosition.fromAyahs(viewModel.markersForPage(settledPage))
         }
         val hizbMarkers = viewModel.hizbMarkersForPage(settledPage)
+        val recitingMarker = viewModel.recitation.current?.let { viewModel.markerFor(it) }
         val positionAllowed = readingPositionAllowed(
             enabled = viewModel.showReadingPosition,
             readerVisible = readerVisible && longPressAyah == null && explanationRequest == null,
@@ -613,6 +668,9 @@ private fun ReaderPager(
                 },
                 fillScreen = fillScreen,
                 pageOverlay = { scale, viewportTop, viewportHeight ->
+                    if (recitingMarker != null && recitingMarker.page == pageNumber) {
+                        RecitationHighlight(marker = recitingMarker, baseScale = scale)
+                    }
                     if (pageNumber == settledPage && hizbMarkers.isNotEmpty()) {
                         HizbMarkerLabels(
                             markers = hizbMarkers,
@@ -682,6 +740,12 @@ private fun ReaderPager(
                     longPressAyah = null
                     viewModel.loadExplanation(ayah)
                     explanationRequest = ExplanationRequest(ayah, ExplanationTab.Meanings)
+                },
+                reciterName = viewModel.recitation.reciter?.name,
+                onPlayFrom = {
+                    longPressAyah = null
+                    viewModel.clearSelection()
+                    viewModel.recitation.playFrom(AyahRef(ayah.surahNumber, ayah.ayahNumber))
                 },
                 onClose = {
                     longPressAyah = null
@@ -779,6 +843,7 @@ private fun ReaderHeader(
     onOpenSearch: () -> Unit,
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
+    onListen: () -> Unit,
     onPaletteChange: (String) -> Unit,
     onBookmarkJump: () -> Unit,
     onBookmark2Jump: () -> Unit,
@@ -952,7 +1017,8 @@ private fun ReaderHeader(
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
-                        onHideHeader = onHideHeader
+                        onHideHeader = onHideHeader,
+                        onListen = onListen
                     )
                     HeaderMoreMenu(
                         btnSize = btnSize,
@@ -973,6 +1039,7 @@ private fun ReaderHeader(
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
                         onHideHeader = onHideHeader,
+                        onListen = onListen,
                         onAbout = onAbout
                     )
                 }
@@ -1053,7 +1120,8 @@ private fun ReaderHeader(
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
-                        onHideHeader = onHideHeader
+                        onHideHeader = onHideHeader,
+                        onListen = onListen
                     )
                     HeaderMoreMenu(
                         btnSize = btnSize,
@@ -1074,6 +1142,7 @@ private fun ReaderHeader(
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
                         onHideHeader = onHideHeader,
+                        onListen = onListen,
                         onAbout = onAbout
                     )
                 }
@@ -1161,6 +1230,7 @@ private fun HeaderMoreMenu(
     onPaletteChange: (String) -> Unit,
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
+    onListen: () -> Unit,
     onAbout: () -> Unit,
 ) {
     // Actions assigned to the menu plus any preferred bar actions that did not fit this window.
@@ -1207,7 +1277,7 @@ private fun HeaderMoreMenu(
                         } else {
                             runHeaderAction(
                                 action.id, onOpenSearch, onBookmarkJump, onBookmark2Jump,
-                                onStats, onOpenIndex, onToggleFillScreen, onHideHeader
+                                onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen
                             )
                         }
                     }
@@ -1263,6 +1333,7 @@ private fun HeaderBarActions(
     onPaletteChange: (String) -> Unit,
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
+    onListen: () -> Unit,
 ) {
     HeaderActions.forEach { action ->
         if (!isVisible(action.id) || action.id !in visibleBarActionIds) return@forEach
@@ -1286,7 +1357,7 @@ private fun HeaderBarActions(
             onClick = {
                 runHeaderAction(
                     action.id, onOpenSearch, onBookmarkJump, onBookmark2Jump,
-                    onStats, onOpenIndex, onToggleFillScreen, onHideHeader
+                    onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen
                 )
             },
             enabled = enabled,
@@ -1371,6 +1442,7 @@ private fun runHeaderAction(
     onOpenIndex: (Int) -> Unit,
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
+    onListen: () -> Unit,
 ) {
     when (id) {
         "search" -> onOpenSearch()
@@ -1380,6 +1452,7 @@ private fun runHeaderAction(
         "index" -> onOpenIndex(0)
         "fill" -> onToggleFillScreen()
         "hide" -> onHideHeader()
+        "listen" -> onListen()
     }
 }
 
@@ -2142,6 +2215,8 @@ private fun AyahLongPressMenu(
     showBookmark2: Boolean,
     onTafsir: () -> Unit,
     onMeanings: () -> Unit,
+    reciterName: String?,
+    onPlayFrom: () -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -2278,6 +2353,15 @@ private fun AyahLongPressMenu(
                         onClick = onMeanings,
                     )
                 }
+
+                MenuSectionLabel("الاستماع")
+                ReadingAction(
+                    modifier = Modifier.fillMaxWidth(),
+                    title = "تشغيل من هذه الآية",
+                    subtitle = reciterName ?: "يستمر إلى ما بعدها من السور",
+                    icon = Icons.Filled.PlayArrow,
+                    onClick = onPlayFrom,
+                )
 
                 Box(
                     modifier = Modifier

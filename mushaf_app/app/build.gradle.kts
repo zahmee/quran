@@ -168,6 +168,10 @@ dependencies {
     implementation(libs.firebase.firestore)
     // The daily cloud backup runs while the app is closed.
     implementation(libs.androidx.work.runtime.ktx)
+    // Recitation: full-surah files streamed from MP3Quran and played by a media session service,
+    // so a surah keeps playing in the background with lock-screen and notification controls.
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.session)
     debugImplementation(libs.androidx.ui.tooling)
     // Local JVM tests only — the pure logic (juz layout, Arabic folding, day arithmetic) is kept
     // free of Android types precisely so it can be tested without a device or Robolectric.

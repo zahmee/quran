@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">نتلو</string>
+    <string name="recitation_channel_name">التلاوة</string>
     <string name="feedback_email_subject">ملاحظات حول تطبيق %1$s</string>
     <string name="about_developer_body">تطبيق %1$s من تطوير مؤسسة إبداع التطوير والبرمجة لتقنية المعلومات (CDIT)، مؤسسة سعودية متخصصة في تطوير البرمجيات وحلول الأعمال الرقمية من خميس مشيط.</string>
 </resources>

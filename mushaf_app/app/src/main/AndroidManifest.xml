@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Cloud backup only. The reader itself stays offline; nothing connects until the user
-         signs in to back up. -->
+    <!-- Cloud backup and recitation. The reader itself stays offline; nothing connects until the
+         user signs in to back up or starts a recitation. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Recitation keeps playing in the background as a media-playback foreground service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:allowBackup="false"
@@ -25,5 +30,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Exported so the system's media controls (notification, lock screen, Bluetooth) can
+             reach the session; a permission would lock them out. The session only plays and
+             pauses the recitation, and exposes nothing else. -->
+        <service
+            android:name=".recitation.RecitationService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>
