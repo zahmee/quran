@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -51,6 +52,10 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/** The floating recitation handle starts a little below the middle of the screen edge, in thumb
+ *  reach on a phone held in the right hand. */
+private const val DEFAULT_HANDLE_POS = 0.62f
 
 /** One surah in the navigation index: number, Arabic name, and the page it begins on. */
 data class SurahEntry(val number: Int, val nameAr: String, val firstPage: Int, val ayahCount: Int)
@@ -116,6 +121,35 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     /** Re-read after the reader answered the first-time prompt in the bar. */
     fun refreshMobileDataPolicy() {
         mobileDataPolicy = MobileData.policy(getApplication())
+    }
+
+    /** Turn the page with the recitation. Off lets the reader browse while it plays on. */
+    var recitationFollowPage by mutableStateOf(true)
+        private set
+
+    fun updateRecitationFollowPage(value: Boolean) {
+        recitationFollowPage = value
+        viewModelScope.launch { store.setRecitationFollowPage(value) }
+    }
+
+    /** The floating recitation handle's place along the screen edge (0 top .. 1 bottom). */
+    var recitationHandlePos by mutableFloatStateOf(DEFAULT_HANDLE_POS)
+        private set
+
+    fun dragRecitationHandle(value: Float) {
+        recitationHandlePos = value.coerceIn(0f, 1f)
+    }
+
+    fun saveRecitationHandle() {
+        val value = recitationHandlePos
+        viewModelScope.launch { store.setRecitationHandlePos(value) }
+    }
+
+    init {
+        viewModelScope.launch {
+            recitationFollowPage = store.recitationFollowPage()
+            store.recitationHandlePos()?.let { recitationHandlePos = it }
+        }
     }
 
     val pageCount: Int = pageRepo.pageCount()
@@ -1133,7 +1167,6 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         recitation.release()
-        super.onCleared()
     }
 
     // Page span (first..last page where it appears) per surah, built once from the loaded data.

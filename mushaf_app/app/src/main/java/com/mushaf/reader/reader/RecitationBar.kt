@@ -1,5 +1,36 @@
 package com.mushaf.reader.reader
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.AbsoluteRoundedCornerShape
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.AbsoluteAlignment
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -87,13 +118,13 @@ internal fun formatSpeed(speed: Float): String {
 }
 
 /**
- * The recitation bar under the page: what is being recited, then three small chips — the reciter
+ * What the recitation panel shows: what is being recited, then three small chips — the reciter
  * (opens the list), the speed (a menu) and repetition (opens the memorisation sheet; during a run
  * it shows which repetition this is) — and previous/next ayah, play/pause and close. In this
  * right-to-left screen the text sits on the right, "previous" points right and "next" left.
  */
 @Composable
-internal fun RecitationBar(
+private fun RecitationControls(
     surahName: String,
     ayah: Int?,
     reciterName: String?,
@@ -101,7 +132,6 @@ internal fun RecitationBar(
     buffering: Boolean,
     error: String?,
     speed: Float,
-    /** "٣/٧" during a run that repeats the ayah; null otherwise. */
     repeatLabel: String?,
     onToggle: () -> Unit,
     onPrevious: () -> Unit,
@@ -112,17 +142,10 @@ internal fun RecitationBar(
     onRepeat: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shadowElevation = 3.dp,
-    ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
+            modifier = modifier
                 .heightIn(min = 56.dp)
-                .padding(horizontal = 6.dp, vertical = 4.dp),
+                .padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
@@ -221,6 +244,169 @@ internal fun RecitationBar(
                 )
             }
         }
+}
+
+/** How long the panel stays open after it opened or was last touched. */
+private const val AUTO_COLLAPSE_MS = 5_000L
+
+/**
+ * Recitation as a drawer on the screen's right edge, floating over the page so the page never
+ * resizes for it. Folded, it is one small handle — see-through while reciting, showing whether it
+ * plays — that can be dragged up or down the edge, away from the line being read; tapping it slides
+ * the controls out to the left, tapping again folds them back. It opens by itself when a
+ * recitation starts or something goes wrong, and folds itself after a few untouched seconds. The
+ * caller shows it only while a recitation is loaded.
+ */
+@Composable
+internal fun FloatingRecitationBar(
+    surahName: String,
+    ayah: Int?,
+    reciterName: String?,
+    isPlaying: Boolean,
+    buffering: Boolean,
+    error: String?,
+    speed: Float,
+    repeatLabel: String?,
+    /** Changes each time a recitation is started, to open the panel for it. */
+    startKey: Int,
+    /** Place along the edge: 0 top .. 1 bottom. */
+    handlePos: Float,
+    onHandleDrag: (Float) -> Unit,
+    onHandleDragEnd: () -> Unit,
+    onToggle: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onClose: () -> Unit,
+    onPickReciter: () -> Unit,
+    onSpeed: (Float) -> Unit,
+    onRepeat: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(true) }
+    var touches by remember { mutableIntStateOf(0) }
+    LaunchedEffect(startKey) {
+        expanded = true
+        touches++
+    }
+    LaunchedEffect(error) { if (error != null) expanded = true }
+    LaunchedEffect(expanded, touches, error) {
+        if (expanded && error == null) {
+            delay(AUTO_COLLAPSE_MS)
+            expanded = false
+        }
+    }
+    fun touched(action: () -> Unit): () -> Unit = {
+        touches++
+        action()
+    }
+    val folded = !expanded && error == null
+    val alpha by animateFloatAsState(if (folded) 0.55f else 1f, label = "recitation handle alpha")
+    val currentPos by rememberUpdatedState(handlePos)
+
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val density = LocalDensity.current
+        var barHeightPx by remember { mutableIntStateOf(with(density) { HANDLE_SIZE.roundToPx() }) }
+        val travel = (constraints.maxHeight - barHeightPx).coerceAtLeast(1).toFloat()
+        val controlsWidth = (minOf(maxWidth - 8.dp, 440.dp) - HANDLE_SIZE).coerceAtLeast(0.dp)
+
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = AbsoluteAlignment.TopRight) {
+            Surface(
+                modifier = Modifier
+                    .offset { IntOffset(0, (handlePos.coerceIn(0f, 1f) * travel).roundToInt()) }
+                    .onSizeChanged { barHeightPx = it.height }
+                    .alpha(alpha),
+                // Docked to the right edge: rounded on the inner side only.
+                shape = AbsoluteRoundedCornerShape(topLeft = 22.dp, bottomLeft = 22.dp),
+                color = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shadowElevation = 6.dp,
+            ) {
+                // In this right-to-left row the handle comes first, so it sits against the edge
+                // and the controls slide out to its left.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(HANDLE_SIZE)
+                            .semantics {
+                                contentDescription = if (expanded) "طيّ شريط التلاوة" else "فتح شريط التلاوة"
+                            }
+                            .pointerInput(travel) {
+                                detectVerticalDragGestures(onDragEnd = onHandleDragEnd) { change, dy ->
+                                    change.consume()
+                                    onHandleDrag(currentPos + dy / travel)
+                                }
+                            }
+                            .clickable(
+                                onClickLabel = if (expanded) "طيّ شريط التلاوة" else "فتح شريط التلاوة",
+                            ) {
+                                expanded = !expanded
+                                touches++
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        HandleIcon(isPlaying = isPlaying, buffering = buffering, error = error)
+                    }
+                    AnimatedVisibility(
+                        visible = expanded,
+                        enter = expandHorizontally(expandFrom = Alignment.Start) + fadeIn(),
+                        exit = shrinkHorizontally(shrinkTowards = Alignment.Start) + fadeOut(),
+                    ) {
+                        RecitationControls(
+                            surahName = surahName,
+                            ayah = ayah,
+                            reciterName = reciterName,
+                            isPlaying = isPlaying,
+                            buffering = buffering,
+                            error = error,
+                            speed = speed,
+                            repeatLabel = repeatLabel,
+                            onToggle = touched(onToggle),
+                            onPrevious = touched(onPrevious),
+                            onNext = touched(onNext),
+                            onClose = onClose,
+                            onPickReciter = touched(onPickReciter),
+                            onSpeed = { touches++; onSpeed(it) },
+                            onRepeat = touched(onRepeat),
+                            modifier = Modifier.width(controlsWidth),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private val HANDLE_SIZE = 44.dp
+
+/** The folded handle's face: what the recitation is doing, at a glance. */
+@Composable
+private fun HandleIcon(isPlaying: Boolean, buffering: Boolean, error: String?) {
+    when {
+        error != null -> Icon(
+            Icons.Filled.ErrorOutline,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+        )
+        buffering -> CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        isPlaying -> {
+            val pulse by rememberInfiniteTransition(label = "recitation pulse").animateFloat(
+                initialValue = 0.55f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+                label = "recitation pulse alpha",
+            )
+            Icon(
+                Icons.Filled.GraphicEq,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.alpha(pulse),
+            )
+        }
+        else -> Icon(
+            Icons.Filled.Headphones,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

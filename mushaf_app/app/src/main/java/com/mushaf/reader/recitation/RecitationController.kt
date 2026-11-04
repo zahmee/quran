@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ComponentName
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
@@ -95,6 +96,9 @@ class RecitationController(
     /** Last repetition counts chosen, offered again the next time (ayah times, passage times). */
     var repeatDefaults by mutableStateOf(7 to 1)
         private set
+    /** Counts the recitations started, so the panel can open for each new one. */
+    var startCount by mutableIntStateOf(0)
+        private set
 
     private var controller: MediaController? = null
     private var connecting: ListenableFuture<MediaController>? = null
@@ -117,6 +121,7 @@ class RecitationController(
 
     /** Start reciting at [ref] and carry on through the following surahs. */
     fun playFrom(ref: AyahRef) {
+        startCount++
         error = null
         active = true
         buffering = true
@@ -157,6 +162,7 @@ class RecitationController(
      * background even if the activity is gone; an endless run loops the playlist.
      */
     fun playPlan(passage: RepeatPlan) {
+        startCount++
         error = null
         active = true
         buffering = true
