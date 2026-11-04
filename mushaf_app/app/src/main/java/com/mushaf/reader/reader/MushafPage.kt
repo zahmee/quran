@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -74,7 +75,7 @@ fun MushafPage(
     selectedAyah: AyahMarker?,
     bookmarkedKeys: Set<String>,
     bookmarkedKeys2: Set<String>,
-    onLongPressAyah: (AyahMarker, Offset) -> Unit,
+    onLongPressAyah: (AyahMarker, Offset, Rect) -> Unit,
     fillScreen: Boolean = false,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit = { _, _, _ -> },
 ) {
@@ -136,7 +137,7 @@ private fun WholePage(
     bookmarked: List<AyahMarker>,
     bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
-    onLongPressAyah: (AyahMarker, Offset) -> Unit,
+    onLongPressAyah: (AyahMarker, Offset, Rect) -> Unit,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -156,7 +157,9 @@ private fun WholePage(
                         if (markers.isNotEmpty() && fitScale > 0f) {
                             val ix = (tap.x - offsetX) / fitScale
                             val iy = (tap.y - offsetY) / fitScale
-                            pickAyah(markers, ix, iy)?.let { onLongPressAyah(it, tap) }
+                            pickAyah(markers, ix, iy)?.let {
+                                onLongPressAyah(it, tap, it.screenBounds(fitScale, fitScale, offsetX, offsetY))
+                            }
                         }
                     }
                 )
@@ -193,7 +196,7 @@ private fun StretchedPage(
     bookmarked: List<AyahMarker>,
     bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
-    onLongPressAyah: (AyahMarker, Offset) -> Unit,
+    onLongPressAyah: (AyahMarker, Offset, Rect) -> Unit,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -213,7 +216,9 @@ private fun StretchedPage(
                         if (markers.isNotEmpty() && fitScale > 0f) {
                             val ix = (tap.x - offsetX) / fitScale
                             val iy = tap.y / (fitScale * stretch)
-                            pickAyah(markers, ix, iy)?.let { onLongPressAyah(it, tap) }
+                            pickAyah(markers, ix, iy)?.let {
+                                onLongPressAyah(it, tap, it.screenBounds(fitScale, fitScale * stretch, offsetX, 0f))
+                            }
                         }
                     }
                 )
@@ -262,7 +267,7 @@ private fun FilledWidthPage(
     bookmarked: List<AyahMarker>,
     bookmarked2: List<AyahMarker>,
     highlight: AyahMarker?,
-    onLongPressAyah: (AyahMarker, Offset) -> Unit,
+    onLongPressAyah: (AyahMarker, Offset, Rect) -> Unit,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -282,7 +287,9 @@ private fun FilledWidthPage(
                         if (markers.isNotEmpty() && scale > 0f) {
                             val ix = tap.x / scale
                             val iy = (tap.y + scrollState.value) / scale
-                            pickAyah(markers, ix, iy)?.let { onLongPressAyah(it, tap) }
+                            pickAyah(markers, ix, iy)?.let {
+                                onLongPressAyah(it, tap, it.screenBounds(scale, scale, 0f, -scrollState.value.toFloat()))
+                            }
                         }
                     }
                 )
@@ -475,4 +482,17 @@ private fun PageContent(
         }
         pageOverlay(baseScale, viewportTop, viewportHeight)
     }
+}
+
+/** This ayah's outer bounds on screen, in the same coordinates as the long-press position:
+ *  page-image pixels scaled by [sx]/[sy] and shifted by [dx]/[dy]. The ayah menu uses it to sit
+ *  above or below the whole ayah rather than on top of it. */
+private fun AyahMarker.screenBounds(sx: Float, sy: Float, dx: Float, dy: Float): Rect {
+    if (rects.isEmpty()) return Rect(centerX * sx + dx, centerY * sy + dy, centerX * sx + dx, centerY * sy + dy)
+    return Rect(
+        left = rects.minOf { it.x } * sx + dx,
+        top = rects.minOf { it.y } * sy + dy,
+        right = rects.maxOf { it.x + it.w } * sx + dx,
+        bottom = rects.maxOf { it.y + it.h } * sy + dy,
+    )
 }

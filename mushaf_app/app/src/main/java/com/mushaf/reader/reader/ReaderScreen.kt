@@ -61,6 +61,9 @@ import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.filled.Share
@@ -82,7 +85,9 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -95,6 +100,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -143,6 +149,8 @@ import com.mushaf.reader.ui.theme.StatusRedColor
 import com.mushaf.reader.ui.theme.pageRecolor
 import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.QuranPagePosition
+import com.mushaf.reader.data.recitation.AyahRef
+import com.mushaf.reader.data.recitation.RepeatPlan
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -172,12 +180,19 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     var showSettings by remember { mutableStateOf(false) }
     var showBackup by remember { mutableStateOf(false) }
     var headerVisible by remember { mutableStateOf(true) }
+    var showReciterPicker by remember { mutableStateOf(false) }
+    var showDownloads by remember { mutableStateOf(false) }
+    // The ayah the memorisation sheet starts from, while it is open.
+    var repeatFrom by remember { mutableStateOf<AyahRef?>(null) }
+    val recitation = viewModel.recitation
+    // Bar-placed header actions the current window has no room for; settings flags them.
+    var barOverflow by remember { mutableStateOf(emptySet<String>()) }
     val selected = viewModel.selectedAyah
 
     // Screens are overlays in this activity, so its lifecycle alone cannot time reading.
     // Focus also excludes system pickers, update dialogs and other windows covering the reader.
     val canRead = !showStatsScreen && !showKhatmaMap && !showIndex && !showSearch &&
-        !showAbout && !showSettings && !showBackup && !showGoTo && selected == null &&
+        !showAbout && !showSettings && !showBackup && !showDownloads && !showGoTo && selected == null &&
         !viewModel.backupUiState.busy && LocalWindowInfo.current.isWindowFocused
     LifecycleResumeEffect(viewModel, canRead) {
         viewModel.setReaderVisible(canRead)
@@ -196,11 +211,13 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     BackHandler(enabled = showSettings) { showSettings = false }
     // The backup screen opens above Settings, so Back returns to the Settings app tab.
     BackHandler(enabled = showBackup) { showBackup = false }
+    // So does the downloads screen.
+    BackHandler(enabled = showDownloads) { showDownloads = false }
     // Registered after index/settings so Back from About returns to the screen it was opened from.
     BackHandler(enabled = showAbout) { showAbout = false }
     // When the header is hidden, Back brings it back instead of leaving the app.
     BackHandler(enabled = !showStatsScreen && !showIndex && !showSearch && !showAbout &&
-        !showSettings && !showBackup && !headerVisible
+        !showSettings && !showBackup && !showDownloads && !headerVisible
     ) {
         headerVisible = true
     }
@@ -208,6 +225,16 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     LaunchedEffect(pagerState.currentPage) {
         viewModel.clearSelection()
         viewModel.onPageVisible(pagerState.currentPage + 1)
+    }
+
+    // The page follows the recitation: when the ayah being recited moves onto another page, turn
+    // to it — unless the reader is swiping right now.
+    val recitingAyah = recitation.current
+    LaunchedEffect(recitingAyah, viewModel.ayahLoaded) {
+        val page = recitingAyah?.let { viewModel.markerFor(it)?.page } ?: return@LaunchedEffect
+        if (pagerState.currentPage != page - 1 && !pagerState.isScrollInProgress) {
+            pagerState.animateScrollToPage((page - 1).coerceIn(0, pageCount - 1))
+        }
     }
 
     val restoredPage = viewModel.restorePageRequest
@@ -262,6 +289,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                         buttonTint = { id, fallback ->
                             headerStatusColor(viewModel.buttonColor(id), fallback)
                         },
+                        onBarOverflowChange = { barOverflow = it },
                         onOpenSettings = { showSettings = true },
                         onOpenIndex = { tab ->
                             indexTab = tab
@@ -270,6 +298,11 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                         onOpenSearch = { showSearch = true },
                         onToggleFillScreen = { viewModel.toggleFillScreen() },
                         onHideHeader = { headerVisible = false },
+                        onListen = {
+                            viewModel.markersForPage(currentPage).firstOrNull()?.let {
+                                recitation.playFrom(AyahRef(it.surahNumber, it.ayahNumber))
+                            }
+                        },
                         onPaletteChange = { viewModel.updateThemeId(it) },
                         onBookmarkJump = {
                             viewModel.bookmarkJumpPage()?.let { p ->
@@ -318,7 +351,43 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     verticalPaging = viewModel.verticalPaging,
                     readerVisible = canRead,
                     updates = updates,
+                    onOpenRepeat = { repeatFrom = it },
                 )
+
+                // Recitation bar: below the page rather than over it, so no line is covered.
+                if (recitation.active) {
+                    RecitationBar(
+                        surahName = recitingAyah?.let { viewModel.surahNameAr(it.surah) } ?: "",
+                        ayah = recitingAyah?.ayah,
+                        reciterName = recitation.reciter?.name,
+                        isPlaying = recitation.isPlaying,
+                        buffering = recitation.buffering,
+                        error = recitation.error,
+                        speed = recitation.speed,
+                        repeatLabel = recitation.clip?.let { c ->
+                            when {
+                                // "٣ من ٧" reads unambiguously; a slash between Arabic digits
+                                // does not.
+                                c.ayahTimes > 1 ->
+                                    "${c.ayahPass.toArabicDigits()} من ${c.ayahTimes.toArabicDigits()}"
+                                c.rangeTimes > 1 ->
+                                    "${c.rangePass.toArabicDigits()} من ${c.rangeTimes.toArabicDigits()}"
+                                c.rangeTimes == RepeatPlan.ENDLESS -> "∞"
+                                else -> null
+                            }
+                        },
+                        onToggle = recitation::togglePlay,
+                        onPrevious = recitation::previous,
+                        onNext = recitation::next,
+                        onClose = recitation::close,
+                        onPickReciter = {
+                            recitation.requestReciters()
+                            showReciterPicker = true
+                        },
+                        onSpeed = recitation::changeSpeed,
+                        onRepeat = { repeatFrom = recitingAyah },
+                    )
+                }
             }
 
             // When the header is hidden, a small draggable button restores it (and shows the page).
@@ -383,6 +452,43 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
             )
         }
 
+        repeatFrom?.let { from ->
+            val page = viewModel.markerFor(from)?.page
+            val pageLastAyah = page?.let { p ->
+                viewModel.markersForPage(p).filter { it.surahNumber == from.surah }
+                    .maxOfOrNull { it.ayahNumber }
+            }
+            val (ayahTimes, rangeTimes) = recitation.repeatDefaults
+            RepeatSheet(
+                surahName = viewModel.surahNameAr(from.surah),
+                surahAyahCount = viewModel.surahAyahCount(from.surah),
+                fromAyah = from.ayah,
+                pageLastAyah = pageLastAyah,
+                initialAyahTimes = ayahTimes,
+                initialRangeTimes = rangeTimes,
+                onStart = { toAyah, each, whole ->
+                    repeatFrom = null
+                    recitation.playPlan(RepeatPlan(from.surah, from.ayah, toAyah, each, whole))
+                },
+                onDismiss = { repeatFrom = null },
+            )
+        }
+
+        if (showReciterPicker) {
+            ReciterPickerSheet(
+                reciters = recitation.reciters,
+                selectedId = recitation.reciter?.id,
+                loading = recitation.listLoading,
+                error = recitation.error,
+                onRetry = recitation::requestReciters,
+                onPick = { choice ->
+                    showReciterPicker = false
+                    recitation.selectReciter(choice)
+                },
+                onDismiss = { showReciterPicker = false },
+            )
+        }
+
         if (showStatsScreen) {
             StatsScreen(
                 stats = viewModel.fullStats,
@@ -439,6 +545,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 onPaletteChange = { viewModel.updateThemeId(it) },
                 isInBar = { id -> viewModel.isButtonInBar(id) },
                 onSetInBar = { id, v -> viewModel.setButtonInBar(id, v) },
+                barOverflow = barOverflow,
                 buttonColor = { id -> viewModel.buttonColor(id) },
                 onButtonColorChange = { id, c -> viewModel.updateButtonColor(id, c) },
                 bigButtons = viewModel.bigButtons,
@@ -504,7 +611,60 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 onBackup = { showBackup = true },
                 onAbout = { showAbout = true },
                 onClearAllStats = { viewModel.clearAllStats() },
+                mobileDataPolicy = viewModel.mobileDataPolicy,
+                onMobileDataPolicyChange = viewModel::updateMobileDataPolicy,
+                onOpenDownloads = {
+                    recitation.prepareReciter()
+                    showDownloads = true
+                },
                 onBack = { showSettings = false }
+            )
+        }
+
+        if (showDownloads) {
+            val page = pagerState.currentPage + 1
+            val juz = viewModel.juzInfoForPage(page).juz
+            val juzSurahs = remember(juz, viewModel.ayahLoaded) { viewModel.surahsInJuz(juz) }
+            DownloadsScreen(
+                downloads = viewModel.recitationDownloads,
+                reciter = recitation.reciter,
+                reciters = recitation.reciters,
+                reciterNames = recitation.reciterNames,
+                currentSurah = viewModel.markersForPage(page).firstOrNull()?.surahNumber,
+                currentJuz = juz,
+                juzSurahs = juzSurahs,
+                surahName = viewModel::surahNameAr,
+                mobileDataPolicy = viewModel.mobileDataPolicy,
+                onPickReciter = { showReciterPicker = true },
+                onBack = { showDownloads = false },
+            )
+        }
+
+        // First time recitation would stream on mobile data: ask once, remember the answer.
+        if (recitation.mobileDataPrompt) {
+            AlertDialog(
+                onDismissRequest = {
+                    recitation.answerMobileData(null)
+                },
+                title = { Text("بيانات الجوال") },
+                text = {
+                    Text(
+                        "أنت متصل ببيانات الجوال. تستهلك التلاوة نحو ميغابايت في الدقيقة، " +
+                            "وما سُمع من قبل لا يُحمَّل مرة أخرى. يمكنك تغيير هذا من الإعدادات."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        recitation.answerMobileData(true)
+                        viewModel.refreshMobileDataPolicy()
+                    }) { Text("استخدم بيانات الجوال") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        recitation.answerMobileData(false)
+                        viewModel.refreshMobileDataPolicy()
+                    }) { Text("الشبكة اللاسلكية فقط") }
+                },
             )
         }
 
@@ -566,8 +726,11 @@ private fun ReaderPager(
     verticalPaging: Boolean,
     readerVisible: Boolean,
     updates: AppUpdateUi?,
+    onOpenRepeat: (AyahRef) -> Unit,
 ) {
     var anchor by remember { mutableStateOf(Offset.Zero) }
+    // The long-pressed ayah's bounds on screen, so its menu can sit clear of it.
+    var ayahBounds by remember { mutableStateOf(Rect.Zero) }
     var longPressAyah by remember { mutableStateOf<AyahMarker?>(null) }
     var explanationRequest by remember { mutableStateOf<ExplanationRequest?>(null) }
 
@@ -586,6 +749,7 @@ private fun ReaderPager(
             QuranPagePosition.fromAyahs(viewModel.markersForPage(settledPage))
         }
         val hizbMarkers = viewModel.hizbMarkersForPage(settledPage)
+        val recitingMarker = viewModel.recitation.current?.let { viewModel.markerFor(it) }
         val positionAllowed = readingPositionAllowed(
             enabled = viewModel.showReadingPosition,
             readerVisible = readerVisible && longPressAyah == null && explanationRequest == null,
@@ -606,13 +770,17 @@ private fun ReaderPager(
                 selectedAyah = selected,
                 bookmarkedKeys = if (viewModel.isButtonVisible("bookmark")) viewModel.bookmarks else emptySet(),
                 bookmarkedKeys2 = if (viewModel.isButtonVisible("bookmark2")) viewModel.bookmarks2 else emptySet(),
-                onLongPressAyah = { m, off ->
+                onLongPressAyah = { m, off, bounds ->
                     viewModel.selectAyah(m)
                     anchor = off
+                    ayahBounds = bounds
                     longPressAyah = m
                 },
                 fillScreen = fillScreen,
                 pageOverlay = { scale, viewportTop, viewportHeight ->
+                    if (recitingMarker != null && recitingMarker.page == pageNumber) {
+                        RecitationHighlight(marker = recitingMarker, baseScale = scale)
+                    }
                     if (pageNumber == settledPage && hizbMarkers.isNotEmpty()) {
                         HizbMarkerLabels(
                             markers = hizbMarkers,
@@ -665,6 +833,7 @@ private fun ReaderPager(
             AyahLongPressMenu(
                 ayah = ayah,
                 anchor = anchor,
+                ayahBounds = ayahBounds,
                 boxWidthPx = boxW,
                 boxHeightPx = boxH,
                 bookmarked = viewModel.isBookmarked(ayah.verseKey),
@@ -682,6 +851,21 @@ private fun ReaderPager(
                     longPressAyah = null
                     viewModel.loadExplanation(ayah)
                     explanationRequest = ExplanationRequest(ayah, ExplanationTab.Meanings)
+                },
+                onListenAyah = {
+                    longPressAyah = null
+                    viewModel.clearSelection()
+                    viewModel.recitation.listenTo(AyahRef(ayah.surahNumber, ayah.ayahNumber))
+                },
+                onPlayFrom = {
+                    longPressAyah = null
+                    viewModel.clearSelection()
+                    viewModel.recitation.playFrom(AyahRef(ayah.surahNumber, ayah.ayahNumber))
+                },
+                onRepeat = {
+                    longPressAyah = null
+                    viewModel.clearSelection()
+                    onOpenRepeat(AyahRef(ayah.surahNumber, ayah.ayahNumber))
                 },
                 onClose = {
                     longPressAyah = null
@@ -703,6 +887,28 @@ private fun ReaderPager(
             )
         }
     }
+}
+
+/** Widths (px) the header's fixed pieces have been laid out at; 0 until first measured. */
+@Stable
+private class HeaderPieceWidths {
+    var page by mutableIntStateOf(0)
+    var juz by mutableIntStateOf(0)
+    var timer by mutableIntStateOf(0)
+    /** Two-row layout only: the settings · clock corner. */
+    var start by mutableIntStateOf(0)
+}
+
+/** Tells the reader screen which bar-placed actions this layout had to list in More instead. */
+@Composable
+private fun ReportBarOverflow(
+    requested: List<String>,
+    visible: Set<String>,
+    onChange: (Set<String>) -> Unit,
+) {
+    val overflow = requested.filterNotTo(LinkedHashSet()) { it in visible }
+    val latest by rememberUpdatedState(onChange)
+    LaunchedEffect(overflow) { latest(overflow) }
 }
 
 /** Extra room the single-row header gives each physical side to step past a camera hole. */
@@ -774,11 +980,14 @@ private fun ReaderHeader(
     isInBar: (String) -> Boolean,
     /** (action id, the tint it would have had) -> the color the user picked for it. */
     buttonTint: (String, Color) -> Color,
+    /** Bar-placed actions this window has no room for (they are listed in More instead). */
+    onBarOverflowChange: (Set<String>) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenIndex: (Int) -> Unit,
     onOpenSearch: () -> Unit,
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
+    onListen: () -> Unit,
     onPaletteChange: (String) -> Unit,
     onBookmarkJump: () -> Unit,
     onBookmark2Jump: () -> Unit,
@@ -808,27 +1017,20 @@ private fun ReaderHeader(
     val windowWidth = with(LocalDensity.current) { windowSize.width.toDp() }
     val singleRow = windowSize.width > windowSize.height || windowWidth >= 600.dp
 
-    // A placement preference means "keep this action on the bar when there is room". On a narrow
-    // window the remaining actions spill into More, otherwise eight requested buttons can cover the
-    // always-available Settings button. The budgets are deliberately conservative for the optional
-    // clock/session labels and for the page/juz chips in the single-row layout.
-    val requestedBarActions = HeaderActions.filter { isVisible(it.id) && isInBar(it.id) }
-    val hasDirectMenuActions = HeaderActions.any { isVisible(it.id) && !isInBar(it.id) }
-    val sessionReserve = if (showSessionTimer && sessionStartedAt > 0L) 72.dp else 0.dp
-    val actionWidthWithoutMenu = if (singleRow) {
-        windowWidth / 2 - 48.dp - 112.dp - sessionReserve
-    } else {
-        windowWidth - btnSize - (if (showClock) 64.dp else 0.dp) - sessionReserve - 6.dp
-    }
-    fun actionCapacity(reserveMore: Boolean): Int {
-        val width = actionWidthWithoutMenu - if (reserveMore) btnSize else 0.dp
-        return (width.value / btnSize.value).toInt().coerceAtLeast(0)
-    }
-    val capacityWithoutMenu = actionCapacity(reserveMore = false)
-    val needsMore = hasDirectMenuActions || requestedBarActions.size > capacityWithoutMenu
-    val visibleBarActionIds = requestedBarActions
-        .take(actionCapacity(reserveMore = needsMore))
-        .mapTo(LinkedHashSet()) { it.id }
+    // A placement preference means "keep this action on the bar when there is room". Each layout
+    // below works out the room its fixed pieces really leave and fits the requested actions into it
+    // with fitBarActions (fill/hide/bookmark keep their seats first); the rest are listed in More,
+    // and that overflow is reported so the settings screen can say so rather than look unsaved.
+    val requestedBarActions = HeaderActions.filter { isVisible(it.id) && isInBar(it.id) }.map { it.id }
+    val showTimer = showSessionTimer && sessionStartedAt > 0L
+    // Widest each fixed piece has been laid out at. Only growing keeps a ticking timer or a page
+    // turn from bouncing a button between the bar and More; it starts over when the content changes.
+    val pieces = remember(
+        singleRow, bigButtons, showClock, showTimer, showJuzProgressPercent, showJuzProgressPages
+    ) { HeaderPieceWidths() }
+    val density = LocalDensity.current
+    // A piece not laid out yet (the very first frame) counts at a conservative estimate.
+    fun Int.orDp(estimate: Dp): Dp = if (this > 0) with(density) { this@orDp.toDp() } else estimate
 
     // Live ticker for the optional clock / current-session timer (only loops while one is shown).
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -851,7 +1053,7 @@ private fun ReaderHeader(
             // near either end pushes that end inward so no control lands under the lens; a side
             // notch in landscape is kept clear by the horizontal inset.
             val cornerHole = cornerCutoutClearance(bandHeight = btnSize + 4.dp)
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
@@ -859,6 +1061,17 @@ private fun ReaderHeader(
                     .padding(horizontal = 8.dp + edgeMargin, vertical = 2.dp)
                     .height(btnSize)
             ) {
+                // The end group may grow toward the centred page badge but never under it. Its
+                // fixed pieces (juz chip, timer, the always-present More) are measured, and every
+                // bar action costs one button plus the row's spacing.
+                val gap = 4.dp
+                val endRoom = maxWidth / 2 - pieces.page.orDp(btnSize * 2) / 2 - gap * 2
+                val actionRoom = endRoom - pieces.juz.orDp(112.dp) - gap -
+                    (if (showTimer) pieces.timer.orDp(72.dp) + gap else 0.dp) - btnSize
+                val visibleBarActionIds = fitBarActions(
+                    requestedBarActions, barSlots(actionRoom.value, (btnSize + gap).value)
+                )
+                ReportBarOverflow(requestedBarActions, visibleBarActionIds, onBarOverflowChange)
                 // Start group: settings · optional clock · surah identity.
                 Row(
                     modifier = Modifier.align(Alignment.CenterStart),
@@ -903,7 +1116,9 @@ private fun ReaderHeader(
                     quietContentColor = quietContentColor,
                     accentColor = activeContentColor,
                     big = bigButtons,
-                    modifier = Modifier.align(Alignment.Center),
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .onSizeChanged { if (it.width > pieces.page) pieces.page = it.width },
                     onClick = onPageClick
                 )
                 // End group: juz position · optional session timer · hide · overflow menu.
@@ -922,15 +1137,18 @@ private fun ReaderHeader(
                         color = quietContentColor,
                         accentColor = activeContentColor,
                         big = bigButtons,
+                        modifier = Modifier.onSizeChanged { if (it.width > pieces.juz) pieces.juz = it.width },
                         onClick = { onOpenIndex(1) }
                     )
-                    if (showSessionTimer && sessionStartedAt > 0L) {
+                    if (showTimer) {
                         Text(
                             text = formatElapsed(readingDurationMs),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = sessionTimerTextColor,
-                            modifier = Modifier.padding(horizontal = 6.dp)
+                            modifier = Modifier
+                                .onSizeChanged { if (it.width > pieces.timer) pieces.timer = it.width }
+                                .padding(horizontal = 6.dp)
                         )
                     }
                     HeaderBarActions(
@@ -952,7 +1170,8 @@ private fun ReaderHeader(
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
-                        onHideHeader = onHideHeader
+                        onHideHeader = onHideHeader,
+                        onListen = onListen
                     )
                     HeaderMoreMenu(
                         btnSize = btnSize,
@@ -973,6 +1192,7 @@ private fun ReaderHeader(
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
                         onHideHeader = onHideHeader,
+                        onListen = onListen,
                         onAbout = onAbout
                     )
                 }
@@ -989,14 +1209,25 @@ private fun ReaderHeader(
             // Camera-safe top strip: every quick-access button lives here, split between the two
             // corners so the center stays clear for a punch-hole/notch. Trim a little of the inset
             // to tighten the top gap, but never below the icon height (32dp).
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(maxOf(topInset - 6.dp, btnSize))
             ) {
+                // Bar actions get whatever the start corner (settings · clock), the timer and the
+                // always-present More leave; this row has no spacing between its buttons.
+                val actionRoom = maxWidth -
+                    pieces.start.orDp(btnSize + if (showClock) 64.dp else 0.dp) - 6.dp -
+                    (if (showTimer) pieces.timer.orDp(72.dp) else 0.dp) - btnSize
+                val visibleBarActionIds = fitBarActions(
+                    requestedBarActions, barSlots(actionRoom.value, btnSize.value)
+                )
+                ReportBarOverflow(requestedBarActions, visibleBarActionIds, onBarOverflowChange)
                 // Start corner (top-right in RTL): keep the always-needed controls close and quiet.
                 Row(
-                    modifier = Modifier.align(Alignment.TopStart),
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .onSizeChanged { if (it.width > pieces.start) pieces.start = it.width },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // App settings — always shown so it can never hide itself away.
@@ -1025,13 +1256,15 @@ private fun ReaderHeader(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Optional current-session duration (green), shown before the stats button.
-                    if (showSessionTimer && sessionStartedAt > 0L) {
+                    if (showTimer) {
                         Text(
                             text = formatElapsed(readingDurationMs),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = sessionTimerTextColor,
-                            modifier = Modifier.padding(horizontal = 6.dp)
+                            modifier = Modifier
+                                .onSizeChanged { if (it.width > pieces.timer) pieces.timer = it.width }
+                                .padding(horizontal = 6.dp)
                         )
                     }
                     HeaderBarActions(
@@ -1053,7 +1286,8 @@ private fun ReaderHeader(
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
-                        onHideHeader = onHideHeader
+                        onHideHeader = onHideHeader,
+                        onListen = onListen
                     )
                     HeaderMoreMenu(
                         btnSize = btnSize,
@@ -1074,6 +1308,7 @@ private fun ReaderHeader(
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
                         onHideHeader = onHideHeader,
+                        onListen = onListen,
                         onAbout = onAbout
                     )
                 }
@@ -1161,6 +1396,7 @@ private fun HeaderMoreMenu(
     onPaletteChange: (String) -> Unit,
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
+    onListen: () -> Unit,
     onAbout: () -> Unit,
 ) {
     // Actions assigned to the menu plus any preferred bar actions that did not fit this window.
@@ -1207,7 +1443,7 @@ private fun HeaderMoreMenu(
                         } else {
                             runHeaderAction(
                                 action.id, onOpenSearch, onBookmarkJump, onBookmark2Jump,
-                                onStats, onOpenIndex, onToggleFillScreen, onHideHeader
+                                onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen
                             )
                         }
                     }
@@ -1263,6 +1499,7 @@ private fun HeaderBarActions(
     onPaletteChange: (String) -> Unit,
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
+    onListen: () -> Unit,
 ) {
     HeaderActions.forEach { action ->
         if (!isVisible(action.id) || action.id !in visibleBarActionIds) return@forEach
@@ -1286,7 +1523,7 @@ private fun HeaderBarActions(
             onClick = {
                 runHeaderAction(
                     action.id, onOpenSearch, onBookmarkJump, onBookmark2Jump,
-                    onStats, onOpenIndex, onToggleFillScreen, onHideHeader
+                    onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen
                 )
             },
             enabled = enabled,
@@ -1371,6 +1608,7 @@ private fun runHeaderAction(
     onOpenIndex: (Int) -> Unit,
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
+    onListen: () -> Unit,
 ) {
     when (id) {
         "search" -> onOpenSearch()
@@ -1380,6 +1618,7 @@ private fun runHeaderAction(
         "index" -> onOpenIndex(0)
         "fill" -> onToggleFillScreen()
         "hide" -> onHideHeader()
+        "listen" -> onListen()
     }
 }
 
@@ -2127,11 +2366,16 @@ private fun formatTafsirText(raw: String, accent: Color): AnnotatedString = buil
     append(raw.substring(cursor))
 }
 
-/** The single ayah menu. It is opened only by a long press and stays anchored to that press. */
+/**
+ * The single ayah menu, opened by a long press. It sits above the whole ayah when there is room,
+ * else below it, so the selected ayah stays visible; only an ayah too tall for either gets covered,
+ * and then on the roomier side. Horizontally it follows the finger.
+ */
 @Composable
 private fun AyahLongPressMenu(
     ayah: AyahMarker,
     anchor: Offset,
+    ayahBounds: Rect,
     boxWidthPx: Int,
     boxHeightPx: Int,
     bookmarked: Boolean,
@@ -2142,6 +2386,9 @@ private fun AyahLongPressMenu(
     showBookmark2: Boolean,
     onTafsir: () -> Unit,
     onMeanings: () -> Unit,
+    onListenAyah: () -> Unit,
+    onPlayFrom: () -> Unit,
+    onRepeat: () -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -2153,7 +2400,7 @@ private fun AyahLongPressMenu(
     val density = LocalDensity.current
     val margin = with(density) { 10.dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
-    val positionProvider = remember(anchor, boxWidthPx, boxHeightPx, margin, gap) {
+    val positionProvider = remember(anchor, ayahBounds, boxWidthPx, boxHeightPx, margin, gap) {
         object : PopupPositionProvider {
             override fun calculatePosition(
                 anchorBounds: IntRect,
@@ -2164,9 +2411,16 @@ private fun AyahLongPressMenu(
                 // The long-press coordinates are physical pixels within the pager, even in RTL.
                 val x = (anchor.x - popupContentSize.width / 2f)
                     .coerceIn(margin, (boxWidthPx - popupContentSize.width - margin).coerceAtLeast(margin))
-                val above = anchor.y - popupContentSize.height - gap
-                val y = (if (above >= margin) above else anchor.y + gap)
-                    .coerceIn(margin, (boxHeightPx - popupContentSize.height - margin).coerceAtLeast(margin))
+                val h = popupContentSize.height
+                val above = ayahBounds.top - h - gap
+                val below = ayahBounds.bottom + gap
+                val y = when {
+                    above >= margin -> above
+                    below + h <= boxHeightPx - margin -> below
+                    // Neither fits: cover as little as possible, on the roomier side.
+                    ayahBounds.top > boxHeightPx - ayahBounds.bottom -> margin
+                    else -> boxHeightPx - h - margin
+                }.coerceIn(margin, (boxHeightPx - h - margin).coerceAtLeast(margin))
                 return IntOffset(
                     (anchorBounds.left + x.roundToInt())
                         .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
@@ -2256,38 +2510,64 @@ private fun AyahLongPressMenu(
                     modifier = Modifier.padding(top = 4.dp),
                 )
 
-                MenuSectionLabel("استكشف الآية")
+                // One compact row: reading the ayah (green) and listening to it (blue). The menu
+                // used to take three labelled sections and covered the ayah it was opened on.
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
-                    ReadingAction(
+                    CompactAyahAction(
                         modifier = Modifier.weight(1f),
                         title = "التفسير",
-                        subtitle = "التفسير الميسر",
                         icon = Icons.AutoMirrored.Filled.MenuBook,
+                        tint = MaterialTheme.colorScheme.primary,
+                        maxLines = 2,
                         onClick = onTafsir,
                     )
-                    ReadingAction(
+                    CompactAyahAction(
                         modifier = Modifier.weight(1f),
                         title = "المعاني",
-                        subtitle = "غريب القرآن",
                         icon = Icons.AutoMirrored.Outlined.ManageSearch,
+                        tint = MaterialTheme.colorScheme.primary,
+                        maxLines = 2,
                         onClick = onMeanings,
+                    )
+                    CompactAyahAction(
+                        modifier = Modifier.weight(1f),
+                        title = "الآية وحدها",
+                        icon = Icons.Filled.Headphones,
+                        tint = StatusBlueColor,
+                        maxLines = 2,
+                        onClick = onListenAyah,
+                    )
+                    CompactAyahAction(
+                        modifier = Modifier.weight(1f),
+                        title = "من هنا",
+                        icon = Icons.Filled.PlayArrow,
+                        tint = StatusBlueColor,
+                        maxLines = 2,
+                        onClick = onPlayFrom,
+                    )
+                    CompactAyahAction(
+                        modifier = Modifier.weight(1f),
+                        title = "التكرار",
+                        icon = Icons.Filled.Repeat,
+                        tint = StatusBlueColor,
+                        maxLines = 2,
+                        onClick = onRepeat,
                     )
                 }
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 11.dp)
+                        .padding(vertical = 8.dp)
                         .height(1.dp)
                         .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)),
                 )
 
-                MenuSectionLabel("إجراءات سريعة")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -2346,76 +2626,13 @@ private fun AyahLongPressMenu(
 }
 
 @Composable
-private fun MenuSectionLabel(title: String) {
-    Text(
-        text = title,
-        modifier = Modifier.padding(top = 10.dp, bottom = 6.dp),
-        style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.82f),
-    )
-}
-
-@Composable
-private fun ReadingAction(
-    modifier: Modifier,
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-) {
-    Surface(
-        modifier = modifier
-            .defaultMinSize(minHeight = 56.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(30.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun CompactAyahAction(
     modifier: Modifier,
     title: String,
     icon: ImageVector,
     tint: Color,
     selected: Boolean = false,
+    maxLines: Int = 1,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -2450,7 +2667,8 @@ private fun CompactAyahAction(
                 modifier = Modifier.padding(top = 2.dp),
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
+                textAlign = TextAlign.Center,
+                maxLines = maxLines,
             )
         }
     }

@@ -6,6 +6,8 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Search
@@ -36,6 +38,10 @@ internal val HeaderActions = listOf(
     HeaderAction(
         "search", "البحث", "بحث في نص المصحف وأسماء السور.",
         Icons.Outlined.Search, Icons.Filled.Search,
+    ),
+    HeaderAction(
+        "listen", "الاستماع للتلاوة", "تشغيل التلاوة من أول آية في الصفحة.",
+        Icons.Outlined.Headphones, Icons.Filled.Headphones,
     ),
     HeaderAction(
         "bookmark", "العلامة المرجعية", "الانتقال إلى الفاصل الذهبي المحفوظ.",

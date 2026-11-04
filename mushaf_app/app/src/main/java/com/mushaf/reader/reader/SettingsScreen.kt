@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Menu
@@ -67,6 +69,7 @@ import com.mushaf.reader.ui.components.MushafIconBadge
 import com.mushaf.reader.ui.components.MushafPanel
 import com.mushaf.reader.ui.components.MushafSectionHeader
 import com.mushaf.reader.data.ReadingStore
+import com.mushaf.reader.recitation.MobileDataPolicy
 import com.mushaf.reader.ui.components.MushafSegmentedTabs
 import com.mushaf.reader.ui.components.MushafSoftDivider
 import com.mushaf.reader.ui.components.MushafTopBar
@@ -86,6 +89,8 @@ fun SettingsScreen(
     onPaletteChange: (String) -> Unit,
     isInBar: (String) -> Boolean,
     onSetInBar: (String, Boolean) -> Unit,
+    /** Actions placed on the bar that the reader's current window has no room for. */
+    barOverflow: Set<String>,
     buttonColor: (String) -> String,
     onButtonColorChange: (String, String) -> Unit,
     bigButtons: Boolean,
@@ -151,6 +156,9 @@ fun SettingsScreen(
     onBackup: () -> Unit,
     onAbout: () -> Unit,
     onClearAllStats: () -> Unit,
+    mobileDataPolicy: MobileDataPolicy,
+    onMobileDataPolicyChange: (MobileDataPolicy) -> Unit,
+    onOpenDownloads: () -> Unit,
     onBack: () -> Unit,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
@@ -372,7 +380,7 @@ fun SettingsScreen(
                 1 -> SettingsTabScroll {
                 SettingsPanel(
                     title = "أزرار رأس الصفحة",
-                    body = "لكل عملية: إظهارها، ومكانها المفضّل، ولونها في الشريط. تنتقل الأدوات الزائدة إلى قائمة المزيد على الشاشة الضيقة.",
+                    body = "لكل عملية: إظهارها، ومكانها المفضّل، ولونها في الشريط. إذا ضاق الشريط بقي فيه أولاً زرّا عرض الصفحة وتوسيع القراءة ثم العلامة المرجعية، وانتقل الباقي إلى قائمة المزيد.",
                     icon = Icons.Filled.MoreVert
                 ) {
                     MenuLocationHint()
@@ -392,6 +400,7 @@ fun SettingsScreen(
                                 inBar = isInBar(action.id),
                                 onSelected = { onSetInBar(action.id, it) }
                             )
+                            if (isInBar(action.id) && action.id in barOverflow) BarOverflowNote()
                             if (isInBar(action.id)) {
                                 ColorChoiceRow(
                                     title = "لونه في الشريط",
@@ -465,6 +474,24 @@ fun SettingsScreen(
                 }
                 }
                 else -> SettingsTabScroll {
+                SettingsPanel(
+                    title = "التلاوة",
+                    body = "بيانات الجوال، والسور المنزّلة للاستماع دون اتصال.",
+                    icon = Icons.Outlined.Headphones
+                ) {
+                    MobileDataChoiceRow(
+                        selected = mobileDataPolicy,
+                        onSelected = onMobileDataPolicyChange
+                    )
+                    SoftDivider()
+                    ActionRow(
+                        icon = Icons.Outlined.Download,
+                        title = "تنزيل التلاوة",
+                        body = "تنزيل سورة أو جزء أو المصحف كاملاً، وإدارة ما على الجهاز.",
+                        onClick = onOpenDownloads
+                    )
+                }
+
                 SettingsPanel(
                     title = "معلومات التطبيق",
                     body = "النسخ الاحتياطي، مصدر المصحف، الخصوصية، وطرق التواصل.",
@@ -800,6 +827,90 @@ private fun ThemeChoiceTile(
             color = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+/** Whether recitation audio may use mobile data. */
+@Composable
+private fun MobileDataChoiceRow(
+    selected: MobileDataPolicy,
+    onSelected: (MobileDataPolicy) -> Unit,
+) {
+    val choices = listOf(
+        MobileDataPolicy.ASK to "اسأل أول مرة",
+        MobileDataPolicy.ALLOW to "مسموح",
+        MobileDataPolicy.WIFI_ONLY to "الشبكة اللاسلكية فقط",
+    )
+    var expanded by remember { mutableStateOf(false) }
+    val accent = MaterialTheme.colorScheme.primary
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "بيانات الجوال",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "التلاوة نحو ميغابايت في الدقيقة. ما سُمع أو نُزِّل لا يُحمَّل مرة أخرى.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Box {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = accent.copy(alpha = 0.10f),
+                border = BorderStroke(1.dp, accent.copy(alpha = 0.5f)),
+                modifier = Modifier.clickable { expanded = true }
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = choices.first { it.first == selected }.second,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = accent
+                    )
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = "اختيار", tint = accent)
+                }
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                choices.forEach { (policy, label) ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        trailingIcon = if (policy == selected) {
+                            { Icon(Icons.Filled.Check, contentDescription = null) }
+                        } else null,
+                        onClick = {
+                            expanded = false
+                            onSelected(policy)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Shown under an action placed on the bar that the reader's window has no room for, so the
+ *  choice does not look as if it never saved. */
+@Composable
+private fun BarOverflowNote() {
+    Text(
+        text = "لا يتّسع له الشريط على هذه الشاشة الآن، فهو في قائمة المزيد. انقل زرّاً آخر إلى القائمة ليظهر في الشريط.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp)
+    )
 }
 
 /** Where one header action lives: a button on the bar itself, or a line in the More menu. */

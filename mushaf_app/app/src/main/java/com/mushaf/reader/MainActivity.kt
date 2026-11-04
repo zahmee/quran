@@ -90,12 +90,15 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         updates.onForeground()
+        vm.recitation.onForeground()
     }
 
-    /** Leaving the foreground records the session (start/end time, pages read). */
+    /** Leaving the foreground records the session (start/end time, pages read). Recitation keeps
+     *  playing in its own service; only the page-following stops. */
     override fun onStop() {
         super.onStop()
         vm.commitSession()
+        vm.recitation.onBackground()
     }
 
     override fun onDestroy() {
