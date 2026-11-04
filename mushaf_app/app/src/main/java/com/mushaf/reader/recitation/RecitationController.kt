@@ -3,6 +3,7 @@ package com.mushaf.reader.recitation
 import android.app.Application
 import android.content.ComponentName
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
@@ -16,11 +17,15 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.mushaf.reader.R
 import com.mushaf.reader.data.ReadingStore
 import com.mushaf.reader.data.SurahAyahCounts
+import com.mushaf.reader.data.recitation.AyahClip
 import com.mushaf.reader.data.recitation.AyahRef
 import com.mushaf.reader.data.recitation.AyahSteps
 import com.mushaf.reader.data.recitation.RecitationRepository
 import com.mushaf.reader.data.recitation.Reciter
+import com.mushaf.reader.data.recitation.RepeatPlan
+import com.mushaf.reader.data.recitation.RepeatPlanner
 import com.mushaf.reader.data.recitation.SurahTiming
+import com.mushaf.reader.reader.toArabicDigits
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -65,7 +70,17 @@ class RecitationController(
     /** The ayah being recited; during a surah's opening (isti'adha, basmala) its first ayah. */
     var current by mutableStateOf<AyahRef?>(null)
         private set
+    /** The clip playing when a memorisation run (or a single ayah) is on; null in continuous
+     *  recitation. Carries which repetition of the ayah and of the passage this is. */
+    var clip by mutableStateOf<AyahClip?>(null)
+        private set
     var error by mutableStateOf<String?>(null)
+        private set
+    /** Playback speed; the pitch is kept. */
+    var speed by mutableFloatStateOf(1f)
+        private set
+    /** Last repetition counts chosen, offered again the next time (ayah times, passage times). */
+    var repeatDefaults by mutableStateOf(7 to 1)
         private set
 
     private var controller: MediaController? = null
@@ -77,6 +92,15 @@ class RecitationController(
     private var playJob: Job? = null
     private val timings = HashMap<Pair<Int, Int>, SurahTiming>()
     private val timingLoads = HashMap<Pair<Int, Int>, Job>()
+    /** The plan being played, to rebuild it for another reciter. */
+    private var plan: RepeatPlan? = null
+
+    init {
+        scope.launch {
+            store.recitationSpeed()?.let { speed = it }
+            store.recitationRepeat()?.let { repeatDefaults = it }
+        }
+    }
 
     /** Start reciting at [ref] and carry on through the following surahs. */
     fun playFrom(ref: AyahRef) {
@@ -84,6 +108,8 @@ class RecitationController(
         active = true
         buffering = true
         current = ref
+        clip = null
+        plan = null
         playJob?.cancel()
         playJob = scope.launch {
             val chosen = ensureReciter() ?: run { buffering = false; return@launch }
@@ -100,10 +126,70 @@ class RecitationController(
             withController { c ->
                 val items = (ref.surah..SurahAyahCounts.SURAH_COUNT).map { mediaItem(chosen, it) }
                 c.setMediaItems(items, /* startIndex = */ 0, start)
+                c.repeatMode = Player.REPEAT_MODE_OFF
+                c.setPlaybackSpeed(speed)
                 c.prepare()
                 c.play()
             }
         }
+    }
+
+    /** Hear [ref] alone, then stop. */
+    fun listenTo(ref: AyahRef) = playPlan(RepeatPlan.single(ref))
+
+    /**
+     * Play a memorisation run: each ayah of the passage cut out of the surah file as its own clip,
+     * repeated as [RepeatPlan] says. The whole run is the playlist, so it keeps its count in the
+     * background even if the activity is gone; an endless run loops the playlist.
+     */
+    fun playPlan(passage: RepeatPlan) {
+        error = null
+        active = true
+        buffering = true
+        current = AyahRef(passage.surah, passage.fromAyah)
+        clip = null
+        plan = passage
+        if (passage.ayahTimes > 1 || passage.rangeTimes != 1) {
+            repeatDefaults = passage.ayahTimes to passage.rangeTimes
+            scope.launch { store.setRecitationRepeat(passage.ayahTimes, passage.rangeTimes) }
+        }
+        playJob?.cancel()
+        playJob = scope.launch {
+            val chosen = ensureReciter() ?: run { buffering = false; return@launch }
+            val timing = try {
+                timingFor(chosen.id, passage.surah)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = NETWORK_ERROR
+                buffering = false
+                return@launch
+            }
+            if (RepeatPlanner.clipCount(passage) > RepeatPlanner.MAX_CLIPS) {
+                error = TOO_LONG_ERROR
+                buffering = false
+                return@launch
+            }
+            val clips = RepeatPlanner.clips(passage, timing, chosen.id)
+            if (clips.isEmpty()) {
+                error = PLAYBACK_ERROR
+                buffering = false
+                return@launch
+            }
+            withController { c ->
+                c.setMediaItems(clips.map { clipItem(chosen, it) }, /* startIndex = */ 0, 0L)
+                c.repeatMode = if (passage.endless) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
+                c.setPlaybackSpeed(speed)
+                c.prepare()
+                c.play()
+            }
+        }
+    }
+
+    fun changeSpeed(value: Float) {
+        speed = value
+        controller?.setPlaybackSpeed(value)
+        scope.launch { store.setRecitationSpeed(value) }
     }
 
     fun togglePlay() {
@@ -122,15 +208,30 @@ class RecitationController(
     }
 
     fun next() {
+        if (stepClip(forward = true)) return
         val at = current ?: return
         val target = AyahSteps.next(at) ?: return
         seekOrRestart(at, target)
     }
 
     fun previous() {
+        if (stepClip(forward = false)) return
         val at = current ?: return
         val target = AyahSteps.previous(at) ?: return
         seekOrRestart(at, target)
+    }
+
+    /** In a memorisation run, next/previous move by ayah, skipping the remaining repetitions.
+     *  Returns false when the playlist is not a run. */
+    private fun stepClip(forward: Boolean): Boolean {
+        val c = controller ?: return false
+        if (AyahClip.fromMediaId(c.currentMediaItem?.mediaId) == null) return false
+        val clips = (0 until c.mediaItemCount).map { AyahClip.fromMediaId(c.getMediaItemAt(it).mediaId) }
+        val index = c.currentMediaItemIndex
+        val target = if (forward) RepeatPlanner.nextAyahStart(clips, index)
+        else RepeatPlanner.previousAyahStart(clips, index)
+        if (target != null) c.seekTo(target, 0L)
+        return true
     }
 
     /** Stop and hide the bar. */
@@ -144,6 +245,8 @@ class RecitationController(
         isPlaying = false
         buffering = false
         current = null
+        clip = null
+        plan = null
         error = null
         updateTicker()
     }
@@ -157,7 +260,22 @@ class RecitationController(
         reciter = choice
         scope.launch { store.setRecitationReciterId(choice.id) }
         val at = current
-        if (active && at != null) playFrom(at)
+        if (!active || at == null) return
+        // A run carries on from the ayah it had reached, with the same counts.
+        val passage = plan ?: controller?.let { planFromPlaylist(it) }
+        if (passage != null && clip != null) {
+            playPlan(passage.copy(fromAyah = at.ayah.coerceIn(passage.fromAyah, passage.toAyah)))
+        } else {
+            playFrom(at)
+        }
+    }
+
+    /** Rebuilds the plan of a run this controller did not start (it outlived the activity). */
+    private fun planFromPlaylist(c: MediaController): RepeatPlan? {
+        if (c.mediaItemCount == 0) return null
+        val first = AyahClip.fromMediaId(c.getMediaItemAt(0).mediaId) ?: return null
+        val last = AyahClip.fromMediaId(c.getMediaItemAt(c.mediaItemCount - 1).mediaId) ?: return null
+        return RepeatPlan(first.surah, first.ayah, last.ayah, first.ayahTimes, first.rangeTimes)
     }
 
     /** The reader is on screen: reconnect (picking up background playback) and follow along. */
@@ -283,10 +401,13 @@ class RecitationController(
 
     /** After (re)connecting: show the bar for a recitation that kept playing without us. */
     private fun adoptPlayerState(c: MediaController) {
-        val playing = parseMediaId(c.currentMediaItem?.mediaId) ?: return
+        val id = c.currentMediaItem?.mediaId
+        val playing = parseMediaId(id) ?: AyahClip.fromMediaId(id)?.let { it.reciterId to it.surah }
+            ?: return
         active = true
         isPlaying = c.isPlaying
         buffering = c.playbackState == Player.STATE_BUFFERING
+        speed = c.playbackParameters.speed
         if (reciter?.id != playing.first) {
             scope.launch {
                 loadReciters()?.firstOrNull { it.id == playing.first }?.let { reciter = it }
@@ -337,6 +458,13 @@ class RecitationController(
 
     private fun updatePosition() {
         val c = controller ?: return
+        // A clip names its ayah outright.
+        AyahClip.fromMediaId(c.currentMediaItem?.mediaId)?.let { now ->
+            if (now != clip) clip = now
+            if (now.ref != current) current = now.ref
+            return
+        }
+        clip = null
         val (reciterId, surah) = parseMediaId(c.currentMediaItem?.mediaId) ?: return
         val timing = timings[reciterId to surah]
         if (timing == null) {
@@ -366,6 +494,26 @@ class RecitationController(
             )
             .build()
 
+    private fun clipItem(reciter: Reciter, clip: AyahClip): MediaItem =
+        MediaItem.Builder()
+            .setMediaId(clip.mediaId())
+            .setUri(reciter.surahUrl(clip.surah))
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(clip.startMs)
+                    .setEndPositionMs(clip.endMs)
+                    .build()
+            )
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle("سورة ${surahName(clip.surah)} • الآية ${clip.ayah.toArabicDigits()}")
+                    .setArtist(reciter.name)
+                    .setAlbumTitle(app.getString(R.string.app_name))
+                    .build()
+            )
+            .build()
+
+    /** Continuous recitation's media id: "reciter:surah". */
     private fun parseMediaId(id: String?): Pair<Int, Int>? {
         val parts = id?.split(':') ?: return null
         if (parts.size != 2) return null
@@ -383,6 +531,7 @@ class RecitationController(
         private const val LIST_ERROR = "تعذّر تحميل قائمة القرّاء. تحقّق من الاتصال بالإنترنت."
         private const val PLAYBACK_ERROR = "تعذّر تشغيل التلاوة."
         private const val SERVICE_ERROR = "تعذّر تشغيل خدمة التلاوة."
+        private const val TOO_LONG_ERROR = "المقطع طويل على هذا العدد من التكرار. قلّل الآيات أو مرات التكرار."
         private val NETWORK_CODES = setOf(
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,

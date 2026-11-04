@@ -194,6 +194,9 @@ class ReadingStore(private val context: Context) {
     private val keyUpdateCheckedAt = longPreferencesKey("update_checked_at")
     // The chosen recitation (an MP3Quran read id). Device-local like the update nudge.
     private val keyRecitationReciterId = intPreferencesKey("recitation_reciter_id")
+    private val keyRecitationSpeed = floatPreferencesKey("recitation_speed")
+    private val keyRecitationAyahTimes = intPreferencesKey("recitation_ayah_times")
+    private val keyRecitationRangeTimes = intPreferencesKey("recitation_range_times")
     private val keyUpdateDismissedVersion = intPreferencesKey("update_dismissed_version")
     private val keyUpdateDismissedAt = longPreferencesKey("update_dismissed_at")
 
@@ -515,6 +518,26 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setRecitationReciterId(id: Int) {
         context.dataStore.edit { it[keyRecitationReciterId] = id }
+    }
+
+    suspend fun recitationSpeed(): Float? = context.dataStore.data.first()[keyRecitationSpeed]
+
+    suspend fun setRecitationSpeed(value: Float) {
+        context.dataStore.edit { it[keyRecitationSpeed] = value }
+    }
+
+    /** Last repetition counts: (each ayah, the whole passage; 0 = endless). */
+    suspend fun recitationRepeat(): Pair<Int, Int>? {
+        val prefs = context.dataStore.data.first()
+        val ayah = prefs[keyRecitationAyahTimes] ?: return null
+        return ayah to (prefs[keyRecitationRangeTimes] ?: 1)
+    }
+
+    suspend fun setRecitationRepeat(ayahTimes: Int, rangeTimes: Int) {
+        context.dataStore.edit {
+            it[keyRecitationAyahTimes] = ayahTimes
+            it[keyRecitationRangeTimes] = rangeTimes
+        }
     }
 
     suspend fun setVisitedPages(pages: Set<Int>) {

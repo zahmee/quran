@@ -61,7 +61,9 @@ import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.filled.Share
@@ -145,6 +147,7 @@ import com.mushaf.reader.ui.theme.pageRecolor
 import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.QuranPagePosition
 import com.mushaf.reader.data.recitation.AyahRef
+import com.mushaf.reader.data.recitation.RepeatPlan
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -175,6 +178,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     var showBackup by remember { mutableStateOf(false) }
     var headerVisible by remember { mutableStateOf(true) }
     var showReciterPicker by remember { mutableStateOf(false) }
+    // The ayah the memorisation sheet starts from, while it is open.
+    var repeatFrom by remember { mutableStateOf<AyahRef?>(null) }
     val recitation = viewModel.recitation
     val selected = viewModel.selectedAyah
 
@@ -337,6 +342,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     verticalPaging = viewModel.verticalPaging,
                     readerVisible = canRead,
                     updates = updates,
+                    onOpenRepeat = { repeatFrom = it },
                 )
 
                 // Recitation bar: below the page rather than over it, so no line is covered.
@@ -348,6 +354,19 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                         isPlaying = recitation.isPlaying,
                         buffering = recitation.buffering,
                         error = recitation.error,
+                        speed = recitation.speed,
+                        repeatLabel = recitation.clip?.let { c ->
+                            when {
+                                // "٣ من ٧" reads unambiguously; a slash between Arabic digits
+                                // does not.
+                                c.ayahTimes > 1 ->
+                                    "${c.ayahPass.toArabicDigits()} من ${c.ayahTimes.toArabicDigits()}"
+                                c.rangeTimes > 1 ->
+                                    "${c.rangePass.toArabicDigits()} من ${c.rangeTimes.toArabicDigits()}"
+                                c.rangeTimes == RepeatPlan.ENDLESS -> "∞"
+                                else -> null
+                            }
+                        },
                         onToggle = recitation::togglePlay,
                         onPrevious = recitation::previous,
                         onNext = recitation::next,
@@ -356,6 +375,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                             recitation.requestReciters()
                             showReciterPicker = true
                         },
+                        onSpeed = recitation::changeSpeed,
+                        onRepeat = { repeatFrom = recitingAyah },
                     )
                 }
             }
@@ -419,6 +440,28 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     showGoTo = false
                     scope.launch { pagerState.scrollToPage((n - 1).coerceIn(0, pageCount - 1)) }
                 }
+            )
+        }
+
+        repeatFrom?.let { from ->
+            val page = viewModel.markerFor(from)?.page
+            val pageLastAyah = page?.let { p ->
+                viewModel.markersForPage(p).filter { it.surahNumber == from.surah }
+                    .maxOfOrNull { it.ayahNumber }
+            }
+            val (ayahTimes, rangeTimes) = recitation.repeatDefaults
+            RepeatSheet(
+                surahName = viewModel.surahNameAr(from.surah),
+                surahAyahCount = viewModel.surahAyahCount(from.surah),
+                fromAyah = from.ayah,
+                pageLastAyah = pageLastAyah,
+                initialAyahTimes = ayahTimes,
+                initialRangeTimes = rangeTimes,
+                onStart = { toAyah, each, whole ->
+                    repeatFrom = null
+                    recitation.playPlan(RepeatPlan(from.surah, from.ayah, toAyah, each, whole))
+                },
+                onDismiss = { repeatFrom = null },
             )
         }
 
@@ -620,6 +663,7 @@ private fun ReaderPager(
     verticalPaging: Boolean,
     readerVisible: Boolean,
     updates: AppUpdateUi?,
+    onOpenRepeat: (AyahRef) -> Unit,
 ) {
     var anchor by remember { mutableStateOf(Offset.Zero) }
     var longPressAyah by remember { mutableStateOf<AyahMarker?>(null) }
@@ -741,11 +785,20 @@ private fun ReaderPager(
                     viewModel.loadExplanation(ayah)
                     explanationRequest = ExplanationRequest(ayah, ExplanationTab.Meanings)
                 },
-                reciterName = viewModel.recitation.reciter?.name,
+                onListenAyah = {
+                    longPressAyah = null
+                    viewModel.clearSelection()
+                    viewModel.recitation.listenTo(AyahRef(ayah.surahNumber, ayah.ayahNumber))
+                },
                 onPlayFrom = {
                     longPressAyah = null
                     viewModel.clearSelection()
                     viewModel.recitation.playFrom(AyahRef(ayah.surahNumber, ayah.ayahNumber))
+                },
+                onRepeat = {
+                    longPressAyah = null
+                    viewModel.clearSelection()
+                    onOpenRepeat(AyahRef(ayah.surahNumber, ayah.ayahNumber))
                 },
                 onClose = {
                     longPressAyah = null
@@ -2215,8 +2268,9 @@ private fun AyahLongPressMenu(
     showBookmark2: Boolean,
     onTafsir: () -> Unit,
     onMeanings: () -> Unit,
-    reciterName: String?,
+    onListenAyah: () -> Unit,
     onPlayFrom: () -> Unit,
+    onRepeat: () -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -2355,12 +2409,34 @@ private fun AyahLongPressMenu(
                 }
 
                 MenuSectionLabel("الاستماع")
-                ReadingAction(
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    title = "تشغيل من هذه الآية",
-                    subtitle = reciterName ?: "يستمر إلى ما بعدها من السور",
-                    icon = Icons.Filled.PlayArrow,
-                    onClick = onPlayFrom,
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ReadingAction(
+                        modifier = Modifier.weight(1f),
+                        title = "الآية وحدها",
+                        subtitle = "ثم تتوقف",
+                        icon = Icons.Filled.Headphones,
+                        onClick = onListenAyah,
+                    )
+                    ReadingAction(
+                        modifier = Modifier.weight(1f),
+                        title = "من هنا",
+                        subtitle = "وتستمر بعدها",
+                        icon = Icons.Filled.PlayArrow,
+                        onClick = onPlayFrom,
+                    )
+                }
+                ReadingAction(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    title = "التكرار والحفظ",
+                    subtitle = "كل آية عدداً من المرات، والمقطع كله",
+                    icon = Icons.Filled.Repeat,
+                    onClick = onRepeat,
                 )
 
                 Box(
