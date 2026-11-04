@@ -34,9 +34,18 @@ OUT = ROOT / "mushaf_app" / "app" / "src" / "main" / "assets" / "data" / "ayah_r
 EXPECTED_AYAHS = 6236
 EXPECTED_PAGES = 604
 LINE_HEIGHT = 118.0
-BODY_LEFT = 39.5
-BODY_RIGHT = 1066.5
+# Text ink on body lines runs from x≈10 to x≈1096 (811 lines measured on 2026-11-04); the old
+# 39.5/1066.5 clipped the first and last word of every full line, and halved a line-end marker.
+BODY_LEFT = 8.0
+BODY_RIGHT = 1098.0
 BAND_HEIGHT = 101.5
+# An ayah marker's ring reaches 27-29 px either side of its centre (all 6236 measured). Regions
+# meet at a marker's LEFT edge — where it ends in this right-to-left script — so an ayah holds
+# its own marker whole and none of the previous one. Meeting at the centre showed two halves.
+MARKER_HALF_WIDTH = 30.0
+# The decorated opening pages: short centred lines inside an ornament, measured line by line.
+DECORATED_PAGES = (1, 2)
+DECORATED_FALLBACK = (185.0, 921.0)
 
 
 def load_json(path: Path):
@@ -62,9 +71,12 @@ def page_top_line(endpoints: list[dict]) -> float:
 
 
 def has_ink_left_of_marker(image: Image.Image, x: float, y: float, left: float) -> bool:
-    """Return whether the next ayah continues after a marker on the same line."""
+    """Return whether the next ayah continues after a marker on the same line.
+
+    Looks only past the marker's ring (x is its centre), so the ring is never taken for text.
+    """
     x0 = max(int(left + 12), 0)
-    x1 = min(int(x - 17), image.width)
+    x1 = min(int(x - MARKER_HALF_WIDTH - 2), image.width)
     y0 = max(int(y - 35), 0)
     y1 = min(int(y + 35), image.height)
     if x1 <= x0 or y1 <= y0:
@@ -74,15 +86,31 @@ def has_ink_left_of_marker(image: Image.Image, x: float, y: float, left: float) 
     return dark_pixels >= 12
 
 
+def line_ink_extent(gray: Image.Image, y: float) -> tuple[float, float] | None:
+    """Leftmost and rightmost text ink on the line centred at y (decorated pages only)."""
+    px = gray.load()
+    y0, y1 = max(int(y - 40), 0), min(int(y + 41), gray.height)
+    cols = [
+        x for x in range(gray.width)
+        if any(px[x, row] < 140 for row in range(y0, y1, 4))
+    ]
+    if not cols:
+        return None
+    return float(min(cols) - 2), float(max(cols) + 2)
+
+
 def region_segments(
     start_x: float,
     start_y: float,
     end_x: float,
     end_y: float,
-    left: float,
-    right: float,
+    extent,
     keep_first_tail: bool,
 ) -> list[tuple[float, float, float]]:
+    """Line bands from start_x (where the ayah begins) to end_x (its own marker's left edge).
+
+    extent(y) gives the (left, right) text edges of the line at y.
+    """
     if abs(end_y - start_y) < LINE_HEIGHT * 0.5:
         x0, x1 = sorted((start_x, end_x))
         return [(x0, end_y, x1 - x0)] if x1 - x0 > 6 else []
@@ -91,6 +119,7 @@ def region_segments(
     segments: list[tuple[float, float, float]] = []
     for step in range(line_steps + 1):
         y = start_y + step * (end_y - start_y) / line_steps
+        left, right = extent(y)
         if step == 0:
             if not keep_first_tail:
                 continue
@@ -142,42 +171,52 @@ def main() -> None:
     for page in range(1, EXPECTED_PAGES + 1):
         page_endpoints = by_page[page]
         top_line = page_top_line(page_endpoints)
-        left, right = (185.0, 921.0) if page == 1 else (BODY_LEFT, BODY_RIGHT)
         page_image = Image.open(PAGE_IMAGES / f"{page}.webp")
+        decorated_gray = page_image.convert("L") if page in DECORATED_PAGES else None
+
+        def extent(y: float, gray=decorated_gray) -> tuple[float, float]:
+            if gray is None:
+                return BODY_LEFT, BODY_RIGHT
+            return line_ink_extent(gray, y) or DECORATED_FALLBACK
 
         for index, endpoint in enumerate(page_endpoints):
             key = endpoint["verse_key"]
             source = canonical_by_key[key]
             end_x, end_y = float(endpoint["x"]), float(endpoint["y"])
+            # The ayah ends where its own marker does, so the whole marker is inside it.
+            end_edge = end_x - MARKER_HALF_WIDTH
             ayah_number = int(endpoint["ayah"])
 
             if ayah_number == 1:
                 if page in (1, 2) or int(endpoint["surah"]) == 9:
-                    start_x, start_y = right, end_y
+                    start_y = end_y
                 elif index == 0:
                     # Page-opening surah: title, basmala, then Quran body.
-                    start_x, start_y = right, top_line + 2 * LINE_HEIGHT
+                    start_y = top_line + 2 * LINE_HEIGHT
                 else:
                     # Mid-page surah: previous marker, title, basmala, then body.
                     previous = page_endpoints[index - 1]
-                    start_x = right
                     start_y = float(previous["y"]) + 3 * LINE_HEIGHT
+                start_x = extent(start_y)[1]
                 keep_first_tail = True
             elif index == 0:
                 # Page-boundary inspection found no ayah text continuing from the
                 # preceding image; this ayah starts at the first line's right edge.
-                start_x, start_y = right, top_line
+                start_y = top_line
+                start_x = extent(start_y)[1]
                 keep_first_tail = True
             else:
                 previous = page_endpoints[index - 1]
-                start_x, start_y = float(previous["x"]), float(previous["y"])
+                previous_x, start_y = float(previous["x"]), float(previous["y"])
+                # Begin just past the previous ayah's marker, leaving that marker outside.
+                start_x = previous_x - MARKER_HALF_WIDTH
                 keep_first_tail = True
                 if end_y - start_y >= LINE_HEIGHT * 0.5:
                     verified_blank = (
                         audit_status[key] == "START_ANCHOR_OK_EXTRA_BLANK_TAIL_RECT"
                     )
                     keep_first_tail = not verified_blank and has_ink_left_of_marker(
-                        page_image, start_x, start_y, left
+                        page_image, previous_x, start_y, extent(start_y)[0]
                     )
                     if not keep_first_tail:
                         omitted_blank_tails += 1
@@ -187,7 +226,7 @@ def main() -> None:
                             omitted_inferred_blank_tails += 1
 
             segments = region_segments(
-                start_x, start_y, end_x, end_y, left, right, keep_first_tail
+                start_x, start_y, end_edge, end_y, extent, keep_first_tail
             )
             rects = [
                 {
@@ -202,11 +241,11 @@ def main() -> None:
                 for x, y, width in segments
             ]
             if not rects:
-                # A very short single-line ayah still needs a reliable touch target.
+                # A very short single-line ayah still needs a reliable touch target: its marker.
                 rects = [{
-                    "x": round(clamp(end_x - 24, 0, page_image.width)),
+                    "x": round(clamp(end_edge, 0, page_image.width)),
                     "y": round(clamp(end_y - BAND_HEIGHT / 2, 0, page_image.height)),
-                    "w": 48,
+                    "w": round(2 * MARKER_HALF_WIDTH),
                     "h": round(BAND_HEIGHT),
                 }]
 
@@ -243,6 +282,8 @@ def main() -> None:
         "params": {
             "left_margin": BODY_LEFT,
             "right_margin": BODY_RIGHT,
+            "marker_half_width": MARKER_HALF_WIDTH,
+            "decorated_pages_measured_per_line": list(DECORATED_PAGES),
             "line_h": LINE_HEIGHT,
             "band_h": BAND_HEIGHT,
             "verified_endpoint_count": EXPECTED_AYAHS,
