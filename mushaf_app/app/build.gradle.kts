@@ -62,8 +62,8 @@ android {
         applicationId = "com.mushaf.reader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 53
-        versionName = "0.9.0"
+        versionCode = 54
+        versionName = "0.10.0"
 
         firebaseResources.forEach { (name, value) -> resValue("string", name, value) }
         buildConfigField("String", "FIREBASE_EMULATOR_HOST", "null")
