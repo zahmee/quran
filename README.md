@@ -52,11 +52,12 @@
   والجزء، وتخصيص أزرار الرأس ومواضعها.
 - **يتكيّف مع الشاشة:** رأس مضغوط في الوضع الأفقي وعلى الشاشات العريضة والمطويات، وخيار لإبعاد
   الأزرار وأطراف الصفحة عن الزوايا الدائرية.
-- **نسخ احتياطي واسترجاع:** ملف واحد يحمل موضع القراءة والعلامات والتقدّم والجلسات والختمات
-  والإعدادات، تحفظه حيث تشاء وتستعيده على أي جهاز.
-- **تحديث من داخل التطبيق:** يخبرك بصدور إصدار أحدث ويترك التنزيل لتطبيق المتجر — دون أن يطلب
-  التطبيق إذن الإنترنت.
-- **خصوصية أولًا:** لا حسابات ولا إعلانات ولا تحليلات؛ التطبيق لا يطلب إذن الإنترنت.
+- **نسخ احتياطي واسترجاع:** نسخة تحمل موضع القراءة والعلامات والتقدّم والجلسات والختمات
+  والإعدادات، في ملف تحفظه حيث تشاء، أو في حساب سحابي اختياري باسم وكلمة مرور مع نسخ تلقائي
+  يومي. الاستعادة تدمج السجل مع ما على الجهاز فلا يخسر الجوال ولا الجهاز اللوحي شيئًا.
+- **تحديث من داخل التطبيق:** يخبرك بصدور إصدار أحدث ويترك التنزيل لتطبيق المتجر.
+- **خصوصية أولًا:** لا إعلانات ولا تحليلات، والقراءة لا تحتاج حسابًا ولا إنترنت؛ الحساب للنسخ
+  السحابي فقط، ولا يطلب بريدًا ولا رقم جوال.
 
 ## التقنيات
 
@@ -160,6 +161,7 @@ python build_ayah_regions.py
 Natlu is an open-source, offline-first Android Mushaf reader built with Kotlin and Jetpack
 Compose. It ships all 604 page images, interactive ayah highlighting, bundled tafsir, full-text
 search over both the Uthmani and imlaei spellings, two bookmarks, reading statistics, khatma
-tracking, six reading themes, horizontal or vertical paging, and single-file backup and restore.
-It requests no internet permission at all. The source code is MIT-licensed; bundled Mushaf imagery
+tracking, six reading themes, horizontal or vertical paging, and backup and restore — to a file,
+or to an optional name-and-password cloud account with a daily automatic upload. Reading never
+needs the network; only cloud backup does. The source code is MIT-licensed; bundled Mushaf imagery
 and Qur'anic datasets are subject to their original rights. See [`NOTICE.md`](NOTICE.md).

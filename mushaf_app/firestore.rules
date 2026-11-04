@@ -1,0 +1,49 @@
+rules_version = '2';
+
+// Cloud backup: every reader sees and writes only their own documents.
+//   users/{uid}                 — the chosen username, for display
+//   users/{uid}/backups/{id}    — one backup's metadata (listed without downloading payloads)
+//   users/{uid}/payloads/{id}   — that backup's gzip JSON, the same bytes as the backup file
+// Backups are written once and never edited, so there is no update rule below them.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+
+      allow read, delete: if isOwner();
+      allow create, update: if isOwner()
+        && request.resource.data.keys().hasOnly(['username', 'createdAt'])
+        && request.resource.data.username is string
+        && request.resource.data.username.size() <= 40
+        && request.resource.data.createdAt is int;
+
+      match /backups/{backupId} {
+        allow read, delete: if isOwner();
+        allow create: if isOwner()
+          && request.resource.data.keys().hasOnly(
+               ['createdAt', 'deviceId', 'deviceName', 'appVersion', 'schemaVersion', 'sizeBytes', 'auto'])
+          && request.resource.data.createdAt is int
+          && request.resource.data.deviceId is string
+          && request.resource.data.deviceId.size() <= 64
+          && request.resource.data.deviceName is string
+          && request.resource.data.deviceName.size() <= 80
+          && request.resource.data.appVersion is string
+          && request.resource.data.appVersion.size() <= 40
+          && request.resource.data.schemaVersion is int
+          && request.resource.data.sizeBytes is int
+          && request.resource.data.sizeBytes <= 900000
+          && request.resource.data.auto is bool;
+      }
+
+      match /payloads/{backupId} {
+        allow read, delete: if isOwner();
+        allow create: if isOwner()
+          && request.resource.data.keys().hasOnly(['data'])
+          && request.resource.data.data is bytes
+          && request.resource.data.data.size() <= 900000;
+      }
+    }
+  }
+}

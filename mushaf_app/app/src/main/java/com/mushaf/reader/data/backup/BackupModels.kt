@@ -43,4 +43,44 @@ data class BackupUiState(
     val error: String? = null,
 )
 
-class BackupException(message: String, cause: Throwable? = null) : Exception(message, cause)
+open class BackupException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/** The cloud could not be reached: worth retrying later, unlike a refusal. */
+class CloudOfflineException(cause: Throwable? = null) :
+    BackupException("تعذر الاتصال بالخادم. تأكد من اتصالك بالإنترنت ثم أعد المحاولة.", cause)
+
+/** One backup stored in the reader's cloud account, as listed without downloading it. */
+data class CloudBackupInfo(
+    val id: String,
+    val createdAt: Long,
+    val deviceId: String,
+    val deviceName: String,
+    val appVersion: String,
+    val sizeBytes: Long,
+    val auto: Boolean,
+    val fromThisDevice: Boolean,
+)
+
+enum class CloudStage {
+    SigningIn,
+    SigningUp,
+    Loading,
+    Uploading,
+    Restoring,
+    Deleting,
+}
+
+data class CloudUiState(
+    /** False when the build carries no Firebase project; the cloud section is then hidden. */
+    val available: Boolean = false,
+    /** The signed-in account's name, or null when signed out. */
+    val username: String? = null,
+    val autoBackup: Boolean = false,
+    val lastUploadAt: Long = 0L,
+    val backups: List<CloudBackupInfo> = emptyList(),
+    val listLoaded: Boolean = false,
+    val busy: Boolean = false,
+    val stage: CloudStage? = null,
+    val message: String? = null,
+    val error: String? = null,
+)

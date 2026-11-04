@@ -297,7 +297,7 @@ private fun OurAppsPanel(onOpenAnaa: () -> Unit) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "يعمل دون إنترنت، بلا حساب أو إعلانات أو اشتراكات.",
+            text = "يعمل دون إنترنت، بلا إعلانات أو اشتراكات، والحساب اختياري للنسخ السحابي فقط.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

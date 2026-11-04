@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,6 +33,7 @@ import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,6 +44,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,11 +54,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mushaf.reader.data.backup.BackupStage
 import com.mushaf.reader.data.backup.BackupUiState
+import com.mushaf.reader.data.backup.CloudUiState
 import com.mushaf.reader.ui.components.MushafIconBadge
 import com.mushaf.reader.ui.components.MushafPanel
 import com.mushaf.reader.ui.components.MushafSoftDivider
@@ -73,10 +78,16 @@ fun BackupScreen(
     onBack: () -> Unit,
 ) {
     val state = viewModel.backupUiState
+    val cloud = viewModel.cloudUiState
     // Providers report backup files under inconsistent MIME types, so filtering by type would hide
     // the very file the user is looking for on some clouds.
     val openableTypes = remember { arrayOf("*/*") }
     var pendingRestore by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var pendingCloudRestore by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmDeleteAccount by rememberSaveable { mutableStateOf(false) }
+
+    // Another device may have uploaded since this screen was last open.
+    LaunchedEffect(cloud.username) { viewModel.refreshCloudBackups() }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(BACKUP_MIME_TYPE)
@@ -94,7 +105,8 @@ fun BackupScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             MushafTopBar(
                 title = "النسخ الاحتياطي",
-                subtitle = "ملف واحد تحفظه أينما شئت",
+                subtitle = if (cloud.available) "في حسابك السحابي أو في ملف تختاره"
+                else "ملف واحد تحفظه أينما شئت",
                 onBack = onBack,
             )
 
@@ -103,13 +115,38 @@ fun BackupScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                item { BackupHero(state = state) }
+                item { BackupHero(state = state, cloud = cloud) }
+
+                if (cloud.available) {
+                    item {
+                        CloudBackupSection(
+                            state = cloud,
+                            onSignIn = viewModel::cloudSignIn,
+                            onSignUp = viewModel::cloudSignUp,
+                            onBackupNow = viewModel::cloudBackupNow,
+                            onAutoBackupChange = viewModel::setCloudAutoBackup,
+                            onRefresh = viewModel::refreshCloudBackups,
+                            onRestore = { pendingCloudRestore = it.id },
+                            onSignOut = viewModel::cloudSignOut,
+                            onDeleteAccount = { confirmDeleteAccount = true },
+                        )
+                    }
+                    item {
+                        AnimatedVisibility(visible = cloud.message != null || cloud.error != null) {
+                            FeedbackPanel(
+                                message = cloud.message,
+                                error = cloud.error,
+                                onDismiss = viewModel::clearCloudFeedback,
+                            )
+                        }
+                    }
+                }
 
                 item { LastBackupPanel(state = state) }
 
                 item {
                     BackupActions(
-                        state = state,
+                        state = state.copy(busy = state.busy || cloud.busy),
                         onExport = {
                             exportLauncher.launch(viewModel.suggestedBackupFileName())
                         },
@@ -127,52 +164,124 @@ fun BackupScreen(
                     }
                 }
 
-                item { PrivacyPanel() }
+                item { PrivacyPanel(cloudAvailable = cloud.available) }
                 item { Spacer(Modifier.height(12.dp)) }
             }
         }
     }
 
     pendingRestore?.let { uri ->
-        AlertDialog(
-            onDismissRequest = { if (!state.busy) pendingRestore = null },
-            icon = { Icon(Icons.Filled.Restore, contentDescription = null) },
-            title = { Text("استعادة هذه النسخة؟") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("ستُستبدل محفوظات القراءة والإشارات والإعدادات الحالية ببيانات الملف المحدد.")
-                    Text(
-                        text = "يُتحقق من الملف بالكامل قبل تغيير أي بيانات محلية، وإذا فشلت العملية " +
-                            "تُعاد بياناتك السابقة كما كانت.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
+        RestoreConfirmDialog(
+            source = null,
+            takeDisplayByDefault = true,
+            busy = state.busy,
+            onConfirm = { takeDisplaySettings ->
+                pendingRestore = null
+                viewModel.importBackup(uri, takeDisplaySettings)
             },
-            confirmButton = {
-                Button(
-                    enabled = !state.busy,
-                    onClick = {
-                        pendingRestore = null
-                        viewModel.importBackup(uri)
-                    },
-                ) { Text("استعادة") }
+            onDismiss = {
+                pendingRestore = null
+                viewModel.backupSelectionCancelled()
             },
-            dismissButton = {
-                TextButton(
-                    enabled = !state.busy,
-                    onClick = {
-                        pendingRestore = null
-                        viewModel.backupSelectionCancelled()
-                    },
-                ) { Text("إلغاء") }
+        )
+    }
+
+    pendingCloudRestore?.let { id ->
+        val backup = cloud.backups.firstOrNull { it.id == id }
+        if (backup == null) {
+            pendingCloudRestore = null
+        } else {
+            RestoreConfirmDialog(
+                source = "نسخة ${backup.deviceName} — ${formatDate(backup.createdAt)}",
+                // The same device's look is what the reader had; another device's rarely fits.
+                takeDisplayByDefault = backup.fromThisDevice,
+                busy = cloud.busy,
+                onConfirm = { takeDisplaySettings ->
+                    pendingCloudRestore = null
+                    viewModel.cloudRestore(backup, takeDisplaySettings)
+                },
+                onDismiss = { pendingCloudRestore = null },
+            )
+        }
+    }
+
+    if (confirmDeleteAccount) {
+        DeleteCloudAccountDialog(
+            busy = cloud.busy,
+            onConfirm = { password ->
+                confirmDeleteAccount = false
+                viewModel.cloudDeleteAccount(password)
             },
+            onDismiss = { confirmDeleteAccount = false },
         )
     }
 }
 
+/**
+ * Asks before folding a backup into this device. Display settings are a separate choice because
+ * a tablet and a phone rarely want the same layout; history is never at stake, since a restore
+ * only ever adds to it.
+ */
 @Composable
-private fun BackupHero(state: BackupUiState) {
+internal fun RestoreConfirmDialog(
+    source: String?,
+    takeDisplayByDefault: Boolean,
+    busy: Boolean,
+    onConfirm: (takeDisplaySettings: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var takeDisplay by rememberSaveable { mutableStateOf(takeDisplayByDefault) }
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        icon = { Icon(Icons.Filled.Restore, contentDescription = null) },
+        title = { Text("استعادة هذه النسخة؟") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (source != null) {
+                    Text(source, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                }
+                Text(
+                    "تُضاف جلسات القراءة والختمات إلى ما على هذا الجهاز دون حذف شيء، " +
+                        "وتنتقل إلى موضع القراءة والعلامات المحفوظة في النسخة."
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .toggleable(value = takeDisplay, role = Role.Checkbox, onValueChange = { takeDisplay = it })
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(checked = takeDisplay, onCheckedChange = null)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("استعادة إعدادات العرض أيضاً", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "الألوان وأزرار الشريط وطريقة عرض الصفحة",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Text(
+                    text = "يُتحقق من النسخة بالكامل قبل تغيير أي بيانات محلية، وإذا فشلت العملية " +
+                        "تُعاد بياناتك السابقة كما كانت.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        },
+        confirmButton = {
+            Button(enabled = !busy, onClick = { onConfirm(takeDisplay) }) { Text("استعادة") }
+        },
+        dismissButton = {
+            TextButton(enabled = !busy, onClick = onDismiss) { Text("إلغاء") }
+        },
+    )
+}
+
+@Composable
+private fun BackupHero(state: BackupUiState, cloud: CloudUiState) {
     val colors = listOf(
         MaterialTheme.colorScheme.primaryContainer,
         MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.72f),
@@ -212,8 +321,13 @@ private fun BackupHero(state: BackupUiState) {
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "ملف صغير تحفظه في جهازك أو في Google Drive أو أي مكان تختاره؛ " +
-                        "لا تُرفع صفحات المصحف أو ملفاته.",
+                    text = if (cloud.available) {
+                        "في حسابك السحابي لتنتقل بين جوالك وجهازك اللوحي، أو في ملف تختار مكانه؛ " +
+                            "لا تُرفع صفحات المصحف أو ملفاته."
+                    } else {
+                        "ملف صغير تحفظه في جهازك أو في Google Drive أو أي مكان تختاره؛ " +
+                            "لا تُرفع صفحات المصحف أو ملفاته."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -224,6 +338,8 @@ private fun BackupHero(state: BackupUiState) {
                     Text(
                         text = when {
                             state.busy -> stageLabel(state.stage)
+                            cloud.username != null && cloud.lastUploadAt > 0L ->
+                                "آخر نسخة سحابية: ${formatDate(cloud.lastUploadAt)}"
                             state.lastBackup != null -> "آخر نسخة: ${formatDate(state.lastBackup.savedAt)}"
                             else -> "لم تُحفظ نسخة بعد"
                         },
@@ -293,7 +409,7 @@ private fun BackupActions(
     onImport: () -> Unit,
 ) {
     MushafPanel {
-        Text("إجراءات النسخة", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text("النسخ في ملف", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(
             text = "احفظ نسخة قبل الانتقال إلى جهاز آخر، ثم افتح الملف نفسه هناك لاستعادتها.",
             style = MaterialTheme.typography.bodySmall,
@@ -343,7 +459,7 @@ private fun BackupActions(
 }
 
 @Composable
-private fun FeedbackPanel(message: String?, error: String?, onDismiss: () -> Unit) {
+internal fun FeedbackPanel(message: String?, error: String?, onDismiss: () -> Unit) {
     val isError = error != null
     val container = if (isError) MaterialTheme.colorScheme.errorContainer
     else MaterialTheme.colorScheme.primaryContainer
@@ -378,7 +494,7 @@ private fun FeedbackPanel(message: String?, error: String?, onDismiss: () -> Uni
 }
 
 @Composable
-private fun PrivacyPanel() {
+private fun PrivacyPanel(cloudAvailable: Boolean) {
     MushafPanel(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -389,9 +505,14 @@ private fun PrivacyPanel() {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("خصوصية واضحة", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text(
-                    text = "التطبيق لا يطلب صلاحية الإنترنت ولا يتصل بأي خادم. الملف يبقى ملكك وحدك " +
-                        "في الموقع الذي تختاره. تشمل النسخة موضع القراءة والإشارات والتقدم والجلسات " +
-                        "والختمات والإعدادات، ولا تشمل صور المصحف أو قاعدة المحتوى.",
+                    text = if (cloudAvailable) {
+                        "لا يتصل التطبيق بالإنترنت إلا للنسخ السحابي، وبعد أن تنشئ حساباً أو تسجّل الدخول " +
+                            "فقط. لا نطلب بريداً ولا رقم جوال؛ يُحفظ في حسابك الاسم الذي اخترته ونسخك، " +
+                            "ويمكنك حذفها كلها من هنا. "
+                    } else {
+                        "التطبيق لا يتصل بأي خادم. "
+                    } + "الملف يبقى ملكك وحدك في الموقع الذي تختاره. تشمل النسخة موضع القراءة " +
+                        "والإشارات والتقدم والجلسات والختمات والإعدادات، ولا تشمل صور المصحف أو قاعدة المحتوى.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -406,12 +527,12 @@ private fun stageLabel(stage: BackupStage?): String = when (stage) {
     null -> "جاهز"
 }
 
-private fun formatDate(time: Long): String {
+internal fun formatDate(time: Long): String {
     if (time <= 0L) return "غير معروف"
     return SimpleDateFormat("yyyy/MM/dd — HH:mm", Locale.forLanguageTag("ar")).format(Date(time))
 }
 
-private fun formatSize(bytes: Long): String = when {
+internal fun formatSize(bytes: Long): String = when {
     bytes <= 0L -> "حجم غير معروف"
     bytes < 1024 -> "$bytes بايت"
     bytes < 1024 * 1024 -> "${"%.1f".format(Locale.US, bytes / 1024.0)} كيلوبايت"
