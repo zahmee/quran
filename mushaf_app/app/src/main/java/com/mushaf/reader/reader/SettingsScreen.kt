@@ -89,6 +89,8 @@ fun SettingsScreen(
     onPaletteChange: (String) -> Unit,
     isInBar: (String) -> Boolean,
     onSetInBar: (String, Boolean) -> Unit,
+    /** Actions placed on the bar that the reader's current window has no room for. */
+    barOverflow: Set<String>,
     buttonColor: (String) -> String,
     onButtonColorChange: (String, String) -> Unit,
     bigButtons: Boolean,
@@ -378,7 +380,7 @@ fun SettingsScreen(
                 1 -> SettingsTabScroll {
                 SettingsPanel(
                     title = "أزرار رأس الصفحة",
-                    body = "لكل عملية: إظهارها، ومكانها المفضّل، ولونها في الشريط. تنتقل الأدوات الزائدة إلى قائمة المزيد على الشاشة الضيقة.",
+                    body = "لكل عملية: إظهارها، ومكانها المفضّل، ولونها في الشريط. إذا ضاق الشريط بقي فيه أولاً زرّا عرض الصفحة وتوسيع القراءة ثم العلامة المرجعية، وانتقل الباقي إلى قائمة المزيد.",
                     icon = Icons.Filled.MoreVert
                 ) {
                     MenuLocationHint()
@@ -398,6 +400,7 @@ fun SettingsScreen(
                                 inBar = isInBar(action.id),
                                 onSelected = { onSetInBar(action.id, it) }
                             )
+                            if (isInBar(action.id) && action.id in barOverflow) BarOverflowNote()
                             if (isInBar(action.id)) {
                                 ColorChoiceRow(
                                     title = "لونه في الشريط",
@@ -894,6 +897,20 @@ private fun MobileDataChoiceRow(
             }
         }
     }
+}
+
+/** Shown under an action placed on the bar that the reader's window has no room for, so the
+ *  choice does not look as if it never saved. */
+@Composable
+private fun BarOverflowNote() {
+    Text(
+        text = "لا يتّسع له الشريط على هذه الشاشة الآن، فهو في قائمة المزيد. انقل زرّاً آخر إلى القائمة ليظهر في الشريط.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp)
+    )
 }
 
 /** Where one header action lives: a button on the bar itself, or a line in the More menu. */
