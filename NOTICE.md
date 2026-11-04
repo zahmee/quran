@@ -32,6 +32,14 @@
 مجمع الملك فهد لطباعة المصحف الشريف. على من يعيد توزيع تلك المواد التحقق من
 شروط المصدر والحصول على الحقوق اللازمة. لا يقدّم هذا الملف إذنًا بإعادة توزيعها.
 
+### التلاوات الصوتية
+
+لا يتضمن المستودع أي ملف صوتي. يجلب التطبيق التلاوات وقائمة القرّاء وجداول مواضع
+الآيات من واجهة [MP3Quran](https://www.mp3quran.net/ar/api) حين يشغّلها المستخدم أو
+ينزّلها، ويحفظها على جهازه فقط. تنص صفحة الخصوصية في الموقع على السماح لأي زائر أو
+مطوّر بنسخ أي مادة واستخدام أي رابط. حقوق التلاوات لأصحابها، ولا تمنح رخصة MIT أي
+حق فيها.
+
 ## Third-party content
 
 The MIT License covers the project source code and original project assets. It does not grant
@@ -48,3 +56,9 @@ These texts and the derived database are third-party content and are not covered
 MIT License. This repository grants no additional right to republish the raw materials or relicense
 them. Redistributors must review the current source terms and contact the Complex when further
 permission clarification is required.
+
+The repository contains no audio. The app fetches recitations, the reciter list and the ayah timing
+tables from the [MP3Quran API](https://www.mp3quran.net/eng/api) when the user plays or downloads
+them, and keeps them on the user's device only. MP3Quran's privacy page states that any visitor or
+developer may copy any material and use any link. The recitations belong to their owners; the MIT
+License grants no rights in them.

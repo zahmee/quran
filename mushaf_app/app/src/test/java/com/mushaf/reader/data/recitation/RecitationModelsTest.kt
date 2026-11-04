@@ -40,6 +40,18 @@ class RecitationModelsTest {
     }
 
     @Test
+    fun `only complete recitations that passed the timing check are offered`() {
+        fun reciter(id: Int, surahs: Int = 114) = Reciter(id, "r$id", "حفص عن عاصم", "https://x/$id/", surahs)
+        assertTrue(RecitationQuality.usable(reciter(123)))          // Alafasy: passed
+        assertEquals(false, RecitationQuality.usable(reciter(119))) // timing misses the pauses
+        assertEquals(false, RecitationQuality.usable(reciter(62)))  // variable bitrate
+        assertEquals(false, RecitationQuality.usable(reciter(5, surahs = 107)))
+        // The default reciter must never be one the check hid.
+        assertEquals(false, com.mushaf.reader.recitation.RecitationController.DEFAULT_RECITER_ID in
+            RecitationQuality.HIDDEN)
+    }
+
+    @Test
     fun `ayah at a position follows the table and the opening is no ayah`() {
         val t = RecitationJson.parseTiming(1, fatihahJson)
         assertNull(t.ayahAt(0))          // isti'adha

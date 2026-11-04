@@ -56,8 +56,11 @@
   والإعدادات، في ملف تحفظه حيث تشاء، أو في حساب سحابي اختياري باسم وكلمة مرور مع نسخ تلقائي
   يومي. الاستعادة تدمج السجل مع ما على الجهاز فلا يخسر الجوال ولا الجهاز اللوحي شيئًا.
 - **تحديث من داخل التطبيق:** يخبرك بصدور إصدار أحدث ويترك التنزيل لتطبيق المتجر.
+- **الاستماع للتلاوة:** أكثر من مئة تلاوة كاملة من MP3Quran، من أي آية وفي الخلفية، مع تظليل الآية
+  وقلب الصفحة معها، والآية وحدها، والتكرار للحفظ (كل آية والمقطع كله)، والسرعة، وتنزيل السورة أو
+  الجزء أو المصحف للاستماع دون اتصال، وخيار لاستخدام بيانات الجوال.
 - **خصوصية أولًا:** لا إعلانات ولا تحليلات، والقراءة لا تحتاج حسابًا ولا إنترنت؛ الحساب للنسخ
-  السحابي فقط، ولا يطلب بريدًا ولا رقم جوال.
+  السحابي فقط، ولا يطلب بريدًا ولا رقم جوال. لا يتصل التطبيق إلا للنسخ السحابي وللتلاوة حين تطلبهما.
 
 ## التقنيات
 
@@ -65,6 +68,8 @@
 - Room لإحصائيات القراءة، وDataStore للتفضيلات والعلامات
 - Coil 3 لتحميل صور الصفحات من أصول التطبيق
 - Play App Update للتحديث داخل التطبيق (عبر تطبيق المتجر، بلا اتصال شبكي من التطبيق نفسه)
+- Media3 (ExoPlayer وMediaSession والتنزيلات) للتلاوة: سور كاملة من MP3Quran مع جدول مواضع الآيات،
+  تُطلب منها الأجزاء اللازمة فقط وتُحفظ على الجهاز
 - Android Gradle Plugin 8.12.3 · Kotlin 2.0.21 · `compileSdk/targetSdk 36` · `minSdk 24`
 
 ## البدء السريع
@@ -162,6 +167,10 @@ Natlu is an open-source, offline-first Android Mushaf reader built with Kotlin a
 Compose. It ships all 604 page images, interactive ayah highlighting, bundled tafsir, full-text
 search over both the Uthmani and imlaei spellings, two bookmarks, reading statistics, khatma
 tracking, six reading themes, horizontal or vertical paging, and backup and restore — to a file,
-or to an optional name-and-password cloud account with a daily automatic upload. Reading never
-needs the network; only cloud backup does. The source code is MIT-licensed; bundled Mushaf imagery
+or to an optional name-and-password cloud account with a daily automatic upload. It also plays
+recitation from over a hundred complete MP3Quran reciters: from any ayah, in the background,
+highlighting the ayah and turning the page with it, with single-ayah and memorisation repeats,
+speed control, and surah/juz/mushaf downloads for offline listening. Reading never needs the
+network; only cloud backup and recitation, when you start them, do. The source code is MIT-licensed;
+recitation audio comes from MP3Quran and is not part of the repository; bundled Mushaf imagery
 and Qur'anic datasets are subject to their original rights. See [`NOTICE.md`](NOTICE.md).

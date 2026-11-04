@@ -20,6 +20,7 @@ import com.mushaf.reader.data.SurahAyahCounts
 import com.mushaf.reader.data.recitation.AyahClip
 import com.mushaf.reader.data.recitation.AyahRef
 import com.mushaf.reader.data.recitation.AyahSteps
+import com.mushaf.reader.data.recitation.RecitationQuality
 import com.mushaf.reader.data.recitation.RecitationRepository
 import com.mushaf.reader.data.recitation.Reciter
 import com.mushaf.reader.data.recitation.RepeatPlan
@@ -64,6 +65,9 @@ class RecitationController(
     var reciters by mutableStateOf<List<Reciter>>(emptyList())
         private set
     var reciter by mutableStateOf<Reciter?>(null)
+        private set
+    /** Every recitation's name by id, hidden ones too, so older downloads keep their name. */
+    var reciterNames by mutableStateOf<Map<Int, String>>(emptyMap())
         private set
     var listLoading by mutableStateOf(false)
         private set
@@ -407,8 +411,11 @@ class RecitationController(
         listLoading = true
         return try {
             val collator = Collator.getInstance(Locale.forLanguageTag("ar"))
-            repo.reciters()
-                .filter { it.complete }
+            val all = repo.reciters()
+            reciterNames = all.associate { it.id to it.name }
+            all
+                // Complete, and not hidden by the timing check (RecitationQuality).
+                .filter { RecitationQuality.usable(it) }
                 .sortedWith(
                     compareBy<Reciter> { it.rewaya != HAFS }
                         .thenBy(collator) { it.name }

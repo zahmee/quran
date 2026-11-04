@@ -64,6 +64,8 @@ internal fun DownloadsScreen(
     downloads: RecitationDownloads,
     reciter: Reciter?,
     reciters: List<Reciter>,
+    /** Names of all recitations, hidden ones too, for downloads made before they were hidden. */
+    reciterNames: Map<Int, String>,
     currentSurah: Int?,
     currentJuz: Int,
     juzSurahs: List<Int>,
@@ -94,7 +96,7 @@ internal fun DownloadsScreen(
     var confirmWhole by remember { mutableStateOf(false) }
     var confirmClearAuto by remember { mutableStateOf(false) }
     var confirmRemoveReciter by remember { mutableStateOf<Int?>(null) }
-    val names = remember(reciters) { reciters.associate { it.id to it.name } }
+    val names = reciterNames
     val groups = downloads.items.groupBy { it.reciterId }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {

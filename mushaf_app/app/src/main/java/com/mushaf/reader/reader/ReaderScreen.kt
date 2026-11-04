@@ -622,6 +622,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 downloads = viewModel.recitationDownloads,
                 reciter = recitation.reciter,
                 reciters = recitation.reciters,
+                reciterNames = recitation.reciterNames,
                 currentSurah = viewModel.markersForPage(page).firstOrNull()?.surahNumber,
                 currentJuz = juz,
                 juzSurahs = juzSurahs,
