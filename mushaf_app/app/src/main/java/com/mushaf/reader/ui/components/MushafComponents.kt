@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -251,6 +252,26 @@ fun MushafNavigationRow(
     supportingText: String? = null,
     selected: Boolean = false,
     supportingStyle: TextStyle = MaterialTheme.typography.bodyMedium,
+) = MushafNavigationRow(
+    title = title,
+    meta = meta,
+    onClick = onClick,
+    supportingText = supportingText?.takeIf { it.isNotBlank() }?.let(::AnnotatedString),
+    modifier = modifier,
+    selected = selected,
+    supportingStyle = supportingStyle,
+)
+
+/** The same row with styled supporting text — the search screen uses it to mark the matched words. */
+@Composable
+fun MushafNavigationRow(
+    title: String,
+    meta: String,
+    onClick: () -> Unit,
+    supportingText: AnnotatedString?,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    supportingStyle: TextStyle = MaterialTheme.typography.bodyMedium,
 ) {
     Surface(
         onClick = onClick,
@@ -294,7 +315,7 @@ fun MushafNavigationRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (!supportingText.isNullOrBlank()) {
+                if (supportingText != null && supportingText.isNotBlank()) {
                     Text(
                         text = supportingText,
                         style = supportingStyle,
