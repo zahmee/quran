@@ -276,6 +276,7 @@ class RecitationController(
     }
 
     fun next() {
+        if (stepSingleAyah(forward = true)) return
         if (stepClip(forward = true)) return
         val at = current ?: return
         val target = AyahSteps.next(at) ?: return
@@ -283,10 +284,23 @@ class RecitationController(
     }
 
     fun previous() {
+        if (stepSingleAyah(forward = false)) return
         if (stepClip(forward = false)) return
         val at = current ?: return
         val target = AyahSteps.previous(at) ?: return
         seekOrRestart(at, target)
+    }
+
+    /** One ayah heard on its own (or repeated alone): next/previous play the neighbouring ayah the
+     *  same way and stop after it, rather than carrying on through the surah. Crosses into the
+     *  next or previous surah at its edges. Returns false when the passage is not a single ayah. */
+    private fun stepSingleAyah(forward: Boolean): Boolean {
+        val passage = plan ?: controller?.let { planFromPlaylist(it) } ?: return false
+        if (passage.fromAyah != passage.toAyah) return false
+        val at = current ?: AyahRef(passage.surah, passage.fromAyah)
+        val target = (if (forward) AyahSteps.next(at) else AyahSteps.previous(at)) ?: return true
+        playPlan(passage.copy(surah = target.surah, fromAyah = target.ayah, toAyah = target.ayah))
+        return true
     }
 
     /** In a memorisation run, next/previous move by ayah, skipping the remaining repetitions.
