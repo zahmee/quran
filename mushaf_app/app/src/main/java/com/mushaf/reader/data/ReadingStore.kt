@@ -29,6 +29,9 @@ class ReadingStore(private val context: Context) {
         const val DEFAULT_SIDE_INDICATOR_OPACITY = 70
         /** Keep the restore-header button at its current visual strength until the user changes it. */
         const val DEFAULT_SHOW_HEADER_BUTTON_OPACITY = 100
+        /** The folded recitation handle used to be drawn at 55%, which read as gone over a page;
+         *  it now starts nearly solid and the reader can fade it from the recitation settings. */
+        const val DEFAULT_RECITATION_HANDLE_OPACITY = 85
         /** The screen stayed awake unconditionally before this became a setting, so keep that
          *  as the default: an upgrade must not start locking the screen mid-read. */
         const val DEFAULT_KEEP_SCREEN_ON = true
@@ -200,6 +203,8 @@ class ReadingStore(private val context: Context) {
     private val keyRecitationFollowPage = booleanPreferencesKey("recitation_follow_page")
     /** Where the floating recitation handle sits along the screen edge, 0 = top, 1 = bottom. */
     private val keyRecitationHandlePos = floatPreferencesKey("recitation_handle_pos")
+    /** How solid the folded recitation handle is drawn, in percent. */
+    private val keyRecitationHandleOpacity = intPreferencesKey("recitation_handle_opacity")
     private val keyUpdateDismissedVersion = intPreferencesKey("update_dismissed_version")
     private val keyUpdateDismissedAt = longPreferencesKey("update_dismissed_at")
 
@@ -534,6 +539,14 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setRecitationHandlePos(value: Float) {
         context.dataStore.edit { it[keyRecitationHandlePos] = value }
+    }
+
+    suspend fun recitationHandleOpacity(): Int =
+        (context.dataStore.data.first()[keyRecitationHandleOpacity] ?: DEFAULT_RECITATION_HANDLE_OPACITY)
+            .coerceIn(25, 100)
+
+    suspend fun setRecitationHandleOpacity(value: Int) {
+        context.dataStore.edit { it[keyRecitationHandleOpacity] = value.coerceIn(25, 100) }
     }
 
     suspend fun recitationSpeed(): Float? = context.dataStore.data.first()[keyRecitationSpeed]

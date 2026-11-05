@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -157,10 +158,22 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setRecitationHandlePos(value) }
     }
 
+    /** How solid the folded recitation handle is drawn, 25..100 percent. */
+    var recitationHandleOpacity by mutableIntStateOf(ReadingStore.DEFAULT_RECITATION_HANDLE_OPACITY)
+        private set
+
+    fun updateRecitationHandleOpacity(value: Int) {
+        val normalized = value.coerceIn(25, 100)
+        if (normalized == recitationHandleOpacity) return
+        recitationHandleOpacity = normalized
+        viewModelScope.launch { store.setRecitationHandleOpacity(normalized) }
+    }
+
     init {
         viewModelScope.launch {
             recitationFollowPage = store.recitationFollowPage()
             store.recitationHandlePos()?.let { recitationHandlePos = it }
+            recitationHandleOpacity = store.recitationHandleOpacity()
         }
     }
 

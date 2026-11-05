@@ -96,6 +96,9 @@ internal fun RecitationSettingsTab(
     surahName: (Int) -> String,
     followPage: Boolean,
     onFollowPageChange: (Boolean) -> Unit,
+    /** How solid the folded recitation handle is drawn, in percent. */
+    handleOpacity: Int,
+    onHandleOpacityChange: (Int) -> Unit,
     mobileDataPolicy: MobileDataPolicy,
     onMobileDataPolicyChange: (MobileDataPolicy) -> Unit,
     onPickReciter: () -> Unit,
@@ -156,6 +159,14 @@ internal fun RecitationSettingsTab(
                 Hint("أوقفه لتتصفح صفحات أخرى والتلاوة مستمرة؛ تبقى الآية مظلّلة في صفحتها.")
             }
             Switch(checked = followPage, onCheckedChange = onFollowPageChange)
+        }
+        Column(modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) {
+            OpacityChoiceRow(
+                title = "وضوح زر التلاوة المطويّ",
+                selected = handleOpacity,
+                onSelected = onHandleOpacityChange,
+            )
+            Hint("ينطوي شريط التلاوة بعد ثوانٍ إلى زر صغير على حافة الشاشة؛ «معتم» يُبقيه ظاهراً تماماً.")
         }
     }
 
