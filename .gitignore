@@ -53,3 +53,4 @@ old/
 # Keep these in private backups; the app tracks the derived database and notices.
 /qurancomplex_tafsir_gharib_*.zip
 /qurancomplex_tafsir_gharib_*/
+/quranenc_saadi_*/

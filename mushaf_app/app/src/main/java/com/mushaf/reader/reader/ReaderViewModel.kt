@@ -13,6 +13,7 @@ import androidx.lifecycle.viewModelScope
 import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.AyahRepository
 import com.mushaf.reader.data.AyahSearchIndex
+import com.mushaf.reader.data.ExplanationTextScale
 import com.mushaf.reader.data.JuzLayout
 import com.mushaf.reader.data.PageRepository
 import com.mushaf.reader.data.ReadingStore
@@ -31,6 +32,7 @@ import com.mushaf.reader.data.backup.CloudUiState
 import com.mushaf.reader.data.backup.FileBackupRepository
 import com.mushaf.reader.data.content.GharibMeaning
 import com.mushaf.reader.data.content.QuranContentRepository
+import com.mushaf.reader.data.content.TafsirPassage
 import com.mushaf.reader.data.stats.FullStats
 import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.ReadingStats
@@ -93,8 +95,21 @@ data class AyahExplanationUiState(
     val loading: Boolean = false,
     val tafsirHtml: String? = null,
     val meanings: List<GharibMeaning> = emptyList(),
+    val saadi: TafsirPassage? = null,
+    val saadiVersion: String? = null,
     val errorMessage: String? = null,
 )
+
+/** The tafsirs the explanation sheet offers; [id] is what [ReadingStore] remembers. */
+enum class TafsirChoice(val id: String) {
+    Muyassar("muyassar"),
+    Saadi("saadi"),
+    ;
+
+    companion object {
+        fun fromId(id: String?): TafsirChoice = entries.firstOrNull { it.id == id } ?: Muyassar
+    }
+}
 
 class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -169,11 +184,35 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setRecitationHandleOpacity(normalized) }
     }
 
+    /** The tafsir «التفسير» opens on: whichever one the reader last chose in the sheet. */
+    var preferredTafsir by mutableStateOf(TafsirChoice.Muyassar)
+        private set
+
+    fun updatePreferredTafsir(value: TafsirChoice) {
+        if (value == preferredTafsir) return
+        preferredTafsir = value
+        viewModelScope.launch { store.setPreferredTafsir(value.id) }
+    }
+
+    /** Text size of the tafsir / word-meanings sheet, percent of the reading size. */
+    var explanationTextScale by mutableIntStateOf(ExplanationTextScale.DEFAULT)
+        private set
+
+    /** One size up ([direction] > 0) or down; remembered for the next time the sheet opens. */
+    fun stepExplanationTextScale(direction: Int) {
+        val next = ExplanationTextScale.step(explanationTextScale, direction)
+        if (next == explanationTextScale) return
+        explanationTextScale = next
+        viewModelScope.launch { store.setExplanationTextScale(next) }
+    }
+
     init {
         viewModelScope.launch {
             recitationFollowPage = store.recitationFollowPage()
             store.recitationHandlePos()?.let { recitationHandlePos = it }
             recitationHandleOpacity = store.recitationHandleOpacity()
+            preferredTafsir = TafsirChoice.fromId(store.preferredTafsir())
+            explanationTextScale = store.explanationTextScale()
         }
     }
 
@@ -924,6 +963,8 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
                     verseKey = ayah.verseKey,
                     tafsirHtml = content.tafsirHtml,
                     meanings = content.meanings,
+                    saadi = content.saadi,
+                    saadiVersion = content.saadiVersion,
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
