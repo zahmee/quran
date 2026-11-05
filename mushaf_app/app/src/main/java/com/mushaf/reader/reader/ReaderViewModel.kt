@@ -15,6 +15,7 @@ import com.mushaf.reader.data.AyahSearchIndex
 import com.mushaf.reader.data.JuzLayout
 import com.mushaf.reader.data.PageRepository
 import com.mushaf.reader.data.ReadingStore
+import com.mushaf.reader.data.SearchTier
 import com.mushaf.reader.data.SurahAyahCounts
 import com.mushaf.reader.data.backup.BackupException
 import com.mushaf.reader.data.backup.BackupFileInfo
@@ -63,17 +64,28 @@ data class SurahEntry(val number: Int, val nameAr: String, val firstPage: Int, v
 /** One juz in the navigation index: number and the page it begins on. */
 data class JuzEntry(val number: Int, val firstPage: Int, val ayahCount: Int)
 
-/** A single search hit. */
+/** A single ayah hit. */
 data class SearchResult(
     val verseKey: String,
     val surahNameAr: String,
     val ayahNumber: Int,
     val page: Int,
     val text: String,
-    /** True for a hit only the stemmed pass reached — a widened, less certain match that the
-     *  search screen separates from the exact ones. See [AyahSearchIndex]. */
-    val expanded: Boolean = false,
+    /** How the ayah matched; the search screen groups and labels hits by it. See [AyahSearchIndex]. */
+    val tier: SearchTier = SearchTier.WORD,
+    /** Character ranges in [text] of the words that matched, for the screen to mark. */
+    val highlights: List<IntRange> = emptyList(),
 )
+
+/** A surah whose name matched the query — shown once, not as every ayah in it. */
+data class SurahSearchResult(val number: Int, val nameAr: String, val firstPage: Int)
+
+data class SearchResults(
+    val surahs: List<SurahSearchResult> = emptyList(),
+    val ayahs: List<SearchResult> = emptyList(),
+) {
+    val isEmpty: Boolean get() = surahs.isEmpty() && ayahs.isEmpty()
+}
 
 data class AyahExplanationUiState(
     val verseKey: String? = null,
@@ -1216,14 +1228,19 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
      * Runs off the main thread: the first call folds all 6236 ayahs to build the index, every later
      * call scans it. The caller debounces, so this never runs once per keystroke.
      *
-     * See [AyahSearchIndex] for why the index carries both orthographies of the mushaf.
+     * Every matching ayah is returned, so the screen can say how many there are.
+     * See [AyahSearchIndex] for how they are ranked and why the index carries both orthographies.
      */
-    suspend fun search(query: String, limit: Int = AyahSearchIndex.DEFAULT_LIMIT): List<SearchResult> =
+    suspend fun search(query: String): SearchResults =
         withContext(Dispatchers.Default) {
-            val index = ensureSearchIndex() ?: return@withContext emptyList()
-            index.search(query, limit).map { it.marker.toSearchResult(it.expanded) }
+            val index = ensureSearchIndex() ?: return@withContext SearchResults()
+            val results = index.search(query)
+            SearchResults(
+                surahs = results.surahs.map { SurahSearchResult(it.number, it.nameAr, it.firstPage) },
+                ayahs = results.ayahs.map { it.marker.toSearchResult(it.tier, it.highlights) },
+            )
         }
 }
 
-private fun AyahMarker.toSearchResult(expanded: Boolean) =
-    SearchResult(verseKey, surahNameAr, ayahNumber, page, textUthmani, expanded)
+private fun AyahMarker.toSearchResult(tier: SearchTier, highlights: List<IntRange>) =
+    SearchResult(verseKey, surahNameAr, ayahNumber, page, textUthmani, tier, highlights)

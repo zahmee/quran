@@ -21,16 +21,21 @@ class AyahSearchIndexTest {
         listOf(BAQARAH_251, BAQARAH_255, NISA_172, WAQIAH_11)
     )
 
-    private fun keys(query: String): List<String> =
-        index.search(query).map { it.marker.verseKey }
+    private fun hits(query: String): List<AyahSearchIndex.Hit> = index.search(query).ayahs
 
-    /** Keys of the exact tier only — what the reader sees above the "نتائج قريبة" line. */
+    private fun keys(query: String): List<String> = hits(query).map { it.marker.verseKey }
+
+    /** Keys of the scan proper — everything above the "نتائج قريبة" line. */
     private fun exactKeys(query: String): List<String> =
-        index.search(query).filterNot { it.expanded }.map { it.marker.verseKey }
+        hits(query).filterNot { it.tier == SearchTier.STEMMED }.map { it.marker.verseKey }
 
     /** Keys the stemmed tier added, in order, below the line. */
     private fun expandedKeys(query: String): List<String> =
-        index.search(query).filter { it.expanded }.map { it.marker.verseKey }
+        hits(query).filter { it.tier == SearchTier.STEMMED }.map { it.marker.verseKey }
+
+    /** The Uthmani text each highlight of [hit] covers — what the reader sees marked. */
+    private fun marked(hit: AyahSearchIndex.Hit): List<String> =
+        hit.highlights.map { hit.marker.textUthmani.substring(it.first, it.last + 1) }
 
     // ── The bug the reader reported ─────────────────────────────────────────────
 
@@ -98,9 +103,14 @@ class AyahSearchIndexTest {
         assertEquals(emptyList<String>(), keys("2:1000"))
     }
 
+    /** A surah name returns the surah once. Its ayahs come back only if their own text matches,
+     *  so the counts on screen keep meaning "ayahs that contain the word". */
     @Test
-    fun `a surah name matches its ayahs`() {
-        assertEquals(listOf("56:11"), keys("الواقعة"))
+    fun `a surah name returns the surah once, not every ayah in it`() {
+        val results = index.search("الواقعة")
+        assertEquals(listOf(56), results.surahs.map { it.number })
+        assertEquals(534, results.surahs.single().firstPage)
+        assertEquals(emptyList<String>(), results.ayahs.map { it.marker.verseKey })
     }
 
     @Test
@@ -111,11 +121,63 @@ class AyahSearchIndexTest {
 
     @Test
     fun `the limit caps the results and a non-positive limit returns nothing`() {
-        assertEquals(1, index.search("الله", limit = 1).size)
-        assertTrue(index.search("الله", limit = 0).isEmpty())
+        assertEquals(1, index.search("الله", limit = 1).ayahs.size)
+        assertTrue(index.search("الله", limit = 0).ayahs.isEmpty())
     }
 
-    // ── The two tiers ───────────────────────────────────────────────────────────
+    // ── Tiers and highlights ────────────────────────────────────────────────────
+
+    /** A whole word outranks the same letters inside another word, and only the tier's own
+     *  occurrences are marked: 2:255 is ranked for عِلْمِهِۦٓ, so its يَعْلَمُ stays unmarked. */
+    @Test
+    fun `only the occurrences that earned the tier are marked`() {
+        val hit = hits("علم").single { it.marker.verseKey == "2:255" }
+        assertEquals(SearchTier.WORD, hit.tier)
+        assertEquals(listOf(uthmaniWords(BAQARAH_255, "علمه")), marked(hit))
+    }
+
+    /** Letters that only ever sit inside a longer word rank as partial. */
+    @Test
+    fun `letters found only inside other words rank as partial`() {
+        assertEquals(listOf(SearchTier.PARTIAL, SearchTier.PARTIAL), hits("قرب").map { it.tier })
+        assertEquals(listOf(uthmaniWords(NISA_172, "المقربون")), marked(hits("قرب").first()))
+    }
+
+    /** The match is made in the imlaa'i text, but the mark lands on the Uthmani word shown. */
+    @Test
+    fun `a match made in the imlaai text marks the uthmani word`() {
+        // «المليكه» is what ٱلْمَلَـٰٓئِكَةُ folds to — the spelling the typed query never reaches.
+        assertEquals(listOf(uthmaniWords(NISA_172, "المليكه")), marked(hits("الملائكة").single()))
+    }
+
+    @Test
+    fun `a stemmed hit marks the word it reached`() {
+        val hit = hits("المقربين").first { it.marker.verseKey == "56:11" }
+        assertEquals(SearchTier.STEMMED, hit.tier)
+        assertEquals(listOf(uthmaniWords(WAQIAH_11, "المقربون")), marked(hit))
+    }
+
+    /** A phrase is marked as one stretch, the space between its words included. */
+    @Test
+    fun `a phrase is marked as one range`() {
+        assertEquals(listOf(uthmaniWords(BAQARAH_255, "الحي القيوم")), marked(hits("الحي القيوم").single()))
+    }
+
+    /** A waqf sign between two words folds away; it must not leave a double space that a typed
+     *  two-word phrase can no longer match. */
+    @Test
+    fun `a phrase matches across a waqf sign`() {
+        assertEquals(listOf("2:255"), keys("القيوم لا"))
+    }
+
+    @Test
+    fun `a verse key hit is its own tier and marks nothing`() {
+        val hit = hits("2:255").single()
+        assertEquals(SearchTier.VERSE, hit.tier)
+        assertTrue(hit.highlights.isEmpty())
+    }
+
+    // ── The stemmed tier ────────────────────────────────────────────────────────
 
     /**
      * The point of the stemmed pass: the query and the mushaf carry DIFFERENT endings, so no
@@ -130,15 +192,15 @@ class AyahSearchIndexTest {
     /** An exact hit is never displaced by a widened one, however many the stemmer finds. */
     @Test
     fun `exact hits come first and are not flagged`() {
-        val hits = index.search("المقربون")
-        assertEquals(listOf("4:172", "56:11"), hits.filterNot { it.expanded }.map { it.marker.verseKey })
-        assertTrue("لا يجوز أن تسبق نتيجة موسّعة نتيجة مطابقة", hits.first().expanded.not())
+        val hits = hits("المقربون")
+        assertEquals(listOf("4:172", "56:11"), exactKeys("المقربون"))
+        assertTrue("لا يجوز أن تسبق نتيجة موسّعة نتيجة مطابقة", hits.first().tier != SearchTier.STEMMED)
     }
 
     /** A hit the exact pass already returned must not appear a second time under the line. */
     @Test
     fun `the stemmed pass does not repeat what the exact pass found`() {
-        val hits = index.search("المقربون")
+        val hits = hits("المقربون")
         assertEquals(hits.map { it.marker.verseKey }.distinct(), hits.map { it.marker.verseKey })
     }
 
@@ -155,6 +217,23 @@ class AyahSearchIndexTest {
 }
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
+
+/**
+ * The run of [ayah]'s Uthmani words that folds to [phrase], cut out of the ayah itself.
+ *
+ * Expected highlights are taken from the text rather than retyped: the same word can be typed with
+ * its combining marks in a different order, which looks identical and compares unequal.
+ */
+internal fun uthmaniWords(ayah: AyahMarker, phrase: String): String {
+    val tokens = ayah.textUthmani.split(' ')
+    val want = normalizeArabic(phrase).split(' ')
+    for (i in 0..tokens.size - want.size) {
+        if (want.indices.all { normalizeArabic(tokens[i + it]) == want[it] }) {
+            return tokens.subList(i, i + want.size).joinToString(" ")
+        }
+    }
+    error("«$phrase» is not in ${ayah.verseKey}")
+}
 
 private fun ayah(
     page: Int,

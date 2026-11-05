@@ -625,7 +625,8 @@ private fun timesLabel(n: Int, dual: String = "مرتين"): String = when {
     else -> "${n.toArabicDigits()} مرة"
 }
 
-private fun ayahsLabel(n: Int): String = when {
+/** Arabic counted noun: آية واحدة، آيتان، 3–10 آيات، 11+ آية. Shared with the search screen. */
+internal fun ayahsLabel(n: Int): String = when {
     n == 1 -> "آية واحدة"
     n == 2 -> "آيتان"
     n in 3..10 -> "${n.toArabicDigits()} آيات"
