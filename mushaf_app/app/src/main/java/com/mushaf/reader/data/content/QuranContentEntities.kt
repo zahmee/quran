@@ -37,6 +37,38 @@ data class GharibEntryEntity(
     @ColumnInfo(name = "source_text") val sourceText: String,
 )
 
+/**
+ * One row of a tafsir that explains the Quran passage by passage (Sa'di). [rowId] is the source's
+ * own id and doubles as the reading order; [groupId] is the passage shown together on one screen.
+ * Rows that only have a place in that order (a surah title, a lead-in) carry ayah range 0..0.
+ */
+@Entity(
+    tableName = "tafsir_passage",
+    primaryKeys = ["source_id", "row_id"],
+    indices = [Index(value = ["source_id", "group_id"])],
+)
+data class TafsirPassageEntity(
+    @ColumnInfo(name = "source_id") val sourceId: String,
+    @ColumnInfo(name = "row_id") val rowId: Int,
+    @ColumnInfo(name = "group_id") val groupId: Int,
+    @ColumnInfo(name = "surah_number") val surahNumber: Int,
+    @ColumnInfo(name = "from_ayah") val fromAyah: Int,
+    @ColumnInfo(name = "to_ayah") val toAyah: Int,
+    @ColumnInfo(name = "kind") val kind: String,
+    @ColumnInfo(name = "text") val text: String,
+)
+
+/** Which passage of a passage-based tafsir explains each ayah. */
+@Entity(
+    tableName = "tafsir_ayah_group",
+    primaryKeys = ["source_id", "verse_key"],
+)
+data class TafsirAyahGroupEntity(
+    @ColumnInfo(name = "source_id") val sourceId: String,
+    @ColumnInfo(name = "verse_key") val verseKey: String,
+    @ColumnInfo(name = "group_id") val groupId: Int,
+)
+
 @Entity(
     tableName = "gharib_ayah_map",
     primaryKeys = ["verse_key", "entry_id"],
