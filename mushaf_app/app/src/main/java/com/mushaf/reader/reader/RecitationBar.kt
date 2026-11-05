@@ -3,6 +3,7 @@ package com.mushaf.reader.reader
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -251,9 +252,10 @@ private const val AUTO_COLLAPSE_MS = 5_000L
 
 /**
  * Recitation as a drawer on the screen's right edge, floating over the page so the page never
- * resizes for it. Folded, it is one small handle — see-through while reciting, showing whether it
- * plays — that can be dragged up or down the edge, away from the line being read; tapping it slides
- * the controls out to the left, tapping again folds them back. It opens by itself when a
+ * resizes for it. Folded, it is one small handle in the theme colour — as solid as the reader chose
+ * in the recitation settings, showing whether it plays — that can be dragged up or down the edge,
+ * away from the line being read; tapping it slides the controls out to the left, tapping again
+ * folds them back. It opens by itself when a
  * recitation starts or something goes wrong, and folds itself after a few untouched seconds. The
  * caller shows it only while a recitation is loaded.
  */
@@ -271,6 +273,8 @@ internal fun FloatingRecitationBar(
     startKey: Int,
     /** Place along the edge: 0 top .. 1 bottom. */
     handlePos: Float,
+    /** How solid the folded handle is drawn, 0..1; the reader's choice in the recitation settings. */
+    foldedOpacity: Float,
     onHandleDrag: (Float) -> Unit,
     onHandleDragEnd: () -> Unit,
     onToggle: () -> Unit,
@@ -300,7 +304,19 @@ internal fun FloatingRecitationBar(
         action()
     }
     val folded = !expanded && error == null
-    val alpha by animateFloatAsState(if (folded) 0.55f else 1f, label = "recitation handle alpha")
+    val alpha by animateFloatAsState(
+        if (folded) foldedOpacity.coerceIn(0.25f, 1f) else 1f,
+        label = "recitation handle alpha",
+    )
+    // Folded, the handle takes the theme colour: in the page's own colour it vanished into the page.
+    val barColor by animateColorAsState(
+        if (folded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+        label = "recitation handle color",
+    )
+    val barContent by animateColorAsState(
+        if (folded) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+        label = "recitation handle content color",
+    )
     val currentPos by rememberUpdatedState(handlePos)
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -317,8 +333,8 @@ internal fun FloatingRecitationBar(
                     .alpha(alpha),
                 // Docked to the right edge: rounded on the inner side only.
                 shape = AbsoluteRoundedCornerShape(topLeft = 22.dp, bottomLeft = 22.dp),
-                color = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.onSurface,
+                color = barColor,
+                contentColor = barContent,
                 shadowElevation = 6.dp,
             ) {
                 // In this right-to-left row the handle comes first, so it sits against the edge
@@ -344,7 +360,7 @@ internal fun FloatingRecitationBar(
                             },
                         contentAlignment = Alignment.Center,
                     ) {
-                        HandleIcon(isPlaying = isPlaying, buffering = buffering, error = error)
+                        HandleIcon(isPlaying = isPlaying, buffering = buffering, error = error, folded = folded)
                     }
                     AnimatedVisibility(
                         visible = expanded,
@@ -378,16 +394,22 @@ internal fun FloatingRecitationBar(
 
 private val HANDLE_SIZE = 44.dp
 
-/** The folded handle's face: what the recitation is doing, at a glance. */
+/** The folded handle's face: what the recitation is doing, at a glance. [folded] draws it on the
+ *  theme-coloured handle, so every state takes the colour that reads on it. */
 @Composable
-private fun HandleIcon(isPlaying: Boolean, buffering: Boolean, error: String?) {
+private fun HandleIcon(isPlaying: Boolean, buffering: Boolean, error: String?, folded: Boolean) {
+    val onHandle = MaterialTheme.colorScheme.onPrimary
     when {
         error != null -> Icon(
             Icons.Filled.ErrorOutline,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.error,
         )
-        buffering -> CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        buffering -> CircularProgressIndicator(
+            modifier = Modifier.size(18.dp),
+            strokeWidth = 2.dp,
+            color = if (folded) onHandle else MaterialTheme.colorScheme.primary,
+        )
         isPlaying -> {
             val pulse by rememberInfiniteTransition(label = "recitation pulse").animateFloat(
                 initialValue = 0.55f,
@@ -398,14 +420,14 @@ private fun HandleIcon(isPlaying: Boolean, buffering: Boolean, error: String?) {
             Icon(
                 Icons.Filled.GraphicEq,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = if (folded) onHandle else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.alpha(pulse),
             )
         }
         else -> Icon(
             Icons.Filled.Headphones,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (folded) onHandle else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

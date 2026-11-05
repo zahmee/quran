@@ -421,6 +421,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     },
                     startKey = recitation.startCount,
                     handlePos = viewModel.recitationHandlePos,
+                    foldedOpacity = viewModel.recitationHandleOpacity / 100f,
                     onHandleDrag = viewModel::dragRecitationHandle,
                     onHandleDragEnd = viewModel::saveRecitationHandle,
                     onToggle = recitation::togglePlay,
@@ -633,6 +634,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                         surahName = viewModel::surahNameAr,
                         followPage = viewModel.recitationFollowPage,
                         onFollowPageChange = viewModel::updateRecitationFollowPage,
+                        handleOpacity = viewModel.recitationHandleOpacity,
+                        onHandleOpacityChange = viewModel::updateRecitationHandleOpacity,
                         mobileDataPolicy = viewModel.mobileDataPolicy,
                         onMobileDataPolicyChange = viewModel::updateMobileDataPolicy,
                         onPickReciter = {

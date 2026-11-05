@@ -1352,7 +1352,7 @@ private data class BarLengthChoice(
 /** Opacity picker (percent), same dropdown shape as the others. The sample swatch is drawn at the
  *  chosen opacity over the row's own background, so «شفاف» reads as barely-there and «معتم» as solid. */
 @Composable
-private fun OpacityChoiceRow(
+internal fun OpacityChoiceRow(
     title: String,
     selected: Int,
     onSelected: (Int) -> Unit,
