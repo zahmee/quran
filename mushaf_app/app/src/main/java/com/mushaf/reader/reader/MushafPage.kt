@@ -398,16 +398,6 @@ private fun MoreBelowFade(
     )
 }
 
-/** Hit-test a pointer position (in image pixels) to an ayah: inside a region, else nearest center. */
-private fun pickAyah(markers: List<AyahMarker>, ix: Float, iy: Float): AyahMarker? {
-    val inside = markers.filter { m -> m.rects.any { it.contains(ix, iy) } }
-    return (inside.ifEmpty { markers }).minByOrNull { m ->
-        val dx = m.centerX - ix
-        val dy = m.centerY - iy
-        dx * dx + dy * dy
-    }
-}
-
 @Composable
 private fun PageContent(
     modifier: Modifier,
