@@ -1,0 +1,169 @@
+﻿page,verse_key,severity,code,message,extra
+120,5:77,ERROR,PAGE,quran.com page 121,{}
+121,5:83,ERROR,PAGE,quran.com page 122,{}
+122,5:90,ERROR,PAGE,quran.com page 123,{}
+145,6:131,ERROR,PAGE,quran.com page 144,{}
+531,55:17,ERROR,PAGE,quran.com page 532,{}
+531,55:18,ERROR,PAGE,quran.com page 532,{}
+532,55:41,ERROR,PAGE,quran.com page 533,{}
+533,55:68,ERROR,PAGE,quran.com page 534,{}
+533,55:69,ERROR,PAGE,quran.com page 534,{}
+564,68:16,ERROR,PAGE,quran.com page 565,{}
+567,69:35,ERROR,PAGE,quran.com page 568,{}
+569,70:40,ERROR,PAGE,quran.com page 570,{}
+575,74:18,ERROR,PAGE,quran.com page 576,{}
+583,79:16,ERROR,PAGE,quran.com page 584,{}
+586,80:41,ERROR,PAGE,quran.com page 585,{}
+586,80:42,ERROR,PAGE,quran.com page 585,{}
+588,83:5,ERROR,PAGE,quran.com page 587,{}
+588,83:6,ERROR,PAGE,quran.com page 587,{}
+589,83:34,ERROR,PAGE,quran.com page 588,{}
+590,84:25,ERROR,PAGE,quran.com page 589,{}
+592,87:11,ERROR,PAGE,quran.com page 591,{}
+592,87:12,ERROR,PAGE,quran.com page 591,{}
+592,87:13,ERROR,PAGE,quran.com page 591,{}
+592,87:14,ERROR,PAGE,quran.com page 591,{}
+592,87:15,ERROR,PAGE,quran.com page 591,{}
+593,88:23,ERROR,PAGE,quran.com page 592,{}
+593,88:24,ERROR,PAGE,quran.com page 592,{}
+593,88:25,ERROR,PAGE,quran.com page 592,{}
+593,88:26,ERROR,PAGE,quran.com page 592,{}
+594,89:23,ERROR,PAGE,quran.com page 593,{}
+595,90:19,ERROR,PAGE,quran.com page 594,{}
+595,90:20,ERROR,PAGE,quran.com page 594,{}
+596,92:10,ERROR,PAGE,quran.com page 595,{}
+596,92:11,ERROR,PAGE,quran.com page 595,{}
+596,92:12,ERROR,PAGE,quran.com page 595,{}
+596,92:13,ERROR,PAGE,quran.com page 595,{}
+596,92:14,ERROR,PAGE,quran.com page 595,{}
+597,94:3,ERROR,PAGE,quran.com page 596,{}
+597,94:4,ERROR,PAGE,quran.com page 596,{}
+597,94:5,ERROR,PAGE,quran.com page 596,{}
+597,94:6,ERROR,PAGE,quran.com page 596,{}
+597,94:7,ERROR,PAGE,quran.com page 596,{}
+597,94:8,ERROR,PAGE,quran.com page 596,{}
+598,96:13,ERROR,PAGE,quran.com page 597,{}
+598,96:14,ERROR,PAGE,quran.com page 597,{}
+598,96:15,ERROR,PAGE,quran.com page 597,{}
+598,96:16,ERROR,PAGE,quran.com page 597,{}
+598,96:17,ERROR,PAGE,quran.com page 597,{}
+598,96:18,ERROR,PAGE,quran.com page 597,{}
+598,96:19,ERROR,PAGE,quran.com page 597,{}
+599,98:6,ERROR,PAGE,quran.com page 598,{}
+599,98:7,ERROR,PAGE,quran.com page 598,{}
+600,100:6,ERROR,PAGE,quran.com page 599,{}
+600,100:7,ERROR,PAGE,quran.com page 599,{}
+600,100:8,ERROR,PAGE,quran.com page 599,{}
+600,100:9,ERROR,PAGE,quran.com page 599,{}
+120,5:77,ERROR,PAGE_LAST,ref last 5:76,{}
+121,5:78,ERROR,PAGE_FIRST,ref first 5:77,{}
+121,5:83,ERROR,PAGE_LAST,ref last 5:82,{}
+122,5:84,ERROR,PAGE_FIRST,ref first 5:83,{}
+122,5:90,ERROR,PAGE_LAST,ref last 5:89,{}
+123,5:91,ERROR,PAGE_FIRST,ref first 5:90,{}
+144,6:130,ERROR,PAGE_LAST,ref last 6:131,{}
+145,6:131,ERROR,PAGE_FIRST,ref first 6:132,{}
+531,55:18,ERROR,PAGE_LAST,ref last 55:16,{}
+532,55:19,ERROR,PAGE_FIRST,ref first 55:17,{}
+532,55:41,ERROR,PAGE_LAST,ref last 55:40,{}
+533,55:42,ERROR,PAGE_FIRST,ref first 55:41,{}
+533,55:69,ERROR,PAGE_LAST,ref last 55:67,{}
+534,55:70,ERROR,PAGE_FIRST,ref first 55:68,{}
+564,68:16,ERROR,PAGE_LAST,ref last 68:15,{}
+565,68:17,ERROR,PAGE_FIRST,ref first 68:16,{}
+567,69:35,ERROR,PAGE_LAST,ref last 69:34,{}
+568,69:36,ERROR,PAGE_FIRST,ref first 69:35,{}
+569,70:40,ERROR,PAGE_LAST,ref last 70:39,{}
+570,70:41,ERROR,PAGE_FIRST,ref first 70:40,{}
+575,74:18,ERROR,PAGE_LAST,ref last 74:17,{}
+576,74:19,ERROR,PAGE_FIRST,ref first 74:18,{}
+583,79:16,ERROR,PAGE_LAST,ref last 79:15,{}
+584,79:17,ERROR,PAGE_FIRST,ref first 79:16,{}
+585,80:40,ERROR,PAGE_LAST,ref last 80:42,{}
+586,80:41,ERROR,PAGE_FIRST,ref first 81:1,{}
+587,83:4,ERROR,PAGE_LAST,ref last 83:6,{}
+588,83:5,ERROR,PAGE_FIRST,ref first 83:7,{}
+588,83:33,ERROR,PAGE_LAST,ref last 83:34,{}
+589,83:34,ERROR,PAGE_FIRST,ref first 83:35,{}
+589,84:24,ERROR,PAGE_LAST,ref last 84:25,{}
+590,84:25,ERROR,PAGE_FIRST,ref first 85:1,{}
+591,87:10,ERROR,PAGE_LAST,ref last 87:15,{}
+592,87:11,ERROR,PAGE_FIRST,ref first 87:16,{}
+592,88:22,ERROR,PAGE_LAST,ref last 88:26,{}
+593,88:23,ERROR,PAGE_FIRST,ref first 89:1,{}
+593,89:22,ERROR,PAGE_LAST,ref last 89:23,{}
+594,89:23,ERROR,PAGE_FIRST,ref first 89:24,{}
+594,90:18,ERROR,PAGE_LAST,ref last 90:20,{}
+595,90:19,ERROR,PAGE_FIRST,ref first 91:1,{}
+595,92:9,ERROR,PAGE_LAST,ref last 92:14,{}
+596,92:10,ERROR,PAGE_FIRST,ref first 92:15,{}
+596,94:2,ERROR,PAGE_LAST,ref last 94:8,{}
+597,94:3,ERROR,PAGE_FIRST,ref first 95:1,{}
+597,96:12,ERROR,PAGE_LAST,ref last 96:19,{}
+598,96:13,ERROR,PAGE_FIRST,ref first 97:1,{}
+598,98:5,ERROR,PAGE_LAST,ref last 98:7,{}
+599,98:6,ERROR,PAGE_FIRST,ref first 98:8,{}
+599,100:5,ERROR,PAGE_LAST,ref last 100:9,{}
+600,100:6,ERROR,PAGE_FIRST,ref first 100:10,{}
+17,2:106,INFO,RECT_WIDER_THAN_TEXT,band reaches 12px left / 52px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 38, ""w"": 1090, ""h"": 102}}"
+27,2:177,INFO,RECT_WIDER_THAN_TEXT,band reaches 10px left / 50px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 26, ""w"": 1090, ""h"": 102}}"
+32,2:203,INFO,RECT_WIDER_THAN_TEXT,band reaches 16px left / 52px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 17, ""w"": 1090, ""h"": 102}}"
+39,2:243,INFO,RECT_WIDER_THAN_TEXT,band reaches 7px left / 49px right of the ink on slot 9,"{""rect"": {""x"": 8, ""y"": 972, ""w"": 198, ""h"": 102}}"
+46,2:272,INFO,RECT_WIDER_THAN_TEXT,band reaches 9px left / 49px right of the ink on slot 5,"{""rect"": {""x"": 8, ""y"": 501, ""w"": 157, ""h"": 102}}"
+49,2:283,INFO,RECT_WIDER_THAN_TEXT,band reaches 13px left / 49px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 39, ""w"": 1090, ""h"": 102}}"
+64,3:113,INFO,RECT_WIDER_THAN_TEXT,band reaches 10px left / 51px right of the ink on slot 10,"{""rect"": {""x"": 8, ""y"": 1082, ""w"": 176, ""h"": 102}}"
+67,3:133,INFO,RECT_WIDER_THAN_TEXT,band reaches 9px left / 56px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 27, ""w"": 1090, ""h"": 102}}"
+69,3:153,INFO,RECT_WIDER_THAN_TEXT,band reaches 12px left / 47px right of the ink on slot 12,"{""rect"": {""x"": 8, ""y"": 1330, ""w"": 1090, ""h"": 102}}"
+74,3:186,INFO,RECT_WIDER_THAN_TEXT,band reaches 12px left / 52px right of the ink on slot 12,"{""rect"": {""x"": 8, ""y"": 1328, ""w"": 350, ""h"": 102}}"
+79,4:12,INFO,RECT_WIDER_THAN_TEXT,band reaches 15px left / 55px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 30, ""w"": 1090, ""h"": 102}}"
+82,4:24,INFO,RECT_WIDER_THAN_TEXT,band reaches 18px left / 49px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 35, ""w"": 1090, ""h"": 102}}"
+84,4:36,INFO,RECT_WIDER_THAN_TEXT,band reaches 7px left / 49px right of the ink on slot 9,"{""rect"": {""x"": 8, ""y"": 966, ""w"": 882, ""h"": 102}}"
+97,4:114,INFO,RECT_WIDER_THAN_TEXT,band reaches 12px left / 56px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 32, ""w"": 1090, ""h"": 102}}"
+102,4:148,INFO,RECT_WIDER_THAN_TEXT,band reaches 9px left / 46px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 24, ""w"": 1090, ""h"": 102}}"
+114,5:41,INFO,RECT_WIDER_THAN_TEXT,band reaches 8px left / 59px right of the ink on slot 7,"{""rect"": {""x"": 8, ""y"": 726, ""w"": 198, ""h"": 102}}"
+142,6:111,INFO,RECT_WIDER_THAN_TEXT,band reaches 12px left / 46px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 20, ""w"": 1090, ""h"": 102}}"
+146,6:141,INFO,RECT_WIDER_THAN_TEXT,band reaches 7px left / 47px right of the ink on slot 9,"{""rect"": {""x"": 8, ""y"": 968, ""w"": 536, ""h"": 102}}"
+162,7:88,INFO,RECT_WIDER_THAN_TEXT,band reaches 7px left / 48px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 33, ""w"": 1090, ""h"": 102}}"
+170,7:156,INFO,RECT_WIDER_THAN_TEXT,band reaches 14px left / 55px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 19, ""w"": 1090, ""h"": 102}}"
+182,8:41,INFO,RECT_WIDER_THAN_TEXT,band reaches 13px left / 50px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 28, ""w"": 1090, ""h"": 102}}"
+192,9:34,INFO,RECT_WIDER_THAN_TEXT,band reaches 11px left / 46px right of the ink on slot 4,"{""rect"": {""x"": 8, ""y"": 377, ""w"": 340, ""h"": 102}}"
+204,9:111,INFO,RECT_WIDER_THAN_TEXT,band reaches 11px left / 50px right of the ink on slot 11,"{""rect"": {""x"": 8, ""y"": 1209, ""w"": 1090, ""h"": 102}}"
+217,10:71,INFO,RECT_WIDER_THAN_TEXT,band reaches 11px left / 51px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 26, ""w"": 1090, ""h"": 102}}"
+222,11:6,INFO,RECT_WIDER_THAN_TEXT,band reaches 10px left / 47px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 28, ""w"": 1090, ""h"": 102}}"
+226,11:41,INFO,RECT_WIDER_THAN_TEXT,band reaches 7px left / 46px right of the ink on slot 6,"{""rect"": {""x"": 8, ""y"": 616, ""w"": 342, ""h"": 102}}"
+233,11:108,INFO,RECT_WIDER_THAN_TEXT,band reaches 11px left / 48px right of the ink on slot 14,"{""rect"": {""x"": 8, ""y"": 1562, ""w"": 1090, ""h"": 102}}"
+238,12:30,INFO,RECT_WIDER_THAN_TEXT,band reaches 10px left / 48px right of the ink on slot 14,"{""rect"": {""x"": 8, ""y"": 1559, ""w"": 1090, ""h"": 102}}"
+244,12:77,INFO,RECT_WIDER_THAN_TEXT,band reaches 11px left / 48px right of the ink on slot 11,"{""rect"": {""x"": 8, ""y"": 1208, ""w"": 460, ""h"": 102}}"
+247,12:101,INFO,RECT_WIDER_THAN_TEXT,band reaches 8px left / 52px right of the ink on slot 10,"{""rect"": {""x"": 8, ""y"": 1098, ""w"": 134, ""h"": 102}}"
+254,13:35,INFO,RECT_WIDER_THAN_TEXT,band reaches 11px left / 47px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 29, ""w"": 1090, ""h"": 102}}"
+255,13:43,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 126px right of the ink on slot 2,"{""rect"": {""x"": 138, ""y"": 138, ""w"": 960, ""h"": 102}}"
+256,14:10,INFO,RECT_WIDER_THAN_TEXT,band reaches 16px left / 50px right of the ink on slot 12,"{""rect"": {""x"": 8, ""y"": 1314, ""w"": 1090, ""h"": 102}}"
+264,15:49,INFO,RECT_WIDER_THAN_TEXT,band reaches 3px left / 48px right of the ink on slot 14,"{""rect"": {""x"": 306, ""y"": 1563, ""w"": 792, ""h"": 102}}"
+280,16:111,INFO,RECT_WIDER_THAN_TEXT,band reaches 14px left / 47px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 31, ""w"": 1090, ""h"": 102}}"
+287,17:50,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 48px right of the ink on slot 1,"{""rect"": {""x"": 524, ""y"": 26, ""w"": 574, ""h"": 102}}"
+295,18:17,INFO,RECT_WIDER_THAN_TEXT,band reaches 12px left / 47px right of the ink on slot 3,"{""rect"": {""x"": 8, ""y"": 265, ""w"": 1090, ""h"": 102}}"
+302,18:75,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 47px right of the ink on slot 1,"{""rect"": {""x"": 150, ""y"": 34, ""w"": 948, ""h"": 102}}"
+324,21:29,INFO,RECT_WIDER_THAN_TEXT,band reaches 11px left / 46px right of the ink on slot 6,"{""rect"": {""x"": 8, ""y"": 617, ""w"": 1090, ""h"": 102}}"
+339,22:60,INFO,RECT_WIDER_THAN_TEXT,band reaches 10px left / 50px right of the ink on slot 7,"{""rect"": {""x"": 8, ""y"": 733, ""w"": 608, ""h"": 102}}"
+347,23:75,INFO,RECT_WIDER_THAN_TEXT,band reaches 4px left / 46px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 29, ""w"": 1090, ""h"": 102}}"
+352,24:21,INFO,RECT_WIDER_THAN_TEXT,band reaches 11px left / 47px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 30, ""w"": 1090, ""h"": 102}}"
+382,27:56,INFO,RECT_WIDER_THAN_TEXT,band reaches 11px left / 50px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 26, ""w"": 1090, ""h"": 102}}"
+422,33:31,INFO,RECT_WIDER_THAN_TEXT,band reaches 12px left / 55px right of the ink on slot 1,"{""rect"": {""x"": 8, ""y"": 33, ""w"": 1090, ""h"": 102}}"
+464,39:53,INFO,RECT_WIDER_THAN_TEXT,band reaches 13px left / 48px right of the ink on slot 9,"{""rect"": {""x"": 8, ""y"": 966, ""w"": 1090, ""h"": 102}}"
+469,40:21,INFO,RECT_WIDER_THAN_TEXT,band reaches 8px left / 46px right of the ink on slot 6,"{""rect"": {""x"": 8, ""y"": 618, ""w"": 361, ""h"": 102}}"
+528,53:62,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 270px right of the ink on slot 9,"{""rect"": {""x"": 274, ""y"": 969, ""w"": 824, ""h"": 102}}"
+534,55:78,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 154px right of the ink on slot 6,"{""rect"": {""x"": 140, ""y"": 609, ""w"": 958, ""h"": 102}}"
+545,58:22,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 151px right of the ink on slot 6,"{""rect"": {""x"": 148, ""y"": 615, ""w"": 950, ""h"": 102}}"
+586,80:41,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 79px right of the ink on slot 1,"{""rect"": {""x"": 703, ""y"": 34, ""w"": 395, ""h"": 102}}"
+593,88:25,INFO,RECT_WIDER_THAN_TEXT,band reaches 3px left / 107px right of the ink on slot 2,"{""rect"": {""x"": 598, ""y"": 149, ""w"": 500, ""h"": 102}}"
+594,89:29,INFO,RECT_WIDER_THAN_TEXT,band reaches 3px left / 168px right of the ink on slot 5,"{""rect"": {""x"": 524, ""y"": 503, ""w"": 574, ""h"": 102}}"
+600,101:10,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 159px right of the ink on slot 10,"{""rect"": {""x"": 450, ""y"": 1083, ""w"": 648, ""h"": 102}}"
+602,106:4,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 233px right of the ink on slot 5,"{""rect"": {""x"": 210, ""y"": 497, ""w"": 888, ""h"": 102}}"
+602,107:6,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 96px right of the ink on slot 11,"{""rect"": {""x"": 552, ""y"": 1203, ""w"": 546, ""h"": 102}}"
+602,108:3,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 265px right of the ink on slot 15,"{""rect"": {""x"": 280, ""y"": 1676, ""w"": 818, ""h"": 102}}"
+603,110:3,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 196px right of the ink on slot 10,"{""rect"": {""x"": 198, ""y"": 1090, ""w"": 900, ""h"": 102}}"
+603,111:5,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 216px right of the ink on slot 15,"{""rect"": {""x"": 218, ""y"": 1673, ""w"": 880, ""h"": 102}}"
+604,112:4,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 256px right of the ink on slot 4,"{""rect"": {""x"": 260, ""y"": 387, ""w"": 838, ""h"": 102}}"
+604,113:5,INFO,RECT_WIDER_THAN_TEXT,band reaches 3px left / 267px right of the ink on slot 9,"{""rect"": {""x"": 247, ""y"": 974, ""w"": 851, ""h"": 102}}"
+604,114:5,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 187px right of the ink on slot 14,"{""rect"": {""x"": 193, ""y"": 1566, ""w"": 905, ""h"": 102}}"
+604,114:6,INFO,RECT_WIDER_THAN_TEXT,band reaches 2px left / 283px right of the ink on slot 15,"{""rect"": {""x"": 288, ""y"": 1687, ""w"": 810, ""h"": 102}}"
