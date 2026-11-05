@@ -8,7 +8,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
@@ -106,6 +110,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
@@ -124,6 +129,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -727,7 +733,6 @@ private fun ReaderPager(
     updates: AppUpdateUi?,
     onOpenRepeat: (AyahRef) -> Unit,
 ) {
-    var anchor by remember { mutableStateOf(Offset.Zero) }
     // The long-pressed ayah's bounds on screen, so its menu can sit clear of it.
     var ayahBounds by remember { mutableStateOf(Rect.Zero) }
     var longPressAyah by remember { mutableStateOf<AyahMarker?>(null) }
@@ -769,9 +774,8 @@ private fun ReaderPager(
                 selectedAyah = selected,
                 bookmarkedKeys = if (viewModel.isButtonVisible("bookmark")) viewModel.bookmarks else emptySet(),
                 bookmarkedKeys2 = if (viewModel.isButtonVisible("bookmark2")) viewModel.bookmarks2 else emptySet(),
-                onLongPressAyah = { m, off, bounds ->
+                onLongPressAyah = { m, _, bounds ->
                     viewModel.selectAyah(m)
-                    anchor = off
                     ayahBounds = bounds
                     longPressAyah = m
                 },
@@ -829,12 +833,15 @@ private fun ReaderPager(
         )
 
         longPressAyah?.let { ayah ->
+            // The page's own width: the whole box, except a whole-page fit narrower than the screen.
+            val pageWidthPx = if (fillScreen) boxW
+            else minOf(boxW, (boxH.toFloat() * imageWidth / imageHeight).roundToInt())
             AyahLongPressMenu(
                 ayah = ayah,
-                anchor = anchor,
                 ayahBounds = ayahBounds,
                 boxWidthPx = boxW,
                 boxHeightPx = boxH,
+                pageWidthPx = pageWidthPx,
                 bookmarked = viewModel.isBookmarked(ayah.verseKey),
                 onBookmark = { viewModel.toggleBookmark(ayah) },
                 showBookmark = viewModel.isButtonVisible("bookmark"),
@@ -2366,17 +2373,22 @@ private fun formatTafsirText(raw: String, accent: Color): AnnotatedString = buil
 }
 
 /**
- * The single ayah menu, opened by a long press. It sits above the whole ayah when there is room,
- * else below it, so the selected ayah stays visible; only an ayah too tall for either gets covered,
- * and then on the roomier side. Horizontally it follows the finger.
+ * The single ayah menu, opened by a long press: a card as wide as the page. It sits above the whole
+ * ayah when there is room, else below it, so the selected ayah stays visible; only an ayah too tall
+ * for either gets covered, and then on the roomier side. Its header is a handle: dragging it moves
+ * the card up or down anywhere over the page.
+ *
+ * The popup window covers the whole page area and never moves; only the card moves inside it.
+ * Moving the window itself under the finger makes a drag jitter, because every touch is then
+ * measured against a window that has just been repositioned.
  */
 @Composable
 private fun AyahLongPressMenu(
     ayah: AyahMarker,
-    anchor: Offset,
     ayahBounds: Rect,
     boxWidthPx: Int,
     boxHeightPx: Int,
+    pageWidthPx: Int,
     bookmarked: Boolean,
     onBookmark: () -> Unit,
     showBookmark: Boolean,
@@ -2399,43 +2411,29 @@ private fun AyahLongPressMenu(
     val density = LocalDensity.current
     val margin = with(density) { 10.dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
-    val positionProvider = remember(anchor, ayahBounds, boxWidthPx, boxHeightPx, margin, gap) {
+    val currentOnClose by rememberUpdatedState(onClose)
+    // Where the card was last placed: [top, height]. Read by the outside-touch test and the drag.
+    val placed = remember { FloatArray(2) }
+    // Null until the header is dragged; until then the card sits beside the ayah.
+    var draggedTop by remember { mutableStateOf<Float?>(null) }
+
+    val ink = MaterialTheme.colorScheme.onSurface
+    val accent = MaterialTheme.colorScheme.primary
+    val hasText = ayah.textUthmani.isNotBlank()
+
+    val coverPageArea = remember {
         object : PopupPositionProvider {
             override fun calculatePosition(
                 anchorBounds: IntRect,
                 windowSize: IntSize,
                 layoutDirection: LayoutDirection,
                 popupContentSize: IntSize,
-            ): IntOffset {
-                // The long-press coordinates are physical pixels within the pager, even in RTL.
-                val x = (anchor.x - popupContentSize.width / 2f)
-                    .coerceIn(margin, (boxWidthPx - popupContentSize.width - margin).coerceAtLeast(margin))
-                val h = popupContentSize.height
-                val above = ayahBounds.top - h - gap
-                val below = ayahBounds.bottom + gap
-                val y = when {
-                    above >= margin -> above
-                    below + h <= boxHeightPx - margin -> below
-                    // Neither fits: cover as little as possible, on the roomier side.
-                    ayahBounds.top > boxHeightPx - ayahBounds.bottom -> margin
-                    else -> boxHeightPx - h - margin
-                }.coerceIn(margin, (boxHeightPx - h - margin).coerceAtLeast(margin))
-                return IntOffset(
-                    (anchorBounds.left + x.roundToInt())
-                        .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
-                    (anchorBounds.top + y.roundToInt())
-                        .coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0)),
-                )
-            }
+            ): IntOffset = anchorBounds.topLeft
         }
     }
 
-    val ink = MaterialTheme.colorScheme.onSurface
-    val accent = MaterialTheme.colorScheme.primary
-    val hasText = ayah.textUthmani.isNotBlank()
-
     Popup(
-        popupPositionProvider = positionProvider,
+        popupPositionProvider = coverPageArea,
         onDismissRequest = onClose,
         properties = PopupProperties(
             focusable = true,
@@ -2443,231 +2441,304 @@ private fun AyahLongPressMenu(
             dismissOnClickOutside = true,
         ),
     ) {
-        Surface(
-            modifier = Modifier.widthIn(min = 280.dp, max = 320.dp),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, accent.copy(alpha = 0.14f)),
-            shadowElevation = 12.dp,
-            tonalElevation = 2.dp,
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Layout(
+            modifier = Modifier.pointerInput(Unit) {
+                // Touching the page around the card closes it, as touching outside the old popup did.
+                awaitEachGesture {
+                    val y = awaitFirstDown(requireUnconsumed = false).position.y
+                    if (y < placed[0] || y > placed[0] + placed[1]) currentOnClose()
+                }
+            },
+            content = {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, accent.copy(alpha = 0.14f)),
+                    shadowElevation = 12.dp,
+                    tonalElevation = 2.dp,
                 ) {
-                    AyahMedallion(ayahNumber = ayah.ayahNumber, accent = accent, ornate = hasText)
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp)) {
+                        // The whole header is the drag handle; the bar on top says so.
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .pointerInput(boxHeightPx) {
+                                    detectVerticalDragGestures { change, dy ->
+                                        change.consume()
+                                        val maxTop = (boxHeightPx - placed[1]).coerceAtLeast(0f)
+                                        draggedTop = ((draggedTop ?: placed[0]) + dy).coerceIn(0f, maxTop)
+                                    }
+                                },
                         ) {
-                            Text(
-                                text = ayah.surahNameAr,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = ink,
-                                maxLines = 1
+                            Box(
+                                modifier = Modifier
+                                    .padding(top = 6.dp, bottom = 2.dp)
+                                    .align(Alignment.CenterHorizontally)
+                                    .size(width = 36.dp, height = 4.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)),
                             )
-                            if (ayah.isSajdah) SajdahBadge()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                AyahMedallion(ayahNumber = ayah.ayahNumber, accent = accent, ornate = hasText)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = ayah.surahNameAr,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = ink,
+                                            maxLines = 1
+                                        )
+                                        if (ayah.isSajdah) SajdahBadge()
+                                    }
+                                    Text(
+                                        text = "الآية ${ayah.ayahNumber.toArabicDigits()} • صفحة ${ayah.page.toArabicDigits()}" +
+                                            " • الجزء ${ayah.juz.toArabicDigits()} • الحزب ${ayah.hizb.toArabicDigits()}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                IconButton(
+                                    onClick = onClose,
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "إغلاق",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         }
-                        Text(
-                            text = "الآية ${ayah.ayahNumber.toArabicDigits()} • صفحة ${ayah.page.toArabicDigits()}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                        )
-                    }
-                    IconButton(
-                        onClick = onClose,
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Close,
-                            contentDescription = "إغلاق",
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
 
-                if (hasText) {
-                    Text(
-                        text = ayah.textUthmani,
-                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 21.sp),
-                        color = ink.copy(alpha = 0.82f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                }
-                Text(
-                    text = "الجزء ${ayah.juz.toArabicDigits()} • الحزب ${ayah.hizb.toArabicDigits()}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+                        if (hasText) {
+                            Text(
+                                text = ayah.textUthmani,
+                                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 21.sp),
+                                color = ink.copy(alpha = 0.82f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                        }
 
-                // One compact row: reading the ayah (green) and listening to it (blue). The menu
-                // used to take three labelled sections and covered the ayah it was opened on.
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    CompactAyahAction(
-                        modifier = Modifier.weight(1f),
-                        title = "التفسير",
-                        icon = Icons.AutoMirrored.Filled.MenuBook,
-                        tint = MaterialTheme.colorScheme.primary,
-                        maxLines = 2,
-                        onClick = onTafsir,
-                    )
-                    CompactAyahAction(
-                        modifier = Modifier.weight(1f),
-                        title = "المعاني",
-                        icon = Icons.AutoMirrored.Outlined.ManageSearch,
-                        tint = MaterialTheme.colorScheme.primary,
-                        maxLines = 2,
-                        onClick = onMeanings,
-                    )
-                    CompactAyahAction(
-                        modifier = Modifier.weight(1f),
-                        title = "الآية وحدها",
-                        icon = Icons.Filled.Headphones,
-                        tint = StatusBlueColor,
-                        maxLines = 2,
-                        onClick = onListenAyah,
-                    )
-                    CompactAyahAction(
-                        modifier = Modifier.weight(1f),
-                        title = "من هنا",
-                        icon = Icons.Filled.PlayArrow,
-                        tint = StatusBlueColor,
-                        maxLines = 2,
-                        onClick = onPlayFrom,
-                    )
-                    CompactAyahAction(
-                        modifier = Modifier.weight(1f),
-                        title = "التكرار",
-                        icon = Icons.Filled.Repeat,
-                        tint = StatusBlueColor,
-                        maxLines = 2,
-                        onClick = onRepeat,
-                    )
-                }
+                        // One group per row: reading the ayah (green), then listening to it (blue).
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            AyahPillAction(
+                                modifier = Modifier.weight(1f),
+                                title = "التفسير",
+                                icon = Icons.AutoMirrored.Filled.MenuBook,
+                                tint = MaterialTheme.colorScheme.primary,
+                                onClick = onTafsir,
+                            )
+                            AyahPillAction(
+                                modifier = Modifier.weight(1f),
+                                title = "المعاني",
+                                icon = Icons.AutoMirrored.Outlined.ManageSearch,
+                                tint = MaterialTheme.colorScheme.primary,
+                                onClick = onMeanings,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            AyahPillAction(
+                                modifier = Modifier.weight(1f),
+                                title = "الآية وحدها",
+                                icon = Icons.Filled.Headphones,
+                                tint = StatusBlueColor,
+                                onClick = onListenAyah,
+                            )
+                            AyahPillAction(
+                                modifier = Modifier.weight(1f),
+                                title = "من هنا",
+                                icon = Icons.Filled.PlayArrow,
+                                tint = StatusBlueColor,
+                                onClick = onPlayFrom,
+                            )
+                            AyahPillAction(
+                                modifier = Modifier.weight(1f),
+                                title = "التكرار",
+                                icon = Icons.Filled.Repeat,
+                                tint = StatusBlueColor,
+                                onClick = onRepeat,
+                            )
+                        }
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                        .height(1.dp)
-                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)),
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    if (showBookmark) {
-                        CompactAyahAction(
-                            modifier = Modifier.weight(1f),
-                            title = "علامة ١",
-                            icon = if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                            tint = BookmarkGoldColor,
-                            selected = bookmarked,
-                            onClick = onBookmark,
+                        HorizontalDivider(
+                            modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
                         )
-                    }
-                    if (showBookmark2) {
-                        CompactAyahAction(
-                            modifier = Modifier.weight(1f),
-                            title = "علامة ٢",
-                            icon = if (bookmarked2) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                            tint = BookmarkVioletColor,
-                            selected = bookmarked2,
-                            onClick = onBookmark2,
-                        )
-                    }
-                    CompactAyahAction(
-                        modifier = Modifier.weight(1f),
-                        title = "نسخ",
-                        icon = Icons.Filled.ContentCopy,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        onClick = {
-                            clipboardScope.launch {
-                                clipboard.setClipEntry(
-                                    ClipEntry(ClipData.newPlainText("آية قرآنية", shareText)),
+
+                        // Tools for the ayah: lighter than the actions above, so the eye goes there first.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            if (showBookmark) {
+                                AyahToolAction(
+                                    modifier = Modifier.weight(1f),
+                                    title = "علامة ١",
+                                    icon = if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                                    tint = BookmarkGoldColor,
+                                    selected = bookmarked,
+                                    onClick = onBookmark,
                                 )
-                                Toast.makeText(context, "تم نسخ الآية", Toast.LENGTH_SHORT).show()
                             }
-                        },
-                    )
-                    CompactAyahAction(
-                        modifier = Modifier.weight(1f),
-                        title = "مشاركة",
-                        icon = Icons.Filled.Share,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        onClick = {
-                            val send = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, shareText)
+                            if (showBookmark2) {
+                                AyahToolAction(
+                                    modifier = Modifier.weight(1f),
+                                    title = "علامة ٢",
+                                    icon = if (bookmarked2) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                                    tint = BookmarkVioletColor,
+                                    selected = bookmarked2,
+                                    onClick = onBookmark2,
+                                )
                             }
-                            context.startActivity(Intent.createChooser(send, null))
-                        },
-                    )
+                            AyahToolAction(
+                                modifier = Modifier.weight(1f),
+                                title = "نسخ",
+                                icon = Icons.Filled.ContentCopy,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                onClick = {
+                                    clipboardScope.launch {
+                                        clipboard.setClipEntry(
+                                            ClipEntry(ClipData.newPlainText("آية قرآنية", shareText)),
+                                        )
+                                        Toast.makeText(context, "تم نسخ الآية", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                            )
+                            AyahToolAction(
+                                modifier = Modifier.weight(1f),
+                                title = "مشاركة",
+                                icon = Icons.Filled.Share,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                onClick = {
+                                    val send = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, shareText)
+                                    }
+                                    context.startActivity(Intent.createChooser(send, null))
+                                },
+                            )
+                        }
+                    }
                 }
+            },
+        ) { measurables, _ ->
+            val width = pageWidthPx.coerceIn(0, boxWidthPx)
+            val card = measurables.first().measure(
+                Constraints(minWidth = width, maxWidth = width, maxHeight = boxHeightPx),
+            )
+            layout(boxWidthPx, boxHeightPx) {
+                val h = card.height.toFloat()
+                val maxTop = (boxHeightPx - h).coerceAtLeast(0f)
+                val top = (draggedTop ?: menuTopBesideAyah(ayahBounds, h, boxHeightPx.toFloat(), margin, gap))
+                    .coerceIn(0f, maxTop)
+                placed[0] = top
+                placed[1] = h
+                // Physical pixels: the page is centred the same way in either layout direction.
+                card.place((boxWidthPx - width) / 2, top.roundToInt())
             }
         }
     }
 }
 
+/** The menu's top beside the ayah: above it if it fits, else below, else on the roomier side. */
+private fun menuTopBesideAyah(ayah: Rect, h: Float, boxH: Float, margin: Float, gap: Float): Float {
+    val above = ayah.top - h - gap
+    val below = ayah.bottom + gap
+    return when {
+        above >= margin -> above
+        below + h <= boxH - margin -> below
+        // Neither fits: cover as little as possible, on the roomier side.
+        ayah.top > boxH - ayah.bottom -> margin
+        else -> boxH - h - margin
+    }.coerceIn(margin, (boxH - h - margin).coerceAtLeast(margin))
+}
+
+/** A main ayah action: icon beside a one-line label, tinted by its group. */
 @Composable
-private fun CompactAyahAction(
+private fun AyahPillAction(
+    modifier: Modifier,
+    title: String,
+    icon: ImageVector,
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 44.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = tint.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.18f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        ) {
+            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = tint)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** A secondary ayah tool (bookmark, copy, share): flat until [selected]. */
+@Composable
+private fun AyahToolAction(
     modifier: Modifier,
     title: String,
     icon: ImageVector,
     tint: Color,
     selected: Boolean = false,
-    maxLines: Int = 1,
     onClick: () -> Unit,
 ) {
     Surface(
-        modifier = modifier
-            .defaultMinSize(minHeight = 54.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) tint.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
-        border = if (selected) BorderStroke(1.dp, tint.copy(alpha = 0.3f)) else null,
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 40.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = if (selected) tint.copy(alpha = 0.14f) else Color.Transparent,
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(tint.copy(alpha = if (selected) 0.13f else 0.08f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = tint,
-                )
-            }
+            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = tint)
             Text(
                 text = title,
-                modifier = Modifier.padding(top = 2.dp),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                maxLines = maxLines,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
