@@ -1,32 +1,49 @@
-"""Build the read-only Room asset: Tafsir Muyassar, Quran vocabulary and Tafsir al-Sa'di."""
+"""Build the read-only Room asset: Tafsir al-Sa'di, Tafsir Muyassar and Quran vocabulary.
+
+Sa'di comes from the Tafsir Center's dataset; saadi_center.py says what is done to it. Needs rapidfuzz.
+"""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from collections import defaultdict
 from pathlib import Path
+
+import mukhtasar_center
+import saadi_center
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_DIR = ROOT / "qurancomplex_tafsir_gharib_2026-08-14"
 TAFSIR_IN = SOURCE_DIR / "tafsir_muyassar.json"
 GHARIB_IN = SOURCE_DIR / "muyassar_gharib.json"
-# Made by tools/fetch_quranenc_saadi.py; a new snapshot means a new folder name here.
+# The QuranEnc copy of the book, made by tools/fetch_quranenc_saadi.py. It says which ayahs are read
+# together and supplies the four passages the Center's copy lacks; its wording is not otherwise used.
 SAADI_DIR = ROOT / "quranenc_saadi_2026-11-05"
 SAADI_ROWS_IN = SAADI_DIR / "saadi_rows.json"
 SAADI_META_IN = SAADI_DIR / "metadata.json"
+# Only table tafsir_saadi of the Center's quran.db, copied verbatim. Not committed, like the others.
+CENTER_DB = ROOT / "tafsircenter_saadi_2026-11-06" / "saadi_slim.db"
+CENTER_ROWS_SHA256 = "34e881a4fe2f45f6e2e057d5442280a58eda9b1497126c068600e1734a3555dd"
+# Only the Arabic Mukhtasar column of the same quran.db, copied verbatim, also not committed.
+MUKHTASAR_DB = ROOT / "tafsircenter_mukhtasar_2026-11-06" / "mukhtasar_slim.db"
+MUKHTASAR_ROWS_SHA256 = "77d2ad13dc1bae1c3e08c613ef434aa524e2aca3c3ff85b4c4b8c90d90185df0"
+# The mushaf text the app already shows; the Quran blocks of the Sa'di tab are built from it.
+AYAH_RECORDS_IN = ROOT / "mushaf_app" / "app" / "src" / "main" / "assets" / "data" / "ayah_regions.json"
 # A new file name, not just a new user_version: Room copies a prepackaged database only when the
-# file is missing, so an install that already holds v1 would otherwise never see the new tables.
+# file is missing, so an install that already holds v2 would otherwise never see the new tables.
 OUTPUT = (
     ROOT / "mushaf_app" / "app" / "src" / "main" / "assets" /
-    "databases" / "quran_content_v2.db"
+    "databases" / "quran_content_v3.db"
 )
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 EXPECTED_TAFSIR = 6236
 EXPECTED_GHARIB = 11372
-EXPECTED_SAADI_ROWS = 7150
+EXPECTED_QURANENC_ROWS = 7150
+EXPECTED_SUPPLEMENT_WORDS = 255
 
 SAADI_SOURCE_ID = "saadi"
 PASSAGE_KIND = "المقطع"
@@ -127,6 +144,20 @@ def group_saadi(rows: list[dict], verse_keys: set[str]) -> tuple[list[tuple[dict
     return assigned, ayah_group
 
 
+def read_center_rows(path: Path, table: str, expected_sha256: str) -> dict[str, str]:
+    """The Center's rows, after checking they are still the verbatim copy that was reviewed."""
+    uri = "file:" + path.as_posix().replace(" ", "%20") + "?mode=ro&immutable=1"
+    source = sqlite3.connect(uri, uri=True)
+    try:
+        rows = source.execute(f"SELECT sura, aya, tafsir FROM {table} ORDER BY sura, aya").fetchall()
+    finally:
+        source.close()
+    digest = hashlib.sha256("\n".join(f"{s}:{a}\t{t}" for s, a, t in rows).encode("utf-8")).hexdigest()
+    if digest != expected_sha256:
+        raise ValueError(f"The Center's rows in {path.name} changed: {digest}")
+    return {f"{s}:{a}": t for s, a, t in rows}
+
+
 def main() -> None:
     tafsir = read_json(TAFSIR_IN)
     gharib = read_json(GHARIB_IN)
@@ -135,7 +166,7 @@ def main() -> None:
     if (
         len(tafsir) != EXPECTED_TAFSIR
         or len(gharib) != EXPECTED_GHARIB
-        or len(saadi_rows) != EXPECTED_SAADI_ROWS
+        or len(saadi_rows) != EXPECTED_QURANENC_ROWS
     ):
         raise ValueError(
             f"Unexpected source counts: tafsir={len(tafsir)}, gharib={len(gharib)}, "
@@ -151,8 +182,23 @@ def main() -> None:
     saadi_ids = [int(row["id"]) for row in saadi_rows]
     if saadi_ids != sorted(set(saadi_ids)):
         raise ValueError("Sa'di row ids are not unique and increasing")
-    saadi_assigned, saadi_ayah_group = group_saadi(saadi_rows, tafsir_keys)
+    quranenc_assigned, _ = group_saadi(saadi_rows, tafsir_keys)
     saadi_work = saadi_meta["work"]
+
+    records = read_json(AYAH_RECORDS_IN)["records"]
+    approved = {f"{r['surah_number']}:{r['ayah_number']}": r["text_uthmani"] for r in records}
+    approved_imlaei = {f"{r['surah_number']}:{r['ayah_number']}": r["text_imlaei"] for r in records}
+    center_rows = read_center_rows(CENTER_DB, "tafsir_saadi", CENTER_ROWS_SHA256)
+    mukhtasar = mukhtasar_center.apply_corrections(
+        read_center_rows(MUKHTASAR_DB, "mukhtasar", MUKHTASAR_ROWS_SHA256)
+    )
+    mukhtasar_center.verify(mukhtasar, set(approved))
+    saadi_out, saadi_ayah_group, saadi_report = saadi_center.build_rows(
+        center_rows, saadi_rows, quranenc_assigned, approved, approved_imlaei
+    )
+    saadi_center.verify_rows(saadi_out, center_rows, approved, EXPECTED_SUPPLEMENT_WORDS)
+    print("saadi", {k: v for k, v in saadi_report.items() if k != "ayahs_without_own_row"})
+    print("saadi ayahs without a row of their own", saadi_report["ayahs_without_own_row"])
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     temporary = OUTPUT.with_suffix(".tmp")
@@ -212,6 +258,7 @@ def main() -> None:
                 `to_ayah` INTEGER NOT NULL,
                 `kind` TEXT NOT NULL,
                 `text` TEXT NOT NULL,
+                `notes` TEXT NOT NULL,
                 PRIMARY KEY(`source_id`, `row_id`)
             );
             CREATE INDEX `index_tafsir_passage_source_id_group_id`
@@ -236,33 +283,44 @@ def main() -> None:
                 ("gharib_title", "الميسر في غريب القرآن الكريم"),
                 ("gharib_edition", "الطبعة الثانية"),
                 ("publisher", "مجمع الملك فهد لطباعة المصحف الشريف"),
-                ("saadi_source_package", SAADI_DIR.name),
+                ("saadi_source_package", CENTER_DB.parent.name),
                 ("saadi_title", saadi_work["title_ar"]),
                 ("saadi_author", saadi_work["author_ar"]),
-                ("saadi_version", saadi_work["version"]),
-                ("saadi_last_update", saadi_work["last_update"]),
-                ("saadi_source", "موسوعة القرآن الكريم — QuranEnc.com"),
-                ("saadi_fetched_at", saadi_meta["fetched_at"]),
+                ("saadi_source", "مركز تفسير للدراسات القرآنية"),
+                ("saadi_source_url", "https://tafsir.net"),
+                ("saadi_license", "CC BY 4.0"),
+                ("saadi_license_url", "https://creativecommons.org/licenses/by/4.0/"),
+                ("saadi_supplement_source", "موسوعة القرآن الكريم — QuranEnc.com"),
+                ("saadi_supplement_version", saadi_work["version"]),
+                ("saadi_supplement_package", SAADI_DIR.name),
+                ("saadi_supplement_fetched_at", saadi_meta["fetched_at"]),
+                ("mukhtasar_source_package", MUKHTASAR_DB.parent.name),
+                ("mukhtasar_title", "المختصر في تفسير القرآن الكريم"),
+                ("mukhtasar_source", "مركز تفسير للدراسات القرآنية"),
+                ("mukhtasar_source_url", "https://tafsir.net"),
+                ("mukhtasar_license", "CC BY 4.0"),
+                ("mukhtasar_license_url", "https://creativecommons.org/licenses/by/4.0/"),
             ],
         )
         database.executemany(
             """
             INSERT INTO tafsir_passage(
-                source_id, row_id, group_id, surah_number, from_ayah, to_ayah, kind, text
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                source_id, row_id, group_id, surah_number, from_ayah, to_ayah, kind, text, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
                     SAADI_SOURCE_ID,
-                    int(row["id"]),
-                    group_id,
-                    int(row["sura"]),
-                    int(row["from_aya"]),
-                    int(row["to_aya"]),
-                    row["type"],
-                    row["text"],
+                    row_id,
+                    row.group_id,
+                    row.sura,
+                    row.from_ayah,
+                    row.to_ayah,
+                    row.kind,
+                    row.text,
+                    "\n".join(row.notes),
                 )
-                for row, group_id in saadi_assigned
+                for row_id, row in enumerate(saadi_out, start=1)
             ],
         )
         database.executemany(
@@ -270,6 +328,35 @@ def main() -> None:
             [
                 (SAADI_SOURCE_ID, verse_key, group_id)
                 for verse_key, group_id in sorted(saadi_ayah_group.items())
+            ],
+        )
+        # The Mukhtasar explains ayah by ayah: each is a passage of one row, numbered in Quran order.
+        mukhtasar_keys = sorted(mukhtasar, key=lambda key: tuple(map(int, key.split(":"))))
+        database.executemany(
+            """
+            INSERT INTO tafsir_passage(
+                source_id, row_id, group_id, surah_number, from_ayah, to_ayah, kind, text, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '')
+            """,
+            [
+                (
+                    mukhtasar_center.SOURCE_ID,
+                    number,
+                    number,
+                    int(key.split(":")[0]),
+                    int(key.split(":")[1]),
+                    int(key.split(":")[1]),
+                    mukhtasar_center.KIND,
+                    mukhtasar[key],
+                )
+                for number, key in enumerate(mukhtasar_keys, start=1)
+            ],
+        )
+        database.executemany(
+            "INSERT INTO tafsir_ayah_group(source_id, verse_key, group_id) VALUES (?, ?, ?)",
+            [
+                (mukhtasar_center.SOURCE_ID, key, number)
+                for number, key in enumerate(mukhtasar_keys, start=1)
             ],
         )
         database.executemany(
@@ -334,24 +421,38 @@ def main() -> None:
             "tafsir": database.execute("SELECT COUNT(*) FROM tafsir_ayah").fetchone()[0],
             "gharib": database.execute("SELECT COUNT(*) FROM gharib_entry").fetchone()[0],
             "mappings": database.execute("SELECT COUNT(*) FROM gharib_ayah_map").fetchone()[0],
-            "saadi_rows": database.execute("SELECT COUNT(*) FROM tafsir_passage").fetchone()[0],
-            "saadi_groups": database.execute(
-                "SELECT COUNT(DISTINCT group_id) FROM tafsir_passage"
+            "saadi_rows": database.execute(
+                "SELECT COUNT(*) FROM tafsir_passage WHERE source_id = ?", (SAADI_SOURCE_ID,)
             ).fetchone()[0],
-            "saadi_ayahs": database.execute("SELECT COUNT(*) FROM tafsir_ayah_group").fetchone()[0],
+            "saadi_groups": database.execute(
+                "SELECT COUNT(DISTINCT group_id) FROM tafsir_passage WHERE source_id = ?",
+                (SAADI_SOURCE_ID,),
+            ).fetchone()[0],
+            "saadi_ayahs": database.execute(
+                "SELECT COUNT(*) FROM tafsir_ayah_group WHERE source_id = ?", (SAADI_SOURCE_ID,)
+            ).fetchone()[0],
+            "mukhtasar_rows": database.execute(
+                "SELECT COUNT(*) FROM tafsir_passage WHERE source_id = ?", (mukhtasar_center.SOURCE_ID,)
+            ).fetchone()[0],
+            "mukhtasar_ayahs": database.execute(
+                "SELECT COUNT(*) FROM tafsir_ayah_group WHERE source_id = ?", (mukhtasar_center.SOURCE_ID,)
+            ).fetchone()[0],
         }
         if (
             integrity != "ok"
             or counts["tafsir"] != EXPECTED_TAFSIR
-            or counts["saadi_rows"] != EXPECTED_SAADI_ROWS
+            or counts["saadi_rows"] != len(saadi_out)
             or counts["saadi_ayahs"] != EXPECTED_TAFSIR
+            or counts["mukhtasar_rows"] != EXPECTED_TAFSIR
+            or counts["mukhtasar_ayahs"] != EXPECTED_TAFSIR
         ):
             raise ValueError(f"Database validation failed: integrity={integrity}, {counts}")
         largest = database.execute(
             """
             SELECT group_id, COUNT(*), SUM(LENGTH(text)) FROM tafsir_passage
-            GROUP BY group_id ORDER BY 3 DESC LIMIT 1
-            """
+            WHERE source_id = ? GROUP BY group_id ORDER BY 3 DESC LIMIT 1
+            """,
+            (SAADI_SOURCE_ID,),
         ).fetchone()
         print(f"largest_saadi_group id={largest[0]} rows={largest[1]} chars={largest[2]}")
     finally:

@@ -96,18 +96,22 @@ data class AyahExplanationUiState(
     val tafsirHtml: String? = null,
     val meanings: List<GharibMeaning> = emptyList(),
     val saadi: TafsirPassage? = null,
-    val saadiVersion: String? = null,
+    val mukhtasar: String? = null,
     val errorMessage: String? = null,
 )
 
-/** The tafsirs the explanation sheet offers; [id] is what [ReadingStore] remembers. */
+/**
+ * The tafsirs the explanation sheet offers; [id] is what [ReadingStore] remembers. Sa'di is the app's
+ * base tafsir: a reader who has never chosen opens on it, and one who chose Muyassar keeps Muyassar.
+ */
 enum class TafsirChoice(val id: String) {
-    Muyassar("muyassar"),
     Saadi("saadi"),
+    Mukhtasar("mukhtasar"),
+    Muyassar("muyassar"),
     ;
 
     companion object {
-        fun fromId(id: String?): TafsirChoice = entries.firstOrNull { it.id == id } ?: Muyassar
+        fun fromId(id: String?): TafsirChoice = entries.firstOrNull { it.id == id } ?: Saadi
     }
 }
 
@@ -185,7 +189,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** The tafsir «التفسير» opens on: whichever one the reader last chose in the sheet. */
-    var preferredTafsir by mutableStateOf(TafsirChoice.Muyassar)
+    var preferredTafsir by mutableStateOf(TafsirChoice.Saadi)
         private set
 
     fun updatePreferredTafsir(value: TafsirChoice) {
@@ -839,6 +843,12 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         "اكتملت الاستعادة من نسخة ${formatBackupDate(backup.createdAt)} (${backup.deviceName})."
     }
 
+    fun cloudDeleteBackup(backup: CloudBackupInfo) = runCloud(CloudStage.DeletingBackup) {
+        cloudRepo.delete(backup)
+        cloudUiState = cloudUiState.copy(backups = cloudRepo.list(), listLoaded = true)
+        "حُذفت النسخة من حسابك."
+    }
+
     fun setCloudAutoBackup(enabled: Boolean) {
         if (cloudUiState.username == null || enabled == cloudUiState.autoBackup) return
         cloudUiState = cloudUiState.copy(autoBackup = enabled)
@@ -964,7 +974,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
                     tafsirHtml = content.tafsirHtml,
                     meanings = content.meanings,
                     saadi = content.saadi,
-                    saadiVersion = content.saadiVersion,
+                    mukhtasar = content.mukhtasar,
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled

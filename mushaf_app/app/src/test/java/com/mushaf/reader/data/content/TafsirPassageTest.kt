@@ -22,6 +22,59 @@ class TafsirPassageTest {
     )
 
     @Test
+    fun `a note anchor stays out of what is copied or shared`() {
+        val rows = listOf(
+            TafsirPassageRow(TafsirRowKind.AyahTafsir, 5, 5, "{5} شرح⟦1⟧ ثم تتمة⟦2⟧.", listOf("حاشية", "أخرى")),
+        )
+        val passage = TafsirPassage(rows, ayah = 5)
+        assertEquals("{5} شرح ثم تتمة.", passage.shareText)
+        assertEquals(listOf("1", "2"), TafsirPassageRow.NoteAnchor.findAll(rows[0].text).map { it.groupValues[1] }.toList())
+    }
+
+    @Test
+    fun `the notes column holds one note per line and may be empty`() {
+        assertEquals(emptyList<String>(), TafsirPassageRow.parseNotes(""))
+        assertEquals(listOf("أ", "ب"), TafsirPassageRow.parseNotes("أ\nب"))
+    }
+
+    @Test
+    fun `a supplement counts as the ayah's own explanation`() {
+        val rows = listOf(
+            row(TafsirRowKind.QuranText, 143, 143, "نص"),
+            row(TafsirRowKind.AyahTafsir, 143, 143, "{143} أ"),
+            row(TafsirRowKind.Supplement, 143, 143, "تكملة"),
+            row(TafsirRowKind.AyahTafsir, 143, 143, "ب"),
+        )
+        val passage = TafsirPassage(rows, ayah = 143)
+        assertEquals(listOf(1, 2, 3), passage.focusRows)
+        assertEquals("{143} أ\n\nتكملة\n\nب", passage.shareText)
+        assertEquals(TafsirRowKind.Supplement, TafsirRowKind.fromSource("تكملة من الموسوعة"))
+    }
+
+    @Test
+    fun `sharing names the second source only when its words go out`() {
+        val rows = listOf(
+            row(TafsirRowKind.AyahTafsir, 142, 142, "{142} أ"),
+            row(TafsirRowKind.AyahTafsir, 143, 143, "{143} ب"),
+            row(TafsirRowKind.Supplement, 143, 143, "تكملة"),
+        )
+        assertFalse(TafsirPassage(rows, ayah = 142).sharesSupplement)
+        assertTrue(TafsirPassage(rows, ayah = 143).sharesSupplement)
+    }
+
+    @Test
+    fun `an explanation extended over a neighbour focuses for both ayahs`() {
+        // 2:50 has no row of its own in the Center's copy; it is explained together with 2:49.
+        val rows = listOf(
+            row(TafsirRowKind.QuranText, 49, 52, "نص"),
+            row(TafsirRowKind.AyahTafsir, 49, 50, "{49} شرح"),
+            row(TafsirRowKind.AyahTafsir, 51, 52, "{51} شرح"),
+        )
+        assertEquals(listOf(1), TafsirPassage(rows, ayah = 50).focusRows)
+        assertEquals(listOf(2), TafsirPassage(rows, ayah = 52).focusRows)
+    }
+
+    @Test
     fun `source row types map to layout kinds`() {
         assertEquals(TafsirRowKind.QuranText, TafsirRowKind.fromSource("المقطع"))
         assertEquals(TafsirRowKind.AyahTafsir, TafsirRowKind.fromSource("تفسير آية"))

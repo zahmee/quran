@@ -54,3 +54,7 @@ old/
 /qurancomplex_tafsir_gharib_*.zip
 /qurancomplex_tafsir_gharib_*/
 /quranenc_saadi_*/
+/tafsircenter_*/
+
+# Python
+__pycache__/

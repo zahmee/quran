@@ -2,6 +2,7 @@ package com.mushaf.reader.reader
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Refresh
@@ -26,6 +28,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -55,6 +58,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mushaf.reader.data.backup.CloudBackupInfo
+import com.mushaf.reader.data.backup.CloudBackupRetention
 import com.mushaf.reader.data.backup.CloudStage
 import com.mushaf.reader.data.backup.CloudUiState
 import com.mushaf.reader.data.backup.CloudUsername
@@ -72,6 +76,7 @@ internal fun CloudBackupSection(
     onAutoBackupChange: (Boolean) -> Unit,
     onRefresh: () -> Unit,
     onRestore: (CloudBackupInfo) -> Unit,
+    onDeleteBackup: (CloudBackupInfo) -> Unit,
     onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
@@ -106,6 +111,7 @@ internal fun CloudBackupSection(
                 onAutoBackupChange = onAutoBackupChange,
                 onRefresh = onRefresh,
                 onRestore = onRestore,
+                onDeleteBackup = onDeleteBackup,
                 onDeleteAccount = onDeleteAccount,
             )
         }
@@ -252,6 +258,7 @@ private fun AccountContent(
     onAutoBackupChange: (Boolean) -> Unit,
     onRefresh: () -> Unit,
     onRestore: (CloudBackupInfo) -> Unit,
+    onDeleteBackup: (CloudBackupInfo) -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
     Button(
@@ -299,6 +306,13 @@ private fun AccountContent(
             Icon(Icons.Outlined.Refresh, contentDescription = "تحديث القائمة")
         }
     }
+    Text(
+        "تُحفظ نسخ آخر ٧ أيام وتُحذف الأقدم تلقائياً، وتبقى أحدث نسخة من كل جهاز. " +
+            "ولا يمكن حذف أحدث نسخة في حسابك.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(bottom = 10.dp),
+    )
     when {
         !state.listLoaded -> Text(
             if (state.busy) "جارٍ تحميل القائمة…" else "اضغط التحديث لعرض النسخ.",
@@ -311,8 +325,15 @@ private fun AccountContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val newest = CloudBackupRetention.newest(state.backups)
             state.backups.forEach { backup ->
-                CloudBackupRow(backup = backup, enabled = !state.busy, onRestore = { onRestore(backup) })
+                CloudBackupRow(
+                    backup = backup,
+                    isNewest = backup.id == newest?.id,
+                    enabled = !state.busy,
+                    onRestore = { onRestore(backup) },
+                    onDelete = { onDeleteBackup(backup) },
+                )
             }
         }
     }
@@ -330,7 +351,13 @@ private fun AccountContent(
 }
 
 @Composable
-private fun CloudBackupRow(backup: CloudBackupInfo, enabled: Boolean, onRestore: () -> Unit) {
+private fun CloudBackupRow(
+    backup: CloudBackupInfo,
+    isNewest: Boolean,
+    enabled: Boolean,
+    onRestore: () -> Unit,
+    onDelete: () -> Unit,
+) {
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -352,7 +379,7 @@ private fun CloudBackupRow(backup: CloudBackupInfo, enabled: Boolean, onRestore:
                     text = if (backup.fromThisDevice) "${backup.deviceName} (هذا الجهاز)" else backup.deviceName,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
@@ -361,10 +388,68 @@ private fun CloudBackupRow(backup: CloudBackupInfo, enabled: Boolean, onRestore:
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (isNewest) {
+                    Text(
+                        text = "أحدث نسخة",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
-            OutlinedButton(enabled = enabled, onClick = onRestore) { Text("استعادة") }
+            OutlinedButton(
+                enabled = enabled,
+                onClick = onRestore,
+                contentPadding = PaddingValues(horizontal = 12.dp),
+            ) { Text("استعادة") }
+            if (isNewest) {
+                // Keeps this row's restore button in line with the others.
+                Spacer(Modifier.size(DeleteButtonSize))
+            } else {
+                IconButton(enabled = enabled, onClick = onDelete, modifier = Modifier.size(DeleteButtonSize)) {
+                    Icon(
+                        Icons.Outlined.Delete,
+                        contentDescription = "حذف هذه النسخة",
+                        tint = if (enabled) MaterialTheme.colorScheme.error else LocalContentColor.current,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
         }
     }
+}
+
+private val DeleteButtonSize = 40.dp
+
+/** Deleting one copy is final, though far less than the account, so a plain question will do. */
+@Composable
+internal fun DeleteCloudBackupDialog(
+    source: String,
+    busy: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        icon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+        title = { Text("حذف هذه النسخة؟") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(source, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                Text("تُحذف من حسابك نهائياً ولا يمكن استرجاعها. بياناتك على هذا الجهاز لا تتأثر.")
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = !busy,
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+            ) { Text("حذف") }
+        },
+        dismissButton = {
+            TextButton(enabled = !busy, onClick = onDismiss) { Text("إلغاء") }
+        },
+    )
 }
 
 /** Deleting the account is final, so it asks for the password once more. */
@@ -416,6 +501,7 @@ private fun cloudStageLabel(stage: CloudStage?): String = when (stage) {
     CloudStage.Loading -> "جارٍ تحميل النسخ…"
     CloudStage.Uploading -> "جارٍ رفع النسخة…"
     CloudStage.Restoring -> "جارٍ تنزيل النسخة ودمجها…"
+    CloudStage.DeletingBackup -> "جارٍ حذف النسخة…"
     CloudStage.Deleting -> "جارٍ حذف الحساب…"
     null -> "جاهز"
 }

@@ -12,15 +12,12 @@ data class AyahExplanation(
     val tafsirHtml: String?,
     val meanings: List<GharibMeaning>,
     val saadi: TafsirPassage?,
-    /** The Sa'di snapshot's version as recorded in the content database, e.g. "1.0.0". */
-    val saadiVersion: String?,
+    /** The Mukhtasar's text for this ayah; it may hold marks, see [MukhtasarText]. */
+    val mukhtasar: String?,
 )
 
 class QuranContentRepository(context: Context) {
     private val dao = QuranContentDatabase.get(context).contentDao()
-
-    @Volatile
-    private var saadiVersion: String? = null
 
     suspend fun explanationFor(verseKey: String): AyahExplanation {
         val tafsir = dao.tafsirForVerse(verseKey)
@@ -38,18 +35,19 @@ class QuranContentRepository(context: Context) {
                 fromAyah = row.fromAyah,
                 toAyah = row.toAyah,
                 text = row.text,
+                notes = TafsirPassageRow.parseNotes(row.notes),
             )
         }
-        val version = saadiVersion ?: dao.meta("saadi_version").also { saadiVersion = it }
         return AyahExplanation(
             tafsirHtml = tafsir?.textHtml,
             meanings = meanings,
             saadi = if (ayah != null && saadiRows.isNotEmpty()) TafsirPassage(saadiRows, ayah) else null,
-            saadiVersion = version,
+            mukhtasar = dao.passageForVerse(MUKHTASAR_SOURCE_ID, verseKey).firstOrNull()?.text,
         )
     }
 
     private companion object {
         const val SAADI_SOURCE_ID = "saadi"
+        const val MUKHTASAR_SOURCE_ID = "mukhtasar"
     }
 }

@@ -40,7 +40,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,7 +63,7 @@ import com.mushaf.reader.ui.components.MushafTopBar
 import com.mushaf.reader.update.AppUpdateState
 import com.mushaf.reader.update.AppUpdateUi
 
-/** "About" screen: app identity, trust notes, Mushaf source attribution, the manual update check
+/** "About" screen: app identity, trust notes, the way to the sources screen, the manual update check
  *  — the one place the reader can ask about updates on their own initiative — and a way through to
  *  the backup screen for saving and restoring the reader's own data. */
 @Composable
@@ -75,6 +79,9 @@ fun AboutScreen(
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
         }.getOrNull().orEmpty()
     }
+
+    var showSources by rememberSaveable { mutableStateOf(false) }
+    if (showSources) SourcesDialog(onDismiss = { showSources = false })
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -128,9 +135,7 @@ fun AboutScreen(
                 if (updates != null) UpdatePanel(updates)
                 if (onOpenBackup != null) BackupPanel(onOpenBackup)
                 TrustPanel()
-                MushafSourcePanel(
-                    onVisitSite = { openWeb("https://qurancomplex.gov.sa/quran-dev/") }
-                )
+                SourcesPanel(onOpen = { showSources = true })
                 DeveloperPanel(
                     onVisitSite = { openWeb("https://cdit.co") }
                 )
@@ -346,21 +351,18 @@ private fun ContactPanel(
 }
 
 @Composable
-private fun MushafSourcePanel(onVisitSite: () -> Unit) {
+private fun SourcesPanel(onOpen: () -> Unit) {
     Panel {
         InfoHeader(
             icon = Icons.Outlined.Verified,
-            title = "مصادر المصحف والمحتوى",
-            body = "تعتمد صفحات المصحف على نسخة من مصحف المدينة المنورة. ويستخدم التطبيق «التفسير الميسر» (الإصدار 3.0) و«الميسر في غريب القرآن الكريم» (الطبعة الثانية)، وجميعها صادرة عن مجمع الملك فهد لطباعة المصحف الشريف. " +
-                "و«تفسير السعدي» (تيسير الكريم الرحمن في تفسير كلام المنان) من موسوعة القرآن الكريم ‏(QuranEnc.com)، مضمّن في التطبيق كما نشرته الموسوعة دون تعديل. " +
-                "والتلاوات الصوتية ومواضع الآيات فيها من موقع MP3Quran ‏(mp3quran.net)، تُجلب حين تشغّلها أو تنزّلها."
+            title = "المصادر والتراخيص",
+            body = "مصدر كل ما يستخدمه التطبيق: صفحات المصحف والنص والتفاسير والتلاوة والخطوط والمكتبات."
         )
-
         Spacer(Modifier.height(14.dp))
         ActionButton(
-            text = "زيارة الموقع الرسمي للمجمع",
+            text = "عرض المصادر والتراخيص",
             icon = Icons.Outlined.Verified,
-            onClick = onVisitSite
+            onClick = onOpen
         )
     }
 }

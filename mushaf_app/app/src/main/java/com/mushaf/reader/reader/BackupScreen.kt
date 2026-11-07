@@ -84,6 +84,7 @@ fun BackupScreen(
     val openableTypes = remember { arrayOf("*/*") }
     var pendingRestore by rememberSaveable { mutableStateOf<Uri?>(null) }
     var pendingCloudRestore by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingCloudDelete by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmDeleteAccount by rememberSaveable { mutableStateOf(false) }
 
     // Another device may have uploaded since this screen was last open.
@@ -127,6 +128,7 @@ fun BackupScreen(
                             onAutoBackupChange = viewModel::setCloudAutoBackup,
                             onRefresh = viewModel::refreshCloudBackups,
                             onRestore = { pendingCloudRestore = it.id },
+                            onDeleteBackup = { pendingCloudDelete = it.id },
                             onSignOut = viewModel::cloudSignOut,
                             onDeleteAccount = { confirmDeleteAccount = true },
                         )
@@ -201,6 +203,23 @@ fun BackupScreen(
                     viewModel.cloudRestore(backup, takeDisplaySettings)
                 },
                 onDismiss = { pendingCloudRestore = null },
+            )
+        }
+    }
+
+    pendingCloudDelete?.let { id ->
+        val backup = cloud.backups.firstOrNull { it.id == id }
+        if (backup == null) {
+            pendingCloudDelete = null
+        } else {
+            DeleteCloudBackupDialog(
+                source = "نسخة ${backup.deviceName} — ${formatDate(backup.createdAt)}",
+                busy = cloud.busy,
+                onConfirm = {
+                    pendingCloudDelete = null
+                    viewModel.cloudDeleteBackup(backup)
+                },
+                onDismiss = { pendingCloudDelete = null },
             )
         }
     }

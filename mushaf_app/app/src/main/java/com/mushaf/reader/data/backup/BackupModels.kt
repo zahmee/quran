@@ -66,6 +66,7 @@ enum class CloudStage {
     SigningUp,
     Loading,
     Uploading,
+    DeletingBackup,
     Restoring,
     Deleting,
 }
