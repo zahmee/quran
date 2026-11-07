@@ -38,9 +38,10 @@ data class GharibEntryEntity(
 )
 
 /**
- * One row of a tafsir that explains the Quran passage by passage (Sa'di). [rowId] is the source's
- * own id and doubles as the reading order; [groupId] is the passage shown together on one screen.
- * Rows that only have a place in that order (a surah title, a lead-in) carry ayah range 0..0.
+ * One row of a tafsir that explains the Quran passage by passage (Sa'di). [rowId] is the reading
+ * order; [groupId] is the passage shown together on one screen. Rows that only have a place in that
+ * order (a surah title, a lead-in) carry ayah range 0..0. [notes] holds the row's editor's notes, one
+ * per line; the text marks where each belongs (see [TafsirPassageRow]).
  */
 @Entity(
     tableName = "tafsir_passage",
@@ -56,6 +57,7 @@ data class TafsirPassageEntity(
     @ColumnInfo(name = "to_ayah") val toAyah: Int,
     @ColumnInfo(name = "kind") val kind: String,
     @ColumnInfo(name = "text") val text: String,
+    @ColumnInfo(name = "notes") val notes: String,
 )
 
 /** Which passage of a passage-based tafsir explains each ayah. */

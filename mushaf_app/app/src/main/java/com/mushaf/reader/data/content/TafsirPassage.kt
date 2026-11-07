@@ -12,6 +12,9 @@ enum class TafsirRowKind {
     /** The explanation of one ayah or a run of ayahs. */
     AyahTafsir,
 
+    /** A passage of the book that the main source lacks, taken from another copy and credited. */
+    Supplement,
+
     /** The "* * *" the print puts between parts. */
     Divider,
 
@@ -27,6 +30,7 @@ enum class TafsirRowKind {
             "البسملة" -> Basmala
             "المقطع" -> QuranText
             "تفسير آية", "تكملة تفسير الآية" -> AyahTafsir
+            "تكملة من الموسوعة" -> Supplement
             "نجوم" -> Divider
             else -> Prose
         }
@@ -38,9 +42,23 @@ data class TafsirPassageRow(
     /** 0 when the row only has a place in the reading order and no ayah range of its own. */
     val fromAyah: Int,
     val toAyah: Int,
+    /** May hold anchors such as ⟦1⟧: where the row's first note belongs. See [NoteAnchor]. */
     val text: String,
+    /** The editor's notes on this row, in anchor order; ⟦1⟧ is the first. */
+    val notes: List<String> = emptyList(),
 ) {
     fun covers(ayah: Int): Boolean = fromAyah in 1..ayah && ayah <= toAyah
+
+    /** The text without its note anchors, for copying and sharing. */
+    val plainText: String get() = text.replace(NoteAnchor, "").trim()
+
+    companion object {
+        /** Where a row's text places a note: group 1 is the note's 1-based number in that row. */
+        val NoteAnchor = Regex("⟦(\\d+)⟧")
+
+        /** The source's `notes` column: one note per line. */
+        fun parseNotes(column: String): List<String> = column.lines().filter { it.isNotBlank() }
+    }
 }
 
 /** One passage of a passage-based tafsir, seen from the ayah the reader asked about. */
@@ -50,7 +68,8 @@ data class TafsirPassage(
 ) {
     /** Indices of the rows that explain [ayah] itself; empty when the author passed over it. */
     val focusRows: List<Int> = rows.indices.filter {
-        rows[it].kind == TafsirRowKind.AyahTafsir && rows[it].covers(ayah)
+        val row = rows[it]
+        (row.kind == TafsirRowKind.AyahTafsir || row.kind == TafsirRowKind.Supplement) && row.covers(ayah)
     }
 
     val hasOwnTafsir: Boolean get() = focusRows.isNotEmpty()
@@ -64,13 +83,21 @@ data class TafsirPassage(
      * explanation of the whole passage, so the reader never shares an empty message.
      */
     val shareText: String
-        get() {
-            val chosen = if (hasOwnTafsir) {
-                focusRows.map { rows[it] }
-            } else {
-                rows.filter { it.kind == TafsirRowKind.AyahTafsir || it.kind == TafsirRowKind.Prose }
+        get() = shareRows.joinToString("\n\n") { it.plainText }
+
+    /** Whether [shareText] holds words from the second source, which then has to be named with it. */
+    val sharesSupplement: Boolean
+        get() = shareRows.any { it.kind == TafsirRowKind.Supplement }
+
+    private val shareRows: List<TafsirPassageRow>
+        get() = if (hasOwnTafsir) {
+            focusRows.map { rows[it] }
+        } else {
+            rows.filter {
+                it.kind == TafsirRowKind.AyahTafsir ||
+                    it.kind == TafsirRowKind.Supplement ||
+                    it.kind == TafsirRowKind.Prose
             }
-            return chosen.joinToString("\n\n") { it.text.trim() }
         }
 
     val isEmpty: Boolean get() = rows.isEmpty()

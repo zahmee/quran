@@ -41,7 +41,7 @@ import kotlin.coroutines.resumeWithException
  *
  * Each backup is the same gzip JSON the file transport writes, stored as two documents — its
  * metadata under `backups`, its bytes under `payloads` — so the list can be shown without
- * downloading every payload. Each device keeps its latest [KEEP_PER_DEVICE]; restoring goes
+ * downloading every payload. [CloudBackupRetention] decides how long a copy stays; restoring goes
  * through [LocalBackupData.mergeIn], exactly like a file.
  */
 class CloudBackupRepository(context: Context) {
@@ -103,49 +103,45 @@ class CloudBackupRepository(context: Context) {
         val email = user.email ?: throw BackupException(GENERIC_ERROR)
         user.reauthenticate(EmailAuthProvider.getCredential(email, password)).await()
         val userDoc = userDoc(user)
-        val ids = userDoc.collection(BACKUPS).get(Source.SERVER).await().documents.map { it.id }
-        // A Firestore batch holds up to 500 writes; each backup is two.
-        ids.chunked(200).forEach { chunk ->
-            val batch = firestore.batch()
-            chunk.forEach { id ->
-                batch.delete(userDoc.collection(BACKUPS).document(id))
-                batch.delete(userDoc.collection(PAYLOADS).document(id))
-            }
-            batch.commit().await()
-        }
+        erase(userDoc, userDoc.collection(BACKUPS).get(Source.SERVER).await().documents.map { it.id })
         userDoc.delete().await()
         user.delete().await()
         store.setCloudAccount(null)
     }
 
+    /** The account's copies, newest first; opening the list is also a chance to clear out old ones. */
     suspend fun list(): List<CloudBackupInfo> = remote {
-        val user = requireUser()
-        val deviceId = store.cloudDeviceId()
-        userDoc(user).collection(BACKUPS).get(Source.SERVER).await().documents.mapNotNull { doc ->
-            val createdAt = doc.getLong("createdAt") ?: return@mapNotNull null
-            val backupDevice = doc.getString("deviceId").orEmpty()
-            CloudBackupInfo(
-                id = doc.id,
-                createdAt = createdAt,
-                deviceId = backupDevice,
-                deviceName = doc.getString("deviceName") ?: "جهاز غير معروف",
-                appVersion = doc.getString("appVersion").orEmpty(),
-                sizeBytes = doc.getLong("sizeBytes") ?: 0L,
-                auto = doc.getBoolean("auto") ?: false,
-                fromThisDevice = backupDevice == deviceId,
-            )
-        }.sortedByDescending { it.createdAt }
+        val userDoc = userDoc(requireUser())
+        val all = fetchBackups(userDoc)
+        val gone = pruneOldBackups(userDoc, all).map { it.id }.toSet()
+        all.filterNot { it.id in gone }
+    }
+
+    /**
+     * Deletes one copy. The newest is refused here as well as hidden on screen, because the list
+     * the reader is looking at may be older than another device's last upload.
+     */
+    suspend fun delete(backup: CloudBackupInfo) = remote {
+        val userDoc = userDoc(requireUser())
+        if (CloudBackupRetention.newest(fetchBackups(userDoc))?.id == backup.id) {
+            throw BackupException("لا يمكن حذف أحدث نسخة في حسابك.")
+        }
+        erase(userDoc, listOf(backup.id))
     }
 
     /**
      * Uploads this device's data. An [auto] upload is skipped — and returns null — when nothing
-     * has changed since the last upload, so a day without reading costs no write.
+     * has changed since the last upload, so a day without reading costs no write; old copies are
+     * still cleared out that day, since the week moves on whether or not the reader read.
      */
     suspend fun upload(auto: Boolean): CloudBackupInfo? = remote {
         val user = requireUser()
         val snapshot = local.snapshot()
         val fingerprint = fingerprint(snapshot)
-        if (auto && fingerprint == store.cloudPrefs().fingerprint) return@remote null
+        if (auto && fingerprint == store.cloudPrefs().fingerprint) {
+            pruneOldBackups(userDoc(user))
+            return@remote null
+        }
 
         val bytes = withContext(Dispatchers.Default) { BackupJsonCodec.encode(snapshot) }
         if (bytes.size > MAX_PAYLOAD_BYTES) {
@@ -179,7 +175,7 @@ class CloudBackupRepository(context: Context) {
             .commit()
             .await()
         store.setCloudUploaded(info.createdAt, fingerprint)
-        pruneOlderBackups(userDoc, info.deviceId)
+        pruneOldBackups(userDoc)
         info
     }
 
@@ -195,21 +191,55 @@ class CloudBackupRepository(context: Context) {
         return local.mergeIn(snapshot, takeDisplaySettings)
     }
 
-    private suspend fun pruneOlderBackups(userDoc: DocumentReference, deviceId: String) {
+    private suspend fun fetchBackups(userDoc: DocumentReference): List<CloudBackupInfo> {
+        val deviceId = store.cloudDeviceId()
+        return userDoc.collection(BACKUPS).get(Source.SERVER).await().documents.mapNotNull { doc ->
+            val createdAt = doc.getLong("createdAt") ?: return@mapNotNull null
+            val backupDevice = doc.getString("deviceId").orEmpty()
+            CloudBackupInfo(
+                id = doc.id,
+                createdAt = createdAt,
+                deviceId = backupDevice,
+                deviceName = doc.getString("deviceName") ?: "جهاز غير معروف",
+                appVersion = doc.getString("appVersion").orEmpty(),
+                sizeBytes = doc.getLong("sizeBytes") ?: 0L,
+                auto = doc.getBoolean("auto") ?: false,
+                fromThisDevice = backupDevice == deviceId,
+            )
+        }.sortedByDescending { it.createdAt }
+    }
+
+    private suspend fun pruneOldBackups(userDoc: DocumentReference) {
         try {
-            val stale = userDoc.collection(BACKUPS).get(Source.SERVER).await().documents
-                .filter { it.getString("deviceId") == deviceId }
-                .sortedByDescending { it.getLong("createdAt") ?: 0L }
-                .drop(KEEP_PER_DEVICE)
-            if (stale.isEmpty()) return
+            pruneOldBackups(userDoc, fetchBackups(userDoc))
+        } catch (_: FirebaseFirestoreException) {
+            // Nothing is lost by keeping a copy a little longer; the next chance tries again.
+        }
+    }
+
+    /** Erases what [CloudBackupRetention] no longer keeps of [all]; returns what was erased. */
+    private suspend fun pruneOldBackups(
+        userDoc: DocumentReference,
+        all: List<CloudBackupInfo>,
+    ): List<CloudBackupInfo> {
+        val stale = CloudBackupRetention.stale(all, System.currentTimeMillis())
+        return try {
+            erase(userDoc, stale.map { it.id })
+            stale
+        } catch (_: FirebaseFirestoreException) {
+            emptyList()
+        }
+    }
+
+    private suspend fun erase(userDoc: DocumentReference, ids: List<String>) {
+        // A Firestore batch holds up to 500 writes; each backup is two.
+        ids.chunked(200).forEach { chunk ->
             val batch = firestore.batch()
-            stale.forEach {
-                batch.delete(it.reference)
-                batch.delete(userDoc.collection(PAYLOADS).document(it.id))
+            chunk.forEach { id ->
+                batch.delete(userDoc.collection(BACKUPS).document(id))
+                batch.delete(userDoc.collection(PAYLOADS).document(id))
             }
             batch.commit().await()
-        } catch (_: FirebaseFirestoreException) {
-            // The new backup is safe either way; the next upload tries the cleanup again.
         }
     }
 
@@ -306,7 +336,6 @@ class CloudBackupRepository(context: Context) {
         const val USERS = "users"
         const val BACKUPS = "backups"
         const val PAYLOADS = "payloads"
-        const val KEEP_PER_DEVICE = 3
         const val TIMEOUT_MS = 30_000L
         /** Firestore caps a document near 1 MiB; years of heavy reading still compress far below. */
         const val MAX_PAYLOAD_BYTES = 900_000

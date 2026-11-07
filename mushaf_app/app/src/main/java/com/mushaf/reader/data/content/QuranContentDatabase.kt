@@ -14,7 +14,7 @@ import androidx.room.RoomDatabase
         TafsirPassageEntity::class,
         TafsirAyahGroupEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class QuranContentDatabase : RoomDatabase() {
@@ -27,8 +27,8 @@ abstract class QuranContentDatabase : RoomDatabase() {
          * only when the file is missing, so a new name is what makes an existing install pick up
          * new content; the copy under the old name is then deleted rather than left on the device.
          */
-        private const val DATABASE_NAME = "quran_content_v2.db"
-        private val RETIRED_DATABASE_NAMES = listOf("quran_content_v1.db")
+        private const val DATABASE_NAME = "quran_content_v3.db"
+        private val RETIRED_DATABASE_NAMES = listOf("quran_content_v1.db", "quran_content_v2.db")
 
         @Volatile
         private var instance: QuranContentDatabase? = null

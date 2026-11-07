@@ -12,10 +12,13 @@
 - نص القرآن الكريم وبيانات إحداثيات الآيات ومشتقاتها.
 - أي علامات أو مواد طرف ثالث تظهر في لقطات الشاشة أو ملفات النشر.
 
+تعرض شاشة «المصادر والتراخيص» في التطبيق مصدر كل ذلك، ومعه الخطوط والمكتبات والخدمات المستخدمة، ويُفتح رابطها
+من نهاية كل تفسير ومن صفحة «حول التطبيق». والنص القرآني مأخوذ من واجهة Quran.com البرمجية (الإصدار الرابع).
+
 ### التفسير الميسر والميسر في غريب القرآن
 
 تتضمن قاعدة البيانات المرفقة
-`mushaf_app/app/src/main/assets/databases/quran_content_v2.db`
+`mushaf_app/app/src/main/assets/databases/quran_content_v3.db`
 نصوص **التفسير الميسر** (الإصدار 3.0) و**الميسر في غريب القرآن الكريم**
 (الطبعة الثانية)، وكلاهما صادر عن مجمع الملك فهد لطباعة المصحف الشريف.
 تصف [منصة مطوري برمجيات القرآن الكريم](https://qurancomplex.gov.sa/en/techquran/dev/)
@@ -30,18 +33,40 @@
 
 ### تفسير السعدي
 
-تتضمن قاعدة البيانات نفسها
-`mushaf_app/app/src/main/assets/databases/quran_content_v2.db`
-**تفسير السعدي** («تيسير الكريم الرحمن في تفسير كلام المنان» للشيخ عبد الرحمن بن ناصر السعدي)
-كما تنشره [موسوعة القرآن الكريم](https://quranenc.com) عبر واجهتها البرمجية، الإصدار 1.0.0
-(آخر تحديث للمصدر 2026-07-27، ونُسخ في 2026-11-05 بالأداة
-`mushaf_app/tools/fetch_quranenc_saadi.py`).
+تتضمن قاعدة البيانات نفسها **تفسير السعدي** («تيسير الكريم الرحمن في تفسير كلام المنان» للشيخ عبد
+الرحمن بن ناصر السعدي) مأخوذاً من قاعدة بيانات
+[مركز تفسير للدراسات القرآنية](https://tafsir.net)
+([tafsircenter/tafsir-mcp-data](https://huggingface.co/datasets/tafsircenter/tafsir-mcp-data)، الملف
+`quran.db`، جدول `tafsir_saadi`)، برخصة
+[المشاع الإبداعي CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
-تتيح الموسوعة تنزيل المحتوى وإعادة نشره بشروط، منها: ذكر الناشر والمصدر (QuranEnc.com)، وعدم
-التعديل أو الإضافة أو الحذف، وذكر رقم الإصدار، والتحديث إلى آخر إصدار يصدر منها، وعدم عرض إعلانات
-غير لائقة معه. لذلك يُعرض النص كما ورد، ويذكر التطبيق المصدر ورقم الإصدار تحت التفسير وفي كل نسخ أو
-مشاركة. وعند صدور إصدار أحدث يُعاد تشغيل أداة النسخ ثم أداة بناء قاعدة البيانات. هذا النص محتوى خارجي
-لا تغطيه رخصة MIT الخاصة بشفرة المشروع.
+**ما غُيّر في نص المركز**، وتنفّذه الأداة `mushaf_app/tools/saadi_center.py`:
+
+- جُمعت صفوف الآيات في مقاطع كما يقرؤها الكتاب، وحُذف ما كرره التقسيم على الآيات، وعبارة «لم يفسر
+  الشيخ» حيث تقع الآية ضمن شرح لعدة آيات.
+- حُذف نص الآيات من الصفوف، ويُعرض بدله نص المصحف المعتمد في التطبيق.
+- صُححت أخطاء نسخ واقتباسات قرآنية، وحُذفت علامات عمل (ككك، ممم)، بقائمة صريحة في الأداة نفسها.
+- أُظهر من حواشي المحقق مصادر الأحاديث والتصحيحات فقط، ولم تُعرض فروق المخطوطات.
+
+**تكملات من مصدر ثانٍ:** أربعة مواضع من الكتاب لا توجد في نسخة المركز (البقرة ١٠١ و١٤٣ و١٨١، والنساء
+١١٧، وعددها ٢٥٥ كلمة) أُخذت بنصها من
+[موسوعة القرآن الكريم](https://quranenc.com)، الإصدار 1.0.0 (نُسخ في 2026-11-05 بالأداة
+`mushaf_app/tools/fetch_quranenc_saadi.py`)، وتُعرض في التطبيق موسومة بأنها تكملة منها. واستُعمل تقسيم
+الموسوعة للآيات إلى مقاطع دون نصها.
+
+يذكر التطبيق ذلك كله في شاشة «المصادر والتراخيص»، ويضيف إلى كل نسخ أو مشاركة سطراً بالمصدر والرخصة ووقوع التعديل،
+لأن النص المنسوخ يخرج من التطبيق. المشروع غير تجاري، ولا تُعرض
+مع هذا المحتوى إعلانات ولا مزايا مدفوعة. هذه النصوص محتوى خارجي لا تغطيه رخصة MIT الخاصة بشفرة المشروع.
+
+### المختصر في تفسير القرآن الكريم
+
+وتتضمن قاعدة البيانات نفسها **المختصر في تفسير القرآن الكريم** من قاعدة البيانات نفسها لمركز تفسير للدراسات
+القرآنية (جدول `QuranTafseer`، العمود `Mukhtasarar`)، بالرخصة نفسها
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+**ما غُيّر فيه**، وتنفّذه الأداة `mushaf_app/tools/mukhtasar_center.py`: تُعرض علامات الكلمات المفسَّرة إبرازاً،
+وأُصلحت علامات مختلة ومسافة زائدة في مواضع يسيرة بقائمة صريحة في الأداة. ولم تُغيَّر كلماته. ويذكر التطبيق ذلك في شاشة
+«المصادر والتراخيص» وفي كل نسخ أو مشاركة.
 
 تعتمد صفحات التطبيق على نسخة من مصحف المدينة المنورة الصادر عن
 مجمع الملك فهد لطباعة المصحف الشريف. على من يعيد توزيع تلك المواد التحقق من
@@ -60,9 +85,11 @@
 The MIT License covers the project source code and original project assets. It does not grant
 rights to the bundled Mushaf page images, Qur'anic text, ayah-coordinate datasets, or third-party
 marks shown in publishing materials. Verify the original source terms before redistributing those
-materials.
+materials. The app's "Sources and licences" screen names all of them, along with the fonts, libraries
+and services it uses; it opens from the end of each tafsir and from the About screen. The Qur'anic text
+comes from the Quran.com API v4.
 
-The bundled `quran_content_v2.db` contains **Tafsir Muyassar** version 3.0 and
+The bundled `quran_content_v3.db` contains **Tafsir Muyassar** version 3.0 and
 **Muyassar of Ghareeb Al-Qur'an**, second edition, sourced from the King Fahd Glorious Qur'an
 Printing Complex developer platform. The platform describes these resources as provided for use
 by developers, researchers, and publishing houses in application content and research.
@@ -73,14 +100,35 @@ them. Redistributors must review the current source terms and contact the Comple
 permission clarification is required.
 
 The same database contains **Tafsir al-Sa'di** (*Taysir al-Karim al-Rahman*, by Abd al-Rahman ibn
-Nasir al-Sa'di) as published by [QuranEnc](https://quranenc.com) through its API, version 1.0.0
-(source last updated 2026-07-27, snapshot taken 2026-11-05 with
-`mushaf_app/tools/fetch_quranenc_saadi.py`). QuranEnc allows its content to be downloaded and
-republished provided the publisher and source (QuranEnc.com) are credited, the content is not
-modified, added to or cut, the version number is stated, the text is kept up to date with the
-latest version, and no inappropriate advertising is shown with it. The app shows the text as
-published and cites the source and version under it and in every copy or share. This text is
-third-party content and is not covered by the project's MIT License.
+Nasir al-Sa'di) from the database of the
+[Tafsir Center for Quranic Studies](https://tafsir.net)
+([tafsircenter/tafsir-mcp-data](https://huggingface.co/datasets/tafsircenter/tafsir-mcp-data), file
+`quran.db`, table `tafsir_saadi`), licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+**Changes made to the Center's text**, by `mushaf_app/tools/saadi_center.py`: per-ayah rows are
+grouped into the book's passages, dropping what the per-ayah split repeated and the sentence "the
+Sheikh did not explain this" where the ayah sits inside a multi-ayah explanation; the ayah text in
+the rows is replaced by the app's approved mushaf text; copying slips, misquoted Quran and working
+marks are corrected from an explicit list in that tool; of the editor's notes only hadith sources
+and corrections are shown, not manuscript variants.
+
+**Supplements from a second source:** four passages of the book missing from the Center's copy (2:101,
+2:143, 2:181 and 4:117, 255 words) are taken verbatim from [QuranEnc](https://quranenc.com), version
+1.0.0 (snapshot taken 2026-11-05 with `mushaf_app/tools/fetch_quranenc_saadi.py`), and are labelled
+as such in the app. QuranEnc's division of the ayahs into passages is also used, but not its wording.
+
+The app states all this on its "Sources and licences" screen, and adds a line with the source, the
+licence and the fact of the changes to every copy or share, since that text leaves the app. The project
+is non-commercial, and no advertising or paid feature accompanies this content. These texts are
+third-party content and are not covered by the project's MIT License.
+
+The database also contains **al-Mukhtasar fi Tafsir al-Quran al-Karim** from the same Tafsir Center
+database (table `QuranTafseer`, column `Mukhtasarar`), under the same
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) licence. **Changes made**, by
+`mushaf_app/tools/mukhtasar_center.py`: the marks around explained words are shown as highlights, and
+a few broken marks and one extra space are repaired from an explicit list in that tool. Its words are
+unchanged. The app states this on its "Sources and licences" screen and in every copy or share.
 
 The repository contains no audio. The app fetches recitations, the reciter list and the ayah timing
 tables from the [MP3Quran API](https://www.mp3quran.net/eng/api) when the user plays or downloads

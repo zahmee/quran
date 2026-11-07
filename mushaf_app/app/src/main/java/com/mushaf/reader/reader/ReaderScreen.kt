@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -98,11 +99,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -124,11 +128,13 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -140,7 +146,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
@@ -162,6 +170,7 @@ import com.mushaf.reader.ui.theme.pageRecolor
 import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.QuranPagePosition
 import com.mushaf.reader.data.ExplanationTextScale
+import com.mushaf.reader.data.content.MukhtasarText
 import com.mushaf.reader.data.content.TafsirPassage
 import com.mushaf.reader.data.content.TafsirPassageRow
 import com.mushaf.reader.data.content.TafsirRowKind
@@ -718,25 +727,23 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     }
 }
 
-/** [label] sits on the tab; [title] heads anything copied or shared from it. */
+/** [label] sits on the tab; [title] heads anything copied or shared from it; [credit] closes it. */
 private enum class ExplanationTab(
     val label: String,
     val title: String,
     val tafsir: TafsirChoice?,
+    val credit: String,
 ) {
-    Muyassar("الميسر", "التفسير الميسر", TafsirChoice.Muyassar),
-    Saadi("السعدي", "تفسير السعدي", TafsirChoice.Saadi),
-    Meanings("معاني الكلمات", "معاني الكلمات", null),
+    Saadi("السعدي", "تفسير السعدي", TafsirChoice.Saadi, CenterAttribution.SAADI_CREDIT),
+    Mukhtasar(
+        "المختصر",
+        "المختصر في تفسير القرآن الكريم",
+        TafsirChoice.Mukhtasar,
+        CenterAttribution.MUKHTASAR_CREDIT,
+    ),
+    Muyassar("الميسر", "التفسير الميسر", TafsirChoice.Muyassar, MUYASSAR_CREDIT),
+    Meanings("المعاني", "معاني الكلمات", null, GHARIB_CREDIT),
     ;
-
-    /** The attribution each source's terms ask for; Sa'di's carries the snapshot's version. */
-    fun sourceNote(saadiVersion: String?): String = when (this) {
-        Muyassar -> "المصدر: التفسير الميسر، الإصدار 3.0 — مجمع الملك فهد لطباعة المصحف الشريف."
-        Saadi -> "المصدر: «تيسير الكريم الرحمن في تفسير كلام المنان» لعبد الرحمن بن ناصر السعدي — " +
-            "موسوعة القرآن الكريم (QuranEnc.com)" +
-            (saadiVersion?.let { "، الإصدار $it" } ?: "") + "."
-        Meanings -> "المصدر: الميسر في غريب القرآن الكريم، الطبعة الثانية — مجمع الملك فهد لطباعة المصحف الشريف."
-    }
 
     companion object {
         fun forTafsir(choice: TafsirChoice): ExplanationTab = entries.first { it.tafsir == choice }
@@ -2170,7 +2177,8 @@ private fun AyahExplanationSheet(
         mutableStateOf(request.initialTab)
     }
     val currentState = state.takeIf { it.verseKey == request.ayah.verseKey }
-    val sourceNote = selectedTab.sourceNote(currentState?.saadiVersion)
+    var showSources by rememberSaveable { mutableStateOf(false) }
+    val openSources = { showSources = true }
     val shareText = remember(request.ayah, currentState, selectedTab) {
         if (currentState == null || currentState.loading || currentState.errorMessage != null) {
             null
@@ -2180,17 +2188,23 @@ private fun AyahExplanationSheet(
                     formatTafsirText(it, Color.Unspecified).text
                 }
                 ExplanationTab.Saadi -> currentState.saadi?.shareText
+                ExplanationTab.Mukhtasar -> currentState.mukhtasar?.let(MukhtasarText::plain)
                 ExplanationTab.Meanings -> currentState.meanings.joinToString("\n\n") {
                     "${it.word}: ${it.meaning}"
                 }
             }
+            // The text leaves the app here, where the sources screen cannot follow it.
+            val supplement = selectedTab == ExplanationTab.Saadi && currentState.saadi?.sharesSupplement == true
+            val credit = selectedTab.credit + if (supplement) " ${CenterAttribution.SUPPLEMENT_CREDIT}" else ""
             content?.takeIf { it.isNotBlank() }?.let {
                 "${selectedTab.title}\n" +
                     "سورة ${request.ayah.surahNameAr} • الآية ${request.ayah.ayahNumber.toArabicDigits()}\n\n" +
-                    "$it\n\n$sourceNote"
+                    "$it\n\n$credit"
             }
         }
     }
+
+    if (showSources) SourcesDialog(onDismiss = { showSources = false })
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -2267,7 +2281,7 @@ private fun AyahExplanationSheet(
                 selectedTab == ExplanationTab.Saadi -> {
                     SaadiPassageContent(
                         passage = currentState.saadi,
-                        sourceNote = sourceNote,
+                        onOpenSources = openSources,
                         scale = scale,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2275,11 +2289,39 @@ private fun AyahExplanationSheet(
                     )
                 }
 
+                selectedTab == ExplanationTab.Mukhtasar -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .nestedScroll(KeepFlingInSheet),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        item {
+                            val text = currentState.mukhtasar
+                            if (text.isNullOrBlank()) {
+                                EmptyExplanationMessage("لا يتوفر تفسير لهذه الآية.")
+                            } else {
+                                Text(
+                                    text = formatMukhtasarText(
+                                        raw = text,
+                                        accent = MaterialTheme.colorScheme.primary,
+                                    ),
+                                    style = bodyLarge,
+                                )
+                            }
+                        }
+                        item { SourcesLink(openSources) }
+                    }
+                }
+
                 selectedTab == ExplanationTab.Muyassar -> {
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
+                            .weight(1f)
+                            .nestedScroll(KeepFlingInSheet),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
@@ -2297,9 +2339,7 @@ private fun AyahExplanationSheet(
                                 )
                             }
                         }
-                        item {
-                            SourceNote(sourceNote)
-                        }
+                        item { SourcesLink(openSources) }
                     }
                 }
 
@@ -2307,7 +2347,8 @@ private fun AyahExplanationSheet(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
+                            .weight(1f)
+                            .nestedScroll(KeepFlingInSheet),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
@@ -2336,9 +2377,7 @@ private fun AyahExplanationSheet(
                                 }
                             }
                         }
-                        item {
-                            SourceNote(sourceNote)
-                        }
+                        item { SourcesLink(openSources) }
                     }
                 }
             }
@@ -2349,12 +2388,12 @@ private fun AyahExplanationSheet(
 /**
  * Sa'di explains the Quran passage by passage, so the whole passage is shown — its lead-in, the
  * Quran text, and every ayah's explanation — with the asked-about ayah's own explanation outlined
- * and scrolled into view. The rows are shown exactly as the source gives them.
+ * and scrolled into view. The Quran text is the mushaf text the rest of the app shows.
  */
 @Composable
 private fun SaadiPassageContent(
     passage: TafsirPassage?,
-    sourceNote: String,
+    onOpenSources: () -> Unit,
     scale: Float,
     modifier: Modifier,
 ) {
@@ -2366,7 +2405,7 @@ private fun SaadiPassageContent(
         }
     }
     LazyColumn(
-        modifier = modifier,
+        modifier = modifier.nestedScroll(KeepFlingInSheet),
         state = listState,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -2387,7 +2426,7 @@ private fun SaadiPassageContent(
                 SaadiRow(row = row, focused = index in passage.focusRows, scale = scale)
             }
         }
-        item { SourceNote(sourceNote) }
+        item { SourcesLink(onOpenSources) }
     }
 }
 
@@ -2406,13 +2445,17 @@ private fun SaadiRow(row: TafsirPassageRow, focused: Boolean, scale: Float) {
             color = accent,
             textAlign = TextAlign.Center,
         )
-        TafsirRowKind.RevelationPlace -> Text(
-            text = row.text,
-            modifier = centered,
-            style = MaterialTheme.typography.labelLarge.scaled(scale),
-            color = muted,
-            textAlign = TextAlign.Center,
-        )
+        // Surah headings can carry a note: Maryam's says it is Madinan, and the editor corrects it.
+        TafsirRowKind.RevelationPlace -> Column(modifier = centered) {
+            Text(
+                text = formatSaadiText(row.text, accent),
+                modifier = centered,
+                style = MaterialTheme.typography.labelLarge.scaled(scale),
+                color = muted,
+                textAlign = TextAlign.Center,
+            )
+            SaadiNotes(notes = row.notes, scale = scale)
+        }
         TafsirRowKind.Basmala -> Text(
             text = row.text,
             modifier = centered,
@@ -2438,8 +2481,22 @@ private fun SaadiRow(row: TafsirPassageRow, focused: Boolean, scale: Float) {
                 color = accent,
             )
         }
-        TafsirRowKind.AyahTafsir, TafsirRowKind.Prose -> {
+        TafsirRowKind.AyahTafsir, TafsirRowKind.Prose, TafsirRowKind.Supplement -> {
             val text = formatSaadiText(row.text, accent)
+            val body: @Composable (Modifier) -> Unit = { bodyModifier ->
+                Column(modifier = bodyModifier) {
+                    if (row.kind == TafsirRowKind.Supplement) {
+                        Text(
+                            text = "تكملة من موسوعة القرآن الكريم، غير موجودة في نسخة مركز تفسير:",
+                            modifier = Modifier.padding(bottom = 4.dp),
+                            style = MaterialTheme.typography.labelMedium.scaled(scale),
+                            color = muted,
+                        )
+                    }
+                    Text(text = text, style = reading)
+                    SaadiNotes(notes = row.notes, scale = scale)
+                }
+            }
             if (focused) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -2447,10 +2504,46 @@ private fun SaadiRow(row: TafsirPassageRow, focused: Boolean, scale: Float) {
                     color = accent.copy(alpha = 0.07f),
                     border = BorderStroke(1.dp, accent.copy(alpha = 0.3f)),
                 ) {
-                    Text(text = text, modifier = Modifier.padding(14.dp), style = reading)
+                    body(Modifier.padding(14.dp))
                 }
             } else {
-                Text(text = text, style = reading)
+                body(Modifier)
+            }
+        }
+    }
+}
+
+/** The editor's notes on a row, folded away under a small button until the reader asks for them. */
+@Composable
+private fun SaadiNotes(notes: List<String>, scale: Float) {
+    if (notes.isEmpty()) return
+    var open by rememberSaveable(notes) { mutableStateOf(false) }
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val labelStyle = MaterialTheme.typography.labelLarge.scaled(scale)
+    TextButton(
+        onClick = { open = !open },
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+    ) {
+        Text(text = "حواشي المحقق (${notes.size.toArabicDigits()})", style = labelStyle)
+        Icon(
+            imageVector = Icons.Filled.KeyboardArrowDown,
+            contentDescription = if (open) "طيّ الحواشي" else "إظهار الحواشي",
+            modifier = Modifier
+                .size(20.dp)
+                .graphicsLayer { rotationZ = if (open) 180f else 0f },
+        )
+    }
+    if (open) {
+        Column(
+            modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            notes.forEachIndexed { index, note ->
+                Text(
+                    text = "(${(index + 1).toArabicDigits()}) $note",
+                    style = MaterialTheme.typography.bodySmall.scaled(scale),
+                    color = muted,
+                )
             }
         }
     }
@@ -2493,19 +2586,37 @@ private fun TextStyle.scaled(factor: Float): TextStyle {
     )
 }
 
-/** Sa'di marks quoted Quran words — and each explanation's ayah number — with braces. */
-private val SaadiQuote = Regex("""\{[^{}\n]*\}""")
+/**
+ * Sa'di marks quoted Quran words — and each explanation's ayah number — with braces. A note's anchor
+ * is what points the eye from the text to the numbered note below it, so it is drawn as a raised number.
+ */
+private val SaadiMarkup = Regex("""\{[^{}\n]*\}|${TafsirPassageRow.NoteAnchor.pattern}""")
 
 private fun formatSaadiText(raw: String, accent: Color): AnnotatedString = buildAnnotatedString {
+    fun appendAnchored(part: String) {
+        var at = 0
+        TafsirPassageRow.NoteAnchor.findAll(part).forEach { anchor ->
+            append(part.substring(at, anchor.range.first))
+            withStyle(SpanStyle(color = accent, fontSize = 0.7.em, baselineShift = BaselineShift.Superscript)) {
+                append("(${anchor.groupValues[1].toInt().toArabicDigits()})")
+            }
+            at = anchor.range.last + 1
+        }
+        append(part.substring(at))
+    }
     var cursor = 0
-    SaadiQuote.findAll(raw).forEach { match ->
-        append(raw.substring(cursor, match.range.first))
-        withStyle(SpanStyle(color = accent, fontWeight = FontWeight.SemiBold)) {
-            append(match.value)
+    SaadiMarkup.findAll(raw).forEach { match ->
+        appendAnchored(raw.substring(cursor, match.range.first))
+        if (match.value.startsWith("{")) {
+            withStyle(SpanStyle(color = accent, fontWeight = FontWeight.SemiBold)) {
+                appendAnchored(match.value)
+            }
+        } else {
+            appendAnchored(match.value)
         }
         cursor = match.range.last + 1
     }
-    append(raw.substring(cursor))
+    appendAnchored(raw.substring(cursor))
 }
 
 @Composable
@@ -2569,14 +2680,37 @@ private fun EmptyExplanationMessage(message: String) {
     )
 }
 
+/** The words the Mukhtasar explains stand out the way Sa'di's Quran quotes do. */
+private fun formatMukhtasarText(raw: String, accent: Color): AnnotatedString = buildAnnotatedString {
+    var cursor = 0
+    MukhtasarText.Gloss.findAll(raw).forEach { match ->
+        append(raw.substring(cursor, match.range.first))
+        withStyle(SpanStyle(color = accent, fontWeight = FontWeight.SemiBold)) {
+            append(match.groupValues[1])
+        }
+        cursor = match.range.last + 1
+    }
+    append(raw.substring(cursor))
+}
+
+/**
+ * A fling that reaches the end of a text would pass its leftover speed up to the bottom sheet, and
+ * the reader's next tap, say on the link below the text, would only stop that motion. A fling
+ * downwards still goes up to the sheet, which is how it is swiped away.
+ */
+private object KeepFlingInSheet : NestedScrollConnection {
+    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
+        if (available.y < 0f) available else Velocity.Zero
+}
+
+/** All that an explanation says about its source: the way to the screen that names every source. */
 @Composable
-private fun SourceNote(text: String) {
-    Text(
-        text = text,
-        modifier = Modifier.padding(top = 8.dp, bottom = 14.dp),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+private fun SourcesLink(onOpen: () -> Unit) {
+    TextButton(onClick = onOpen, modifier = Modifier.padding(bottom = 8.dp)) {
+        Icon(Icons.Outlined.Info, contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("المصادر والتراخيص", style = MaterialTheme.typography.labelMedium)
+    }
 }
 
 private val TafsirAyahSpan = Regex(

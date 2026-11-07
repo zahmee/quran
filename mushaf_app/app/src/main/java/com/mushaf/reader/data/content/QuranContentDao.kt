@@ -36,7 +36,4 @@ interface QuranContentDao {
         """
     )
     suspend fun passageForVerse(sourceId: String, verseKey: String): List<TafsirPassageEntity>
-
-    @Query("SELECT value FROM content_meta WHERE `key` = :key LIMIT 1")
-    suspend fun meta(key: String): String?
 }
