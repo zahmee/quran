@@ -14,6 +14,8 @@ data class AyahExplanation(
     val saadi: TafsirPassage?,
     /** The Mukhtasar's text for this ayah; it may hold marks, see [MukhtasarText]. */
     val mukhtasar: String?,
+    /** The occasion of the ayah's revelation, when the source records one. */
+    val nozool: TafsirPassageRow? = null,
 )
 
 class QuranContentRepository(context: Context) {
@@ -43,6 +45,15 @@ class QuranContentRepository(context: Context) {
             meanings = meanings,
             saadi = if (ayah != null && saadiRows.isNotEmpty()) TafsirPassage(saadiRows, ayah) else null,
             mukhtasar = dao.passageForVerse(MUKHTASAR_SOURCE_ID, verseKey).firstOrNull()?.text,
+            nozool = dao.nozoolForVerse(verseKey)?.let { row ->
+                TafsirPassageRow(
+                    kind = TafsirRowKind.Prose,
+                    fromAyah = ayah ?: 0,
+                    toAyah = ayah ?: 0,
+                    text = row.text,
+                    notes = TafsirPassageRow.parseNotes(row.notes),
+                )
+            },
         )
     }
 

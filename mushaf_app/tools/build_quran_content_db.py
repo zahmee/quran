@@ -1,6 +1,7 @@
-"""Build the read-only Room asset: Tafsir al-Sa'di, Tafsir Muyassar and Quran vocabulary.
+"""Build the read-only Room asset: Tafsir al-Sa'di, Tafsir Muyassar, Quran vocabulary and asbab al-nuzul.
 
-Sa'di comes from the Tafsir Center's dataset; saadi_center.py says what is done to it. Needs rapidfuzz.
+Sa'di comes from the Tafsir Center's dataset; saadi_center.py says what is done to it, and
+nozool_center.py what is done to the asbab al-nuzul. Needs rapidfuzz.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import mukhtasar_center
+import nozool_center
 import saadi_center
 
 
@@ -36,9 +38,13 @@ AYAH_RECORDS_IN = ROOT / "mushaf_app" / "app" / "src" / "main" / "assets" / "dat
 # file is missing, so an install that already holds v2 would otherwise never see the new tables.
 OUTPUT = (
     ROOT / "mushaf_app" / "app" / "src" / "main" / "assets" /
-    "databases" / "quran_content_v3.db"
+    "databases" / "quran_content_v4.db"
 )
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+# The asset this one replaces. Every table it shares with the new one must come out unchanged.
+PREVIOUS_OUTPUT = OUTPUT.with_name("quran_content_v3.db")
+UNCHANGED_TABLES = ("tafsir_ayah", "gharib_entry", "gharib_ayah_map", "tafsir_passage", "tafsir_ayah_group")
+EXPECTED_NOZOOL = nozool_center.EXPECTED_ROWS
 
 EXPECTED_TAFSIR = 6236
 EXPECTED_GHARIB = 11372
@@ -144,6 +150,16 @@ def group_saadi(rows: list[dict], verse_keys: set[str]) -> tuple[list[tuple[dict
     return assigned, ayah_group
 
 
+def table_digest(database: sqlite3.Connection, table: str) -> str:
+    """The SHA-256 of a table's rows in a stable order, to compare two builds table by table."""
+    columns = [row[1] for row in database.execute(f"PRAGMA table_info(`{table}`)")]
+    order = ", ".join(f"`{c}`" for c in columns)
+    digest = hashlib.sha256()
+    for row in database.execute(f"SELECT {order} FROM `{table}` ORDER BY {order}"):
+        digest.update(repr(row).encode("utf-8"))
+    return digest.hexdigest()
+
+
 def read_center_rows(path: Path, table: str, expected_sha256: str) -> dict[str, str]:
     """The Center's rows, after checking they are still the verbatim copy that was reviewed."""
     uri = "file:" + path.as_posix().replace(" ", "%20") + "?mode=ro&immutable=1"
@@ -197,6 +213,10 @@ def main() -> None:
         center_rows, saadi_rows, quranenc_assigned, approved, approved_imlaei
     )
     saadi_center.verify_rows(saadi_out, center_rows, approved, EXPECTED_SUPPLEMENT_WORDS)
+    nozool = nozool_center.build()
+    unknown_nozool = set(nozool) - set(approved)
+    if unknown_nozool:
+        raise ValueError(f"Asbab al-nuzul for unknown ayahs: {sorted(unknown_nozool)}")
     print("saadi", {k: v for k, v in saadi_report.items() if k != "ayahs_without_own_row"})
     print("saadi ayahs without a row of their own", saadi_report["ayahs_without_own_row"])
 
@@ -270,6 +290,13 @@ def main() -> None:
                 `group_id` INTEGER NOT NULL,
                 PRIMARY KEY(`source_id`, `verse_key`)
             );
+
+            CREATE TABLE `ayah_nozool` (
+                `verse_key` TEXT NOT NULL,
+                `text` TEXT NOT NULL,
+                `notes` TEXT NOT NULL,
+                PRIMARY KEY(`verse_key`)
+            );
             """
         )
 
@@ -300,7 +327,17 @@ def main() -> None:
                 ("mukhtasar_source_url", "https://tafsir.net"),
                 ("mukhtasar_license", "CC BY 4.0"),
                 ("mukhtasar_license_url", "https://creativecommons.org/licenses/by/4.0/"),
+                ("nozool_source_package", nozool_center.SLIM.parent.name),
+                ("nozool_title", "أسباب النزول"),
+                ("nozool_source", "مركز تفسير للدراسات القرآنية"),
+                ("nozool_source_url", "https://tafsir.net"),
+                ("nozool_license", "CC BY 4.0"),
+                ("nozool_license_url", "https://creativecommons.org/licenses/by/4.0/"),
             ],
+        )
+        database.executemany(
+            "INSERT INTO ayah_nozool(verse_key, text, notes) VALUES (?, ?, ?)",
+            [(key, text, "\n".join(notes)) for key, (text, notes) in sorted(nozool.items())],
         )
         database.executemany(
             """
@@ -437,6 +474,7 @@ def main() -> None:
             "mukhtasar_ayahs": database.execute(
                 "SELECT COUNT(*) FROM tafsir_ayah_group WHERE source_id = ?", (mukhtasar_center.SOURCE_ID,)
             ).fetchone()[0],
+            "nozool": database.execute("SELECT COUNT(*) FROM ayah_nozool").fetchone()[0],
         }
         if (
             integrity != "ok"
@@ -445,6 +483,7 @@ def main() -> None:
             or counts["saadi_ayahs"] != EXPECTED_TAFSIR
             or counts["mukhtasar_rows"] != EXPECTED_TAFSIR
             or counts["mukhtasar_ayahs"] != EXPECTED_TAFSIR
+            or counts["nozool"] != EXPECTED_NOZOOL
         ):
             raise ValueError(f"Database validation failed: integrity={integrity}, {counts}")
         largest = database.execute(
@@ -455,6 +494,18 @@ def main() -> None:
             (SAADI_SOURCE_ID,),
         ).fetchone()
         print(f"largest_saadi_group id={largest[0]} rows={largest[1]} chars={largest[2]}")
+        if PREVIOUS_OUTPUT.exists():
+            previous = sqlite3.connect(f"file:{PREVIOUS_OUTPUT.as_posix()}?mode=ro", uri=True)
+            try:
+                changed = [
+                    table for table in UNCHANGED_TABLES
+                    if table_digest(previous, table) != table_digest(database, table)
+                ]
+            finally:
+                previous.close()
+            if changed:
+                raise ValueError(f"Tables changed since {PREVIOUS_OUTPUT.name}: {changed}")
+            print(f"unchanged since {PREVIOUS_OUTPUT.name}: {', '.join(UNCHANGED_TABLES)}")
     finally:
         database.close()
 

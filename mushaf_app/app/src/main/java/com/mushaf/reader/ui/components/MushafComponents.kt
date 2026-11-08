@@ -2,6 +2,8 @@ package com.mushaf.reader.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -33,9 +36,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /** One quiet top bar for all secondary screens. */
 @Composable
@@ -199,6 +204,8 @@ fun MushafSegmentedTabs(
     onSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
     icons: List<ImageVector>? = null,
+    /** Keep every label on one line, shrinking its text as far as 11sp when the tab is narrow. */
+    singleLine: Boolean = false,
 ) {
     Row(
         modifier = modifier
@@ -228,6 +235,24 @@ fun MushafSegmentedTabs(
                             modifier = Modifier
                                 .padding(horizontal = 8.dp, vertical = 9.dp)
                                 .size(22.dp),
+                        )
+                    } else if (singleLine) {
+                        val style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = LocalContentColor.current,
+                            textAlign = TextAlign.Center,
+                        )
+                        BasicText(
+                            text = label,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 9.dp),
+                            style = style,
+                            maxLines = 1,
+                            softWrap = false,
+                            autoSize = TextAutoSize.StepBased(
+                                minFontSize = 11.sp,
+                                maxFontSize = style.fontSize,
+                                stepSize = 0.5.sp,
+                            ),
                         )
                     } else {
                         Text(

@@ -2,16 +2,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Cloud backup and recitation. The reader itself stays offline; nothing connects until the
-         user signs in to back up or starts a recitation. -->
+    <!-- Cloud backup, recitation and downloadable tafsir packs. The reader itself stays offline;
+         nothing connects until the user signs in to back up, starts a recitation, or opens the
+         tafsir library. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Recitation keeps playing in the background as a media-playback foreground service. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- Downloading surahs for offline listening runs as a data-sync foreground service, with
-         a progress notification the reader is asked to allow on Android 13+. -->
+    <!-- Downloading surahs for offline listening, and tafsir packs, runs as a data-sync foreground
+         service, with a progress notification the reader is asked to allow on Android 13+. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -57,5 +58,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </service>
+
+        <!-- WorkManager's own foreground service, which runs a tafsir pack download
+             (PackDownloadWorker); Android 14+ wants its type declared. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
     </application>
 </manifest>

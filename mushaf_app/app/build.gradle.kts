@@ -29,6 +29,11 @@ val googleServicesFile = file("google-services.json")
 // Debug builds can point cloud backup at the Firebase Local Emulator Suite instead:
 //   ./gradlew :app:installDebug -PfirebaseEmulatorHost=10.0.2.2
 val firebaseEmulatorHost: String? = providers.gradleProperty("firebaseEmulatorHost").orNull
+// Where the list of downloadable tafsir packs is published. Debug builds can read it from a local
+// server instead (cleartext to 10.0.2.2 is allowed in debug only):
+//   ./gradlew :app:installDebug -PpackCatalogUrl=http://10.0.2.2:8000/catalog.json
+val packCatalogUrl = "https://github.com/zahmee/natlu-data/releases/latest/download/catalog.json"
+val debugPackCatalogUrl: String? = providers.gradleProperty("packCatalogUrl").orNull
 val firebaseResources: Map<String, String> = if (googleServicesFile.exists()) {
     val root = JsonSlurper().parse(googleServicesFile) as Map<*, *>
     val project = root["project_info"] as Map<*, *>
@@ -62,11 +67,12 @@ android {
         applicationId = "com.mushaf.reader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 57
-        versionName = "0.13.0"
+        versionCode = 58
+        versionName = "0.14.0"
 
         firebaseResources.forEach { (name, value) -> resValue("string", name, value) }
         buildConfigField("String", "FIREBASE_EMULATOR_HOST", "null")
+        buildConfigField("String", "PACK_CATALOG_URL", "\"$packCatalogUrl\"")
     }
 
     signingConfigs {
@@ -84,6 +90,9 @@ android {
         debug {
             if (firebaseEmulatorHost != null) {
                 buildConfigField("String", "FIREBASE_EMULATOR_HOST", "\"$firebaseEmulatorHost\"")
+            }
+            if (debugPackCatalogUrl != null) {
+                buildConfigField("String", "PACK_CATALOG_URL", "\"$debugPackCatalogUrl\"")
             }
         }
         release {

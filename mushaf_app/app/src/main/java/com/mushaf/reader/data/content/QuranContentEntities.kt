@@ -81,3 +81,14 @@ data class GharibAyahMapEntity(
     @ColumnInfo(name = "entry_id") val entryId: Int,
     @ColumnInfo(name = "sort_order") val sortOrder: Int,
 )
+
+/**
+ * The occasion of an ayah's revelation, for the 200 ayahs the source has one for. [notes] holds the
+ * shown editor's notes (hadith sources), one per line; [text] marks where each belongs with ⟦n⟧.
+ */
+@Entity(tableName = "ayah_nozool")
+data class AyahNozoolEntity(
+    @PrimaryKey @ColumnInfo(name = "verse_key") val verseKey: String,
+    @ColumnInfo(name = "text") val text: String,
+    @ColumnInfo(name = "notes") val notes: String,
+)

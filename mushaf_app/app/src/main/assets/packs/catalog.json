@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "packs": [
+    {
+      "id": "ibn_kathir",
+      "kind": "tafsir",
+      "version": 1,
+      "schema": 1,
+      "title": "تفسير ابن كثير",
+      "work": "تفسير القرآن العظيم",
+      "author": "ابن كثير",
+      "url": "https://github.com/zahmee/natlu-data/releases/download/packs-2026.11.08/ibn_kathir-v1.db.gz",
+      "sha256": "ad88919474a1be5cd2e0dfddc77991ec275eca55f9339286b028c7072f6ba368",
+      "compressedBytes": 5477613,
+      "installedBytes": 26415104,
+      "minAppVersionCode": 58
+    },
+    {
+      "id": "tabari",
+      "kind": "tafsir",
+      "version": 1,
+      "schema": 1,
+      "title": "تفسير الطبري",
+      "work": "جامع البيان عن تأويل آي القرآن",
+      "author": "الطبري",
+      "url": "https://github.com/zahmee/natlu-data/releases/download/packs-2026.11.08/tabari-v1.db.gz",
+      "sha256": "240440d7d8b76c72130c6216625613bb809d767bf073772917309007a7177b63",
+      "compressedBytes": 8180291,
+      "installedBytes": 41205760,
+      "minAppVersionCode": 58
+    },
+    {
+      "id": "baghawi",
+      "kind": "tafsir",
+      "version": 1,
+      "schema": 1,
+      "title": "تفسير البغوي",
+      "work": "معالم التنزيل",
+      "author": "البغوي",
+      "url": "https://github.com/zahmee/natlu-data/releases/download/packs-2026.11.08/baghawi-v1.db.gz",
+      "sha256": "a8ab7e5dad365f9345d3bb1da85defd137bf1faafaccc294acf5e740884da307",
+      "compressedBytes": 3533248,
+      "installedBytes": 18153472,
+      "minAppVersionCode": 58
+    },
+    {
+      "id": "irab",
+      "kind": "irab",
+      "version": 1,
+      "schema": 1,
+      "title": "إعراب القرآن",
+      "work": "إعراب القرآن الكريم",
+      "author": "",
+      "url": "https://github.com/zahmee/natlu-data/releases/download/packs-2026.11.08/irab-v1.db.gz",
+      "sha256": "5628c6291ccc3b0352d9895a7052875cb222e6b70cb39fd2eb607a4be5c5a9e8",
+      "compressedBytes": 1994126,
+      "installedBytes": 17072128,
+      "minAppVersionCode": 58
+    }
+  ]
+}

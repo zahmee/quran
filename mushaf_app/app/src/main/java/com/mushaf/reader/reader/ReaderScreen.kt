@@ -171,6 +171,19 @@ import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.QuranPagePosition
 import com.mushaf.reader.data.ExplanationTextScale
 import com.mushaf.reader.data.content.MukhtasarText
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.AssistChip
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.ui.platform.LocalConfiguration
+import com.mushaf.reader.data.content.SharedText
+import com.mushaf.reader.data.packs.InstalledPack
+import com.mushaf.reader.data.packs.PackContent
+import com.mushaf.reader.data.packs.PackDownloads
 import com.mushaf.reader.data.content.TafsirPassage
 import com.mushaf.reader.data.content.TafsirPassageRow
 import com.mushaf.reader.data.content.TafsirRowKind
@@ -204,6 +217,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     var showAbout by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showBackup by remember { mutableStateOf(false) }
+    var showTafsirLibrary by remember { mutableStateOf(false) }
     var headerVisible by remember { mutableStateOf(true) }
     var showReciterPicker by remember { mutableStateOf(false) }
     // The ayah the memorisation sheet starts from, while it is open.
@@ -637,6 +651,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 onEdgeMarginChange = { viewModel.updateEdgeMargin(it) },
                 onBackup = { showBackup = true },
                 onAbout = { showAbout = true },
+                onTafsirLibrary = { showTafsirLibrary = true },
                 onClearAllStats = { viewModel.clearAllStats() },
                 recitationTab = {
                     val page = pagerState.currentPage + 1
@@ -702,6 +717,10 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
             )
         }
 
+        if (showTafsirLibrary) {
+            TafsirLibraryDialog(downloads = viewModel.packDownloads, onDismiss = { showTafsirLibrary = false })
+        }
+
         if (showAbout) {
             AboutScreen(
                 onBack = { showAbout = false },
@@ -743,10 +762,13 @@ private enum class ExplanationTab(
     ),
     Muyassar("الميسر", "التفسير الميسر", TafsirChoice.Muyassar, MUYASSAR_CREDIT),
     Meanings("المعاني", "معاني الكلمات", null, GHARIB_CREDIT),
+
+    /** The downloaded packs. Its title and credit are the chosen pack's own, from the pack file. */
+    More("المزيد", "", TafsirChoice.More, ""),
     ;
 
     companion object {
-        fun forTafsir(choice: TafsirChoice): ExplanationTab = entries.first { it.tafsir == choice }
+        fun forTafsir(choice: TafsirChoice): ExplanationTab = entries.firstOrNull { it.tafsir == choice } ?: Saadi
     }
 }
 
@@ -887,7 +909,7 @@ private fun ReaderPager(
                     viewModel.loadExplanation(ayah)
                     explanationRequest = ExplanationRequest(
                         ayah,
-                        ExplanationTab.forTafsir(viewModel.preferredTafsir),
+                        ExplanationTab.forTafsir(viewModel.openingTafsir()),
                     )
                 },
                 onMeanings = {
@@ -925,6 +947,12 @@ private fun ReaderPager(
                 onTafsirChosen = viewModel::updatePreferredTafsir,
                 textScale = viewModel.explanationTextScale,
                 onTextScaleStep = viewModel::stepExplanationTextScale,
+                packs = viewModel.installedPacks,
+                currentPack = viewModel.currentPack(),
+                packState = viewModel.packState,
+                onPackChosen = viewModel::updatePreferredPack,
+                onLoadPack = viewModel::loadPackContent,
+                downloads = viewModel.packDownloads,
                 onDismiss = {
                     explanationRequest = null
                     viewModel.clearExplanation()
@@ -2166,6 +2194,12 @@ private fun AyahExplanationSheet(
     onTafsirChosen: (TafsirChoice) -> Unit,
     textScale: Int,
     onTextScaleStep: (Int) -> Unit,
+    packs: List<InstalledPack>,
+    currentPack: InstalledPack?,
+    packState: PackContentUiState,
+    onPackChosen: (String) -> Unit,
+    onLoadPack: (verseKey: String, packId: String) -> Unit,
+    downloads: PackDownloads,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -2179,7 +2213,17 @@ private fun AyahExplanationSheet(
     val currentState = state.takeIf { it.verseKey == request.ayah.verseKey }
     var showSources by rememberSaveable { mutableStateOf(false) }
     val openSources = { showSources = true }
-    val shareText = remember(request.ayah, currentState, selectedTab) {
+    var showLibrary by rememberSaveable { mutableStateOf(false) }
+    val packContent = packState.takeIf {
+        it.verseKey == request.ayah.verseKey && it.packId == currentPack?.id
+    }
+    LaunchedEffect(selectedTab, currentPack?.id, request.ayah.verseKey) {
+        if (selectedTab == ExplanationTab.More && currentPack != null) {
+            onLoadPack(request.ayah.verseKey, currentPack.id)
+        }
+    }
+    val shareTitle = if (selectedTab == ExplanationTab.More) currentPack?.title.orEmpty() else selectedTab.title
+    val shareText = remember(request.ayah, currentState, selectedTab, packContent, currentPack) {
         if (currentState == null || currentState.loading || currentState.errorMessage != null) {
             null
         } else {
@@ -2192,19 +2236,28 @@ private fun AyahExplanationSheet(
                 ExplanationTab.Meanings -> currentState.meanings.joinToString("\n\n") {
                     "${it.word}: ${it.meaning}"
                 }
+                ExplanationTab.More -> when (val pack = packContent?.content) {
+                    is PackContent.Passage -> pack.passage.shareText
+                    is PackContent.Text -> pack.row.plainText
+                    null -> null
+                }
             }
             // The text leaves the app here, where the sources screen cannot follow it.
             val supplement = selectedTab == ExplanationTab.Saadi && currentState.saadi?.sharesSupplement == true
-            val credit = selectedTab.credit + if (supplement) " ${CenterAttribution.SUPPLEMENT_CREDIT}" else ""
+            val credit = when (selectedTab) {
+                ExplanationTab.More -> currentPack?.credit.orEmpty()
+                else -> selectedTab.credit + if (supplement) " ${CenterAttribution.SUPPLEMENT_CREDIT}" else ""
+            }
             content?.takeIf { it.isNotBlank() }?.let {
-                "${selectedTab.title}\n" +
+                "$shareTitle\n" +
                     "سورة ${request.ayah.surahNameAr} • الآية ${request.ayah.ayahNumber.toArabicDigits()}\n\n" +
-                    "$it\n\n$credit"
+                    "${SharedText.limit(it)}\n\n$credit"
             }
         }
     }
 
     if (showSources) SourcesDialog(onDismiss = { showSources = false })
+    if (showLibrary) TafsirLibraryDialog(downloads = downloads, onDismiss = { showLibrary = false })
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -2244,9 +2297,14 @@ private fun AyahExplanationSheet(
                     selectedTab.tafsir?.let(onTafsirChosen)
                 },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                singleLine = true,
             )
 
-            ExplanationActions(text = shareText, title = selectedTab.title)
+            ExplanationActions(text = shareText, title = shareTitle)
+
+            currentState?.nozool?.takeIf { !currentState.loading }?.let { row ->
+                NozoolBar(row = row, scale = scale)
+            }
 
             when {
                 currentState == null || currentState.loading -> {
@@ -2343,7 +2401,22 @@ private fun AyahExplanationSheet(
                     }
                 }
 
-                else -> {
+                selectedTab == ExplanationTab.More -> {
+                    PackTabContent(
+                        packs = packs,
+                        current = currentPack,
+                        state = packContent,
+                        onPackChosen = onPackChosen,
+                        onOpenLibrary = { showLibrary = true },
+                        onOpenSources = openSources,
+                        scale = scale,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                    )
+                }
+
+                selectedTab == ExplanationTab.Meanings -> {
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2379,6 +2452,219 @@ private fun AyahExplanationSheet(
                         }
                         item { SourcesLink(openSources) }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The «المزيد» tab: the downloaded packs as chips above the chosen one's text, or the way to the
+ * library when none is downloaded yet.
+ */
+@Composable
+private fun PackTabContent(
+    packs: List<InstalledPack>,
+    current: InstalledPack?,
+    state: PackContentUiState?,
+    onPackChosen: (String) -> Unit,
+    onOpenLibrary: () -> Unit,
+    onOpenSources: () -> Unit,
+    scale: Float,
+    modifier: Modifier,
+) {
+    if (packs.isEmpty() || current == null) {
+        Column(
+            modifier = modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = "لم تُنزَّل كتب إضافية بعد.\nيمكنك تنزيل تفسير ابن كثير أو الطبري أو البغوي أو إعراب القرآن من مكتبة التفاسير، ثم قراءتها دون اتصال.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(16.dp))
+            FilledTonalButton(onClick = onOpenLibrary) {
+                Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("مكتبة التفاسير")
+            }
+        }
+        return
+    }
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            packs.forEach { pack ->
+                FilterChip(
+                    selected = pack.id == current.id,
+                    onClick = { onPackChosen(pack.id) },
+                    label = { Text(pack.title) },
+                )
+            }
+            AssistChip(
+                onClick = onOpenLibrary,
+                label = { Text("المكتبة") },
+                leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            )
+        }
+        val content = state?.content
+        when {
+            state == null || state.loading -> Box(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator() }
+
+            content is PackContent.Passage -> PackPassageContent(
+                passage = content.passage,
+                author = current.author.ifBlank { current.title },
+                onOpenSources = onOpenSources,
+                scale = scale,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
+
+            content is PackContent.Text -> PackPassageContent(
+                passage = TafsirPassage(listOf(content.row), content.row.fromAyah),
+                author = current.author.ifBlank { current.title },
+                onOpenSources = onOpenSources,
+                scale = scale,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
+
+            else -> Column(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                EmptyExplanationMessage("لا يتوفر نص لهذه الآية في هذا الكتاب.")
+                SourcesLink(onOpenSources)
+            }
+        }
+    }
+}
+
+/** One paragraph of a row, laid out as its own list item: a pack's row can be book-length. */
+private data class PackParagraph(val row: Int, val text: String, val lastOfRow: Boolean, val firstOfRow: Boolean)
+
+/**
+ * A downloaded book's text for the ayah. Its rows are long and usually just one, so each paragraph
+ * is its own item, the notes follow the row's last paragraph, and a row explaining several ayahs
+ * together says which.
+ */
+@Composable
+private fun PackPassageContent(
+    passage: TafsirPassage,
+    author: String,
+    onOpenSources: () -> Unit,
+    scale: Float,
+    modifier: Modifier,
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val reading = ReadingType.bodyLarge.scaled(scale)
+    val paragraphs = remember(passage) {
+        passage.rows.flatMapIndexed { index, row ->
+            val parts = row.text.split('\n').filter { it.isNotBlank() }
+            parts.mapIndexed { i, part -> PackParagraph(index, part, i == parts.lastIndex, i == 0) }
+        }
+    }
+    val listState = rememberLazyListState()
+    val lead = if (!passage.hasOwnTafsir) 1 else 0
+    LaunchedEffect(passage) {
+        if (passage.rows.size > 1 && passage.hasOwnTafsir) {
+            val first = paragraphs.indexOfFirst { it.row == passage.focusIndex }
+            if (first > 0) listState.scrollToItem(first + lead)
+        }
+    }
+    LazyColumn(
+        modifier = modifier.nestedScroll(KeepFlingInSheet),
+        state = listState,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (!passage.hasOwnTafsir) {
+            item {
+                Text(
+                    text = "لم يُفرد $author هذه الآية بتفسير مستقل، وهذا تفسير الموضع الذي تقع فيه.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = muted,
+                )
+            }
+        }
+        itemsIndexed(paragraphs) { _, paragraph ->
+            val row = passage.rows[paragraph.row]
+            Column {
+                if (paragraph.firstOfRow && row.toAyah > row.fromAyah && row.fromAyah > 0) {
+                    Text(
+                        text = "تفسير الآيات (${row.fromAyah.toArabicDigits()}–${row.toAyah.toArabicDigits()})",
+                        modifier = Modifier.padding(bottom = 6.dp),
+                        style = MaterialTheme.typography.labelLarge.scaled(scale),
+                        color = muted,
+                    )
+                }
+                Text(text = formatSaadiText(paragraph.text, accent), style = reading)
+                if (paragraph.lastOfRow) SaadiNotes(notes = row.notes, scale = scale)
+            }
+        }
+        item { SourcesLink(onOpenSources) }
+    }
+}
+
+/** The occasion of the ayah's revelation, folded into one line above the tabs until it is opened. */
+@Composable
+private fun NozoolBar(row: TafsirPassageRow, scale: Float) {
+    var open by rememberSaveable(row.text) { mutableStateOf(false) }
+    val accent = MaterialTheme.colorScheme.primary
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.4f).dp
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { open = !open }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "سبب النزول",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge.scaled(scale),
+                    fontWeight = FontWeight.SemiBold,
+                    color = accent,
+                )
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (open) "طيّ سبب النزول" else "إظهار سبب النزول",
+                    modifier = Modifier
+                        .size(22.dp)
+                        .graphicsLayer { rotationZ = if (open) 180f else 0f },
+                )
+            }
+            if (open) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = maxHeight)
+                        .verticalScroll(rememberScrollState())
+                        .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    row.text.split('\n').filter { it.isNotBlank() }.forEach { paragraph ->
+                        Text(
+                            text = formatSaadiText(paragraph, accent),
+                            style = ReadingType.bodyMedium.scaled(scale),
+                        )
+                    }
+                    SaadiNotes(notes = row.notes, scale = scale)
                 }
             }
         }

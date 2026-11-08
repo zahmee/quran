@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Verified
@@ -28,13 +29,18 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import androidx.core.net.toUri
 import com.mushaf.reader.ui.components.MushafPanel
 import com.mushaf.reader.ui.components.MushafSectionHeader
@@ -150,6 +156,35 @@ private val SourceGroups = listOf(
                 body = "«الميسر في غريب القرآن الكريم»، الطبعة الثانية، من إصدارات $COMPLEX_NAME.",
                 links = listOf(ComplexLink),
             ),
+            SourceEntry(
+                title = "أسباب النزول",
+                body = "لمئتي آية، من قاعدة بيانات ${CenterAttribution.CENTER_NAME}، برخصة المشاع الإبداعي " +
+                    "${CenterAttribution.LICENSE_NAME.unbroken()}. ولا تذكر القاعدة الكتاب الذي نُقلت منه.\n\n" +
+                    "وقد عُدّل: حُذفت الوسوم وأكثر حواشي المحقق وأُبقي تخريج الأحاديث، وحُذف صفّان مكرران " +
+                    "منسوبان إلى غير آيتهما.",
+                links = listOf(CenterLink, CcByLink),
+            ),
+        ),
+    ),
+    SourceGroup(
+        title = "مكتبة التفاسير",
+        icon = Icons.Outlined.Download,
+        entries = listOf(
+            SourceEntry(
+                title = "تفسير ابن كثير، وتفسير الطبري، وتفسير البغوي، وإعراب القرآن",
+                body = "«تفسير القرآن العظيم» لابن كثير، و«جامع البيان عن تأويل آي القرآن» للطبري، و«معالم التنزيل» " +
+                    "للبغوي، و«إعراب القرآن الكريم»، من قاعدة بيانات ${CenterAttribution.CENTER_NAME}، برخصة المشاع " +
+                    "الإبداعي ${CenterAttribution.LICENSE_NAME.unbroken()}. لا تُضمَّن في التطبيق، بل تُنزَّل حين " +
+                    "تطلبها من مكتبة التفاسير، من مستودع التطبيق على GitHub.\n\n" +
+                    "وقد عُدّل: حُذفت الوسوم وعلامات العمل وأكثر حواشي المحقق، وأُبقيت التصحيحات وتخريج الأحاديث، " +
+                    "وجُمعت الآيات التي كررت القاعدة شرحها الواحد تحت كل منها، وأُغلقت حواشٍ لم تُغلق في المصدر، " +
+                    "ووُسمت ثمانية مواضع قُطع نصها في المصدر. وقائمة التصحيحات كاملة منشورة مع الكتب.",
+                links = listOf(
+                    CenterLink,
+                    CcByLink,
+                    SourceLink("قائمة التصحيحات", "https://github.com/zahmee/natlu-data/blob/main/CORRECTIONS.md"),
+                ),
+            ),
         ),
     ),
     SourceGroup(
@@ -209,7 +244,22 @@ internal fun SourcesDialog(onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
+        StatusBarIconsForBackground()
         SourcesScreen(onBack = onDismiss)
+    }
+}
+
+/**
+ * A full-screen dialog is a window of its own and starts with light status-bar icons, which vanish
+ * on the light paper themes. Call inside the dialog's content: dark icons on a light background.
+ */
+@Composable
+internal fun StatusBarIconsForBackground() {
+    val view = LocalView.current
+    val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    SideEffect {
+        val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
+        WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = light
     }
 }
 

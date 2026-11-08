@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Menu
@@ -153,6 +154,7 @@ fun SettingsScreen(
     onEdgeMarginChange: (String) -> Unit,
     onBackup: () -> Unit,
     onAbout: () -> Unit,
+    onTafsirLibrary: () -> Unit,
     onClearAllStats: () -> Unit,
     /** The «التلاوة» tab's content, built by the reader, which owns recitation. */
     recitationTab: @Composable ColumnScope.() -> Unit,
@@ -472,6 +474,19 @@ fun SettingsScreen(
                 }
                 3 -> SettingsTabScroll { recitationTab() }
                 else -> SettingsTabScroll {
+                SettingsPanel(
+                    title = "المحتوى الإضافي",
+                    body = "كتب تُنزَّل عند الطلب وتُقرأ دون اتصال.",
+                    icon = Icons.AutoMirrored.Outlined.MenuBook
+                ) {
+                    ActionRow(
+                        icon = Icons.Outlined.Download,
+                        title = "مكتبة التفاسير",
+                        body = "تفسير ابن كثير والطبري والبغوي وإعراب القرآن، في تبويب «المزيد» بنافذة التفسير.",
+                        onClick = onTafsirLibrary
+                    )
+                }
+
                 SettingsPanel(
                     title = "معلومات التطبيق",
                     body = "النسخ الاحتياطي، مصدر المصحف، الخصوصية، وطرق التواصل.",
