@@ -33,6 +33,12 @@ import com.mushaf.reader.data.backup.FileBackupRepository
 import com.mushaf.reader.data.content.GharibMeaning
 import com.mushaf.reader.data.content.QuranContentRepository
 import com.mushaf.reader.data.content.TafsirPassage
+import com.mushaf.reader.data.content.TafsirPassageRow
+import com.mushaf.reader.data.packs.InstalledPack
+import com.mushaf.reader.data.packs.PackContent
+import com.mushaf.reader.data.packs.PackContentRepository
+import com.mushaf.reader.data.packs.PackDownloads
+import com.mushaf.reader.data.packs.PackStore
 import com.mushaf.reader.data.stats.FullStats
 import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.ReadingStats
@@ -97,7 +103,17 @@ data class AyahExplanationUiState(
     val meanings: List<GharibMeaning> = emptyList(),
     val saadi: TafsirPassage? = null,
     val mukhtasar: String? = null,
+    /** The occasion of the ayah's revelation, for the ayahs the source records one for. */
+    val nozool: TafsirPassageRow? = null,
     val errorMessage: String? = null,
+)
+
+/** What the «المزيد» tab shows: one downloaded pack's text for one ayah. */
+data class PackContentUiState(
+    val verseKey: String? = null,
+    val packId: String? = null,
+    val loading: Boolean = false,
+    val content: PackContent? = null,
 )
 
 /**
@@ -108,6 +124,9 @@ enum class TafsirChoice(val id: String) {
     Saadi("saadi"),
     Mukhtasar("mukhtasar"),
     Muyassar("muyassar"),
+
+    /** The «المزيد» tab: a downloaded pack, the one in [ReaderViewModel.preferredPack]. */
+    More("more"),
     ;
 
     companion object {
@@ -129,6 +148,10 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Recitation downloads and the audio kept from listening. */
     val recitationDownloads = RecitationDownloads(app, viewModelScope, recitationRepo)
+
+    /** The downloadable tafsir packs: the library's catalog, downloads and installed packs. */
+    val packDownloads = PackDownloads(app, viewModelScope)
+    private val packRepo = PackContentRepository(app)
 
     /** Recitation: the player bar, the reciter list and the ayah being recited. */
     val recitation = RecitationController(
@@ -198,6 +221,30 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setPreferredTafsir(value.id) }
     }
 
+    /** The downloaded pack «المزيد» opens on: the one the reader last chose there. */
+    var preferredPack by mutableStateOf<String?>(null)
+        private set
+
+    fun updatePreferredPack(id: String) {
+        if (id == preferredPack) return
+        preferredPack = id
+        viewModelScope.launch { store.setPreferredPack(id) }
+    }
+
+    /** The installed packs in the order the «المزيد» tab lists them. */
+    val installedPacks: List<InstalledPack>
+        get() = PackStore.installed.values.sortedBy { PACK_ORDER.indexOf(it.id).let { i -> if (i < 0) Int.MAX_VALUE else i } }
+
+    /** The pack «المزيد» shows: the remembered one if still installed, else the first installed. */
+    fun currentPack(): InstalledPack? {
+        val installed = installedPacks
+        return installed.firstOrNull { it.id == preferredPack } ?: installed.firstOrNull()
+    }
+
+    /** The tab «التفسير» opens on: «المزيد» only while a pack is still installed to show there. */
+    fun openingTafsir(): TafsirChoice =
+        if (preferredTafsir == TafsirChoice.More && installedPacks.isEmpty()) TafsirChoice.Saadi else preferredTafsir
+
     /** Text size of the tafsir / word-meanings sheet, percent of the reading size. */
     var explanationTextScale by mutableIntStateOf(ExplanationTextScale.DEFAULT)
         private set
@@ -216,8 +263,11 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
             store.recitationHandlePos()?.let { recitationHandlePos = it }
             recitationHandleOpacity = store.recitationHandleOpacity()
             preferredTafsir = TafsirChoice.fromId(store.preferredTafsir())
+            preferredPack = store.preferredPack()
             explanationTextScale = store.explanationTextScale()
         }
+        // Only lists the pack files already on the device; nothing here touches the network.
+        packDownloads.start()
     }
 
     val pageCount: Int = pageRepo.pageCount()
@@ -975,6 +1025,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
                     meanings = content.meanings,
                     saadi = content.saadi,
                     mukhtasar = content.mukhtasar,
+                    nozool = content.nozool,
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -991,6 +1042,36 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         explanationJob?.cancel()
         explanationJob = null
         explanationState = AyahExplanationUiState()
+        packJob?.cancel()
+        packJob = null
+        packState = PackContentUiState()
+    }
+
+    var packState by mutableStateOf(PackContentUiState())
+        private set
+    private var packJob: Job? = null
+
+    /** Loads [packId]'s text for [verseKey] into [packState], unless it is already there. */
+    fun loadPackContent(verseKey: String, packId: String) {
+        val current = packState
+        if (current.verseKey == verseKey && current.packId == packId && (current.loading || current.content != null)) return
+        val pack = PackStore.installed[packId]
+        packJob?.cancel()
+        if (pack == null) {
+            packState = PackContentUiState(verseKey, packId)
+            return
+        }
+        packState = PackContentUiState(verseKey, packId, loading = true)
+        packJob = viewModelScope.launch {
+            val content = try {
+                packRepo.contentFor(packId, pack.kind, verseKey)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            packState = PackContentUiState(verseKey, packId, content = content)
+        }
     }
 
     fun isBookmarked(verseKey: String): Boolean = bookmarks.contains(verseKey)
@@ -1308,3 +1389,6 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
 private fun AyahMarker.toSearchResult(tier: SearchTier, highlights: List<IntRange>) =
     SearchResult(verseKey, surahNameAr, ayahNumber, page, textUthmani, tier, highlights)
+
+/** The order the «المزيد» tab and the library list the packs in. */
+val PACK_ORDER = listOf("ibn_kathir", "tabari", "baghawi", "irab")

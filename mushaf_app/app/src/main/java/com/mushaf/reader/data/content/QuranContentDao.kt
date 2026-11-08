@@ -36,4 +36,7 @@ interface QuranContentDao {
         """
     )
     suspend fun passageForVerse(sourceId: String, verseKey: String): List<TafsirPassageEntity>
+
+    @Query("SELECT * FROM ayah_nozool WHERE verse_key = :verseKey LIMIT 1")
+    suspend fun nozoolForVerse(verseKey: String): AyahNozoolEntity?
 }

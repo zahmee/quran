@@ -207,6 +207,8 @@ class ReadingStore(private val context: Context) {
     private val keyRecitationHandleOpacity = intPreferencesKey("recitation_handle_opacity")
     /** Which tafsir the ayah menu's «التفسير» opens on. Device-local, like the recitation choice. */
     private val keyPreferredTafsir = stringPreferencesKey("preferred_tafsir")
+    /** Which downloaded pack the sheet's «المزيد» tab opens on. Device-local, like the above. */
+    private val keyPreferredPack = stringPreferencesKey("preferred_pack")
     /** Text size in the tafsir / word-meanings sheet, in percent of the reading size. */
     private val keyExplanationTextScale = intPreferencesKey("explanation_text_scale")
     private val keyUpdateDismissedVersion = intPreferencesKey("update_dismissed_version")
@@ -536,6 +538,12 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setPreferredTafsir(value: String) {
         context.dataStore.edit { it[keyPreferredTafsir] = value }
+    }
+
+    suspend fun preferredPack(): String? = context.dataStore.data.first()[keyPreferredPack]
+
+    suspend fun setPreferredPack(value: String) {
+        context.dataStore.edit { it[keyPreferredPack] = value }
     }
 
     suspend fun explanationTextScale(): Int =
