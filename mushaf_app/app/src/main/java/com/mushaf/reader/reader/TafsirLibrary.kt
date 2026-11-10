@@ -60,7 +60,7 @@ import com.mushaf.reader.ui.components.MushafTopBar
 
 /**
  * The tafsir library: the books that can be downloaded and read offline in the explanation sheet's
- * «المزيد» tab. A dialog for the same reason as the sources screen: it opens from the sheet too.
+ * sources menu. A dialog for the same reason as the sources screen: it opens from the sheet too.
  */
 @Composable
 internal fun TafsirLibraryDialog(downloads: PackDownloads, onDismiss: () -> Unit) {
@@ -118,7 +118,7 @@ private fun TafsirLibraryScreen(downloads: PackDownloads, onBack: () -> Unit) {
             ) {
                 item {
                     Text(
-                        text = "كتب تُنزَّل مرة واحدة ثم تُقرأ دون اتصال من تبويب «المزيد» في نافذة التفسير. " +
+                        text = "كتب تُنزَّل مرة واحدة ثم تُقرأ دون اتصال من قائمة «المصادر» في نافذة التفسير. " +
                             "لا يُنزَّل شيء إلا حين تطلبه.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

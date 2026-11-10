@@ -13,6 +13,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -61,6 +62,9 @@ import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin as OutlinedPushPin
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FullscreenExit
@@ -740,41 +744,54 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     showSearch = false
                     jumpToPage(page)
                 },
+                onJumpToAyah = { result ->
+                    showSearch = false
+                    jumpToPage(result.page)
+                    viewModel.flashSearchResult(result.verseKey, result.page)
+                },
                 onBack = { showSearch = false }
             )
         }
     }
 }
 
-/** [label] sits on the tab; [title] heads anything copied or shared from it; [credit] closes it. */
+/**
+ * What the sheet lays out for a source. [label] names it on a tab, [menuLabel] in the sources menu;
+ * [title] heads anything copied or shared from it; [credit] closes that.
+ */
 private enum class ExplanationTab(
     val label: String,
+    val menuLabel: String,
     val title: String,
-    val tafsir: TafsirChoice?,
+    val source: String?,
     val credit: String,
 ) {
-    Saadi("السعدي", "تفسير السعدي", TafsirChoice.Saadi, CenterAttribution.SAADI_CREDIT),
+    Saadi("السعدي", "تفسير السعدي", "تفسير السعدي", ExplanationSources.SAADI, CenterAttribution.SAADI_CREDIT),
     Mukhtasar(
         "المختصر",
+        "المختصر في التفسير",
         "المختصر في تفسير القرآن الكريم",
-        TafsirChoice.Mukhtasar,
+        ExplanationSources.MUKHTASAR,
         CenterAttribution.MUKHTASAR_CREDIT,
     ),
-    Muyassar("الميسر", "التفسير الميسر", TafsirChoice.Muyassar, MUYASSAR_CREDIT),
-    Meanings("المعاني", "معاني الكلمات", null, GHARIB_CREDIT),
+    Muyassar("الميسر", "التفسير الميسر", "التفسير الميسر", ExplanationSources.MUYASSAR, MUYASSAR_CREDIT),
+    Meanings("المعاني", "معاني الكلمات", "معاني الكلمات", ExplanationSources.MEANINGS, GHARIB_CREDIT),
 
-    /** The downloaded packs. Its title and credit are the chosen pack's own, from the pack file. */
-    More("المزيد", "", TafsirChoice.More, ""),
+    /** A downloaded pack. Its labels, title and credit are the pack's own, from the pack file. */
+    Pack("", "", "", null, ""),
     ;
 
     companion object {
-        fun forTafsir(choice: TafsirChoice): ExplanationTab = entries.firstOrNull { it.tafsir == choice } ?: Saadi
+        fun forSource(source: String): ExplanationTab =
+            if (ExplanationSources.packId(source) != null) Pack
+            else entries.firstOrNull { it.source == source } ?: Saadi
     }
 }
 
 private data class ExplanationRequest(
     val ayah: AyahMarker,
-    val initialTab: ExplanationTab,
+    /** An [ExplanationSources] id. */
+    val initialSource: String,
 )
 
 @Composable
@@ -800,10 +817,22 @@ private fun ReaderPager(
         }
     }
 
-    BoxWithConstraints(modifier = modifier) {
+    val flash = viewModel.searchFlash
+    // Any touch on the page puts out a search result's light at once; it is only there to be found.
+    val flashTouch = if (flash == null) Modifier else Modifier.pointerInput(flash.token) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            viewModel.clearSearchFlash()
+        }
+    }
+
+    BoxWithConstraints(modifier = modifier.then(flashTouch)) {
         val boxW = constraints.maxWidth
         val boxH = constraints.maxHeight
         val recolor = remember(viewModel.palette) { viewModel.palette.pageRecolor() }
+        val flashMarker = flash?.let { f ->
+            viewModel.markersForPage(f.page).firstOrNull { it.verseKey == f.verseKey }
+        }
         val settledPage = pagerState.settledPage + 1
         val position = remember(settledPage, viewModel.ayahLoaded) {
             QuranPagePosition.fromAyahs(viewModel.markersForPage(settledPage))
@@ -839,6 +868,14 @@ private fun ReaderPager(
                 pageOverlay = { scale, viewportTop, viewportHeight ->
                     if (recitingMarker != null && recitingMarker.page == pageNumber) {
                         RecitationHighlight(marker = recitingMarker, baseScale = scale)
+                    }
+                    if (flash != null && flashMarker != null && flashMarker.page == pageNumber) {
+                        SearchFlashHighlight(
+                            marker = flashMarker,
+                            baseScale = scale,
+                            token = flash.token,
+                            onDone = viewModel::clearSearchFlash,
+                        )
                     }
                     if (pageNumber == settledPage && hizbMarkers.isNotEmpty()) {
                         HizbMarkerLabels(
@@ -904,18 +941,10 @@ private fun ReaderPager(
                 bookmarked2 = viewModel.isBookmarked2(ayah.verseKey),
                 onBookmark2 = { viewModel.toggleBookmark2(ayah) },
                 showBookmark2 = viewModel.isButtonVisible("bookmark2"),
-                onTafsir = {
+                onExplain = {
                     longPressAyah = null
                     viewModel.loadExplanation(ayah)
-                    explanationRequest = ExplanationRequest(
-                        ayah,
-                        ExplanationTab.forTafsir(viewModel.openingTafsir()),
-                    )
-                },
-                onMeanings = {
-                    longPressAyah = null
-                    viewModel.loadExplanation(ayah)
-                    explanationRequest = ExplanationRequest(ayah, ExplanationTab.Meanings)
+                    explanationRequest = ExplanationRequest(ayah, viewModel.openingSource())
                 },
                 onListenAyah = {
                     longPressAyah = null
@@ -944,13 +973,13 @@ private fun ReaderPager(
                 request = request,
                 state = viewModel.explanationState,
                 onRetry = { viewModel.loadExplanation(request.ayah) },
-                onTafsirChosen = viewModel::updatePreferredTafsir,
+                onSourceChosen = viewModel::updateExplanationSource,
+                pinnedSources = viewModel.pinnedSources,
+                onTogglePin = viewModel::togglePinnedSource,
                 textScale = viewModel.explanationTextScale,
                 onTextScaleStep = viewModel::stepExplanationTextScale,
                 packs = viewModel.installedPacks,
-                currentPack = viewModel.currentPack(),
                 packState = viewModel.packState,
-                onPackChosen = viewModel::updatePreferredPack,
                 onLoadPack = viewModel::loadPackContent,
                 downloads = viewModel.packDownloads,
                 onDismiss = {
@@ -2191,24 +2220,39 @@ private fun AyahExplanationSheet(
     request: ExplanationRequest,
     state: AyahExplanationUiState,
     onRetry: () -> Unit,
-    onTafsirChosen: (TafsirChoice) -> Unit,
+    onSourceChosen: (String) -> Unit,
+    pinnedSources: List<String>,
+    onTogglePin: (String) -> Boolean,
     textScale: Int,
     onTextScaleStep: (Int) -> Unit,
     packs: List<InstalledPack>,
-    currentPack: InstalledPack?,
     packState: PackContentUiState,
-    onPackChosen: (String) -> Unit,
     onLoadPack: (verseKey: String, packId: String) -> Unit,
     downloads: PackDownloads,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetScope = rememberCoroutineScope()
     val scale = textScale / 100f
     val bodyLarge = ReadingType.bodyLarge.scaled(scale)
     val bodyMedium = ReadingType.bodyMedium.scaled(scale)
     val wordStyle = MaterialTheme.typography.titleMedium.scaled(scale)
-    var selectedTab by remember(request.ayah.verseKey, request.initialTab) {
-        mutableStateOf(request.initialTab)
+    var source by remember(request.ayah.verseKey, request.initialSource) {
+        mutableStateOf(request.initialSource)
+    }
+    val selectedTab = ExplanationTab.forSource(source)
+    val currentPack = ExplanationSources.packId(source)?.let { id -> packs.firstOrNull { it.id == id } }
+    val installedIds = remember(packs) { packs.map { it.id }.toSet() }
+    val visiblePinned = ExplanationSources.visiblePinned(pinnedSources, installedIds)
+    val labelOf: (String) -> String = { s ->
+        when (val packId = ExplanationSources.packId(s)) {
+            null -> ExplanationTab.forSource(s).label
+            else -> ExplanationSources.packLabel(packId, packs.firstOrNull { it.id == packId }?.title.orEmpty())
+        }
+    }
+    val choose: (String) -> Unit = { s ->
+        source = s
+        onSourceChosen(s)
     }
     val currentState = state.takeIf { it.verseKey == request.ayah.verseKey }
     var showSources by rememberSaveable { mutableStateOf(false) }
@@ -2217,12 +2261,10 @@ private fun AyahExplanationSheet(
     val packContent = packState.takeIf {
         it.verseKey == request.ayah.verseKey && it.packId == currentPack?.id
     }
-    LaunchedEffect(selectedTab, currentPack?.id, request.ayah.verseKey) {
-        if (selectedTab == ExplanationTab.More && currentPack != null) {
-            onLoadPack(request.ayah.verseKey, currentPack.id)
-        }
+    LaunchedEffect(currentPack?.id, request.ayah.verseKey) {
+        if (currentPack != null) onLoadPack(request.ayah.verseKey, currentPack.id)
     }
-    val shareTitle = if (selectedTab == ExplanationTab.More) currentPack?.title.orEmpty() else selectedTab.title
+    val shareTitle = if (selectedTab == ExplanationTab.Pack) currentPack?.title.orEmpty() else selectedTab.title
     val shareText = remember(request.ayah, currentState, selectedTab, packContent, currentPack) {
         if (currentState == null || currentState.loading || currentState.errorMessage != null) {
             null
@@ -2236,7 +2278,7 @@ private fun AyahExplanationSheet(
                 ExplanationTab.Meanings -> currentState.meanings.joinToString("\n\n") {
                     "${it.word}: ${it.meaning}"
                 }
-                ExplanationTab.More -> when (val pack = packContent?.content) {
+                ExplanationTab.Pack -> when (val pack = packContent?.content) {
                     is PackContent.Passage -> pack.passage.shareText
                     is PackContent.Text -> pack.row.plainText
                     null -> null
@@ -2245,7 +2287,7 @@ private fun AyahExplanationSheet(
             // The text leaves the app here, where the sources screen cannot follow it.
             val supplement = selectedTab == ExplanationTab.Saadi && currentState.saadi?.sharesSupplement == true
             val credit = when (selectedTab) {
-                ExplanationTab.More -> currentPack?.credit.orEmpty()
+                ExplanationTab.Pack -> currentPack?.credit.orEmpty()
                 else -> selectedTab.credit + if (supplement) " ${CenterAttribution.SUPPLEMENT_CREDIT}" else ""
             }
             content?.takeIf { it.isNotBlank() }?.let {
@@ -2270,37 +2312,74 @@ private fun AyahExplanationSheet(
                 .fillMaxHeight(0.92f)
                 .navigationBarsPadding(),
         ) {
+            // The ayah first and largest; the tools for its text beside it; closing kept apart.
             Row(
-                modifier = Modifier.padding(start = 20.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                modifier = Modifier.padding(start = 20.dp, end = 8.dp, top = 2.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = request.ayah.surahNameAr,
+                            style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 26.sp),
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                        )
+                        if (request.ayah.isSajdah) SajdahBadge()
+                    }
+                    // No-break spaces keep each label with its number when a narrow screen wraps the line.
                     Text(
-                        text = request.ayah.surahNameAr,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.ExtraBold,
-                    )
-                    Text(
-                        text = "الآية ${request.ayah.ayahNumber.toArabicDigits()} • صفحة ${request.ayah.page.toArabicDigits()}",
+                        text = "الآية ${request.ayah.ayahNumber.toArabicDigits()} • صفحة ${request.ayah.page.toArabicDigits()}",
                         style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                TextSizeControls(scale = textScale, onStep = onTextScaleStep)
+                SheetTextTools(
+                    text = shareText,
+                    title = shareTitle,
+                    scale = textScale,
+                    onStep = onTextScaleStep,
+                )
+                CloseButtonApart(
+                    onClick = {
+                        sheetScope.launch { sheetState.hide() }.invokeOnCompletion {
+                            if (!sheetState.isVisible) onDismiss()
+                        }
+                    },
+                )
             }
 
-            MushafSegmentedTabs(
-                labels = ExplanationTab.entries.map { it.label },
-                selectedIndex = selectedTab.ordinal,
-                onSelected = { index ->
-                    selectedTab = ExplanationTab.entries[index]
-                    selectedTab.tafsir?.let(onTafsirChosen)
-                },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                singleLine = true,
-            )
-
-            ExplanationActions(text = shareText, title = shareTitle)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (visiblePinned.isNotEmpty()) {
+                    MushafSegmentedTabs(
+                        labels = visiblePinned.map(labelOf),
+                        selectedIndex = visiblePinned.indexOf(source),
+                        onSelected = { index -> choose(visiblePinned[index]) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                }
+                SourcesMenu(
+                    current = source,
+                    pinned = visiblePinned,
+                    packs = packs,
+                    labelOf = labelOf,
+                    onChoose = choose,
+                    onTogglePin = onTogglePin,
+                    onOpenLibrary = { showLibrary = true },
+                    modifier = if (visiblePinned.isEmpty()) Modifier.weight(1f) else Modifier,
+                )
+            }
 
             currentState?.nozool?.takeIf { !currentState.loading }?.let { row ->
                 NozoolBar(row = row, scale = scale)
@@ -2401,12 +2480,10 @@ private fun AyahExplanationSheet(
                     }
                 }
 
-                selectedTab == ExplanationTab.More -> {
+                selectedTab == ExplanationTab.Pack -> {
                     PackTabContent(
-                        packs = packs,
                         current = currentPack,
                         state = packContent,
-                        onPackChosen = onPackChosen,
                         onOpenLibrary = { showLibrary = true },
                         onOpenSources = openSources,
                         scale = scale,
@@ -2459,28 +2536,26 @@ private fun AyahExplanationSheet(
 }
 
 /**
- * The «المزيد» tab: the downloaded packs as chips above the chosen one's text, or the way to the
- * library when none is downloaded yet.
+ * A downloaded book chosen from the sources menu: its text for the ayah, or — when the book was
+ * deleted while the sheet was open — the way back to the library.
  */
 @Composable
 private fun PackTabContent(
-    packs: List<InstalledPack>,
     current: InstalledPack?,
     state: PackContentUiState?,
-    onPackChosen: (String) -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenSources: () -> Unit,
     scale: Float,
     modifier: Modifier,
 ) {
-    if (packs.isEmpty() || current == null) {
+    if (current == null) {
         Column(
             modifier = modifier.padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = "لم تُنزَّل كتب إضافية بعد.\nيمكنك تنزيل تفسير ابن كثير أو الطبري أو البغوي أو إعراب القرآن من مكتبة التفاسير، ثم قراءتها دون اتصال.",
+                text = "هذا الكتاب لم يعد منزَّلًا على الجهاز.\nيمكنك تنزيله من جديد من مكتبة التفاسير، أو اختيار مصدر آخر من قائمة «المصادر».",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -2495,26 +2570,6 @@ private fun PackTabContent(
         return
     }
     Column(modifier = modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            packs.forEach { pack ->
-                FilterChip(
-                    selected = pack.id == current.id,
-                    onClick = { onPackChosen(pack.id) },
-                    label = { Text(pack.title) },
-                )
-            }
-            AssistChip(
-                onClick = onOpenLibrary,
-                label = { Text("المكتبة") },
-                leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
-            )
-        }
         val content = state?.content
         when {
             state == null || state.loading -> Box(
@@ -2836,31 +2891,237 @@ private fun SaadiNotes(notes: List<String>, scale: Float) {
 }
 
 /**
- * Two round buttons that step the sheet's text size down and up (fixed steps in
- * [ExplanationTextScale]); each is disabled at its end. In the RTL sheet the smaller size sits on
- * the right and the larger on the left, following the reading direction.
+ * The sheet's tools for the text it shows, in one quiet group: copy and share it, then step its size
+ * down and up (fixed steps in [ExplanationTextScale], each end disabling its button). In the RTL sheet
+ * the smaller size sits on the right and the larger on the left, following the reading direction.
  */
 @Composable
-private fun TextSizeControls(scale: Int, onStep: (Int) -> Unit) {
+private fun SheetTextTools(text: String?, title: String, scale: Int, onStep: (Int) -> Unit) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+            .padding(horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FilledTonalIconButton(
-            onClick = { onStep(-1) },
-            enabled = ExplanationTextScale.canShrink(scale),
-            modifier = Modifier.size(44.dp),
-        ) {
-            Icon(Icons.Filled.TextDecrease, contentDescription = "تصغير الخط", modifier = Modifier.size(22.dp))
+        SmallToolButton(Icons.Filled.ContentCopy, "نسخ $title", enabled = text != null) {
+            text?.let { content ->
+                scope.launch {
+                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(title, content)))
+                    // Android 13 and newer already show a clipboard confirmation.
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                        Toast.makeText(context, "تم نسخ $title", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
         }
-        FilledTonalIconButton(
-            onClick = { onStep(+1) },
-            enabled = ExplanationTextScale.canGrow(scale),
-            modifier = Modifier.size(44.dp),
-        ) {
-            Icon(Icons.Filled.TextIncrease, contentDescription = "تكبير الخط", modifier = Modifier.size(22.dp))
+        SmallToolButton(Icons.Filled.Share, "مشاركة $title", enabled = text != null) {
+            text?.let { content ->
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, title)
+                    putExtra(Intent.EXTRA_TEXT, content)
+                }
+                context.startActivity(Intent.createChooser(send, null))
+            }
+        }
+        ToolGroupDivider()
+        SmallToolButton(Icons.Filled.TextDecrease, "تصغير الخط", enabled = ExplanationTextScale.canShrink(scale)) {
+            onStep(-1)
+        }
+        SmallToolButton(Icons.Filled.TextIncrease, "تكبير الخط", enabled = ExplanationTextScale.canGrow(scale)) {
+            onStep(+1)
         }
     }
+}
+
+/** A compact icon button for a tools group: small glyph, the group's muted colour. */
+@Composable
+private fun SmallToolButton(icon: ImageVector, description: String, enabled: Boolean = true, onClick: () -> Unit) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(38.dp)) {
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            modifier = Modifier.size(19.dp),
+            tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+        )
+    }
+}
+
+@Composable
+private fun ToolGroupDivider() {
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 3.dp)
+            .size(width = 1.dp, height = 20.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant),
+    )
+}
+
+/** Close, set apart from the tools beside it by a gap and a hairline so neither is pressed for the other. */
+@Composable
+private fun CloseButtonApart(onClick: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Spacer(Modifier.width(10.dp))
+        Box(
+            modifier = Modifier
+                .size(width = 1.dp, height = 24.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant),
+        )
+        Spacer(Modifier.width(4.dp))
+        IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = "إغلاق",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * Every source the sheet can show, in one menu beside the pinned tabs: the app's own, the downloaded
+ * books, and the way to download more. The pin beside each puts it among the tabs or takes it off.
+ * While the source being read is not pinned, the button shows its name, so the reader still sees it.
+ */
+@Composable
+private fun SourcesMenu(
+    current: String,
+    pinned: List<String>,
+    packs: List<InstalledPack>,
+    labelOf: (String) -> String,
+    onChoose: (String) -> Unit,
+    onTogglePin: (String) -> Boolean,
+    onOpenLibrary: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var open by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val accent = MaterialTheme.colorScheme.primary
+    val outside = current !in pinned
+    val pin: (String) -> Unit = { source ->
+        if (!onTogglePin(source)) {
+            Toast.makeText(
+                context,
+                "يمكن تثبيت ${ExplanationSources.MAX_PINNED.toArabicDigits()} مصادر على الأكثر؛ ألغِ تثبيت أحدها أولًا.",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+    Box(modifier = modifier) {
+        Surface(
+            onClick = { open = true },
+            modifier = if (pinned.isEmpty()) Modifier.fillMaxWidth() else Modifier,
+            shape = MaterialTheme.shapes.medium,
+            color = if (outside) accent.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = if (outside) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+            border = if (outside) BorderStroke(1.dp, accent.copy(alpha = 0.35f)) else null,
+        ) {
+            Row(
+                modifier = Modifier
+                    .defaultMinSize(minHeight = 52.dp)
+                    .padding(start = 12.dp, end = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = if (outside) labelOf(current) else "المصادر",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+            }
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            Text(
+                text = "اضغط الدبوس ليظهر المصدر تبويبًا في الأعلى",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            )
+            ExplanationSources.BUILT_IN.forEach { source ->
+                SourceMenuItem(
+                    label = ExplanationTab.forSource(source).menuLabel,
+                    selected = source == current,
+                    pinned = source in pinned,
+                    onClick = {
+                        open = false
+                        onChoose(source)
+                    },
+                    onPin = { pin(source) },
+                )
+            }
+            if (packs.isNotEmpty()) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                packs.forEach { pack ->
+                    val source = ExplanationSources.pack(pack.id)
+                    SourceMenuItem(
+                        label = pack.title,
+                        selected = source == current,
+                        pinned = source in pinned,
+                        onClick = {
+                            open = false
+                            onChoose(source)
+                        },
+                        onPin = { pin(source) },
+                    )
+                }
+            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            DropdownMenuItem(
+                text = { Text("تنزيل تفاسير أخرى") },
+                leadingIcon = { Icon(Icons.Filled.Download, contentDescription = null, tint = accent) },
+                onClick = {
+                    open = false
+                    onOpenLibrary()
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SourceMenuItem(
+    label: String,
+    selected: Boolean,
+    pinned: Boolean,
+    onClick: () -> Unit,
+    onPin: () -> Unit,
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    DropdownMenuItem(
+        text = {
+            Text(
+                text = label,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                color = if (selected) accent else MaterialTheme.colorScheme.onSurface,
+            )
+        },
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = null,
+                tint = if (selected) accent else Color.Transparent,
+            )
+        },
+        trailingIcon = {
+            IconButton(onClick = onPin) {
+                Icon(
+                    imageVector = if (pinned) Icons.Filled.PushPin else Icons.Outlined.OutlinedPushPin,
+                    contentDescription = if (pinned) "إلغاء تثبيت $label" else "تثبيت $label في الأعلى",
+                    modifier = Modifier.size(20.dp),
+                    tint = if (pinned) accent else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                )
+            }
+        },
+        onClick = onClick,
+    )
 }
 
 /** [this] with its size and line height multiplied by [factor], for the sheet's text-size steps. */
@@ -2903,54 +3164,6 @@ private fun formatSaadiText(raw: String, accent: Color): AnnotatedString = build
         cursor = match.range.last + 1
     }
     appendAnchored(raw.substring(cursor))
-}
-
-@Composable
-private fun ExplanationActions(text: String?, title: String) {
-    val context = LocalContext.current
-    val clipboard = LocalClipboard.current
-    val scope = rememberCoroutineScope()
-
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        TextButton(
-            onClick = {
-                text?.let { content ->
-                    scope.launch {
-                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(title, content)))
-                        // Android 13 and newer already show a clipboard confirmation.
-                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                            Toast.makeText(context, "تم نسخ $title", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-            },
-            enabled = text != null,
-            modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp),
-        ) {
-            Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text("نسخ", modifier = Modifier.padding(start = 8.dp))
-        }
-        TextButton(
-            onClick = {
-                text?.let { content ->
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_SUBJECT, title)
-                        putExtra(Intent.EXTRA_TEXT, content)
-                    }
-                    context.startActivity(Intent.createChooser(send, null))
-                }
-            },
-            enabled = text != null,
-            modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp),
-        ) {
-            Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text("مشاركة", modifier = Modifier.padding(start = 8.dp))
-        }
-    }
 }
 
 @Composable
@@ -3039,8 +3252,7 @@ private fun AyahLongPressMenu(
     bookmarked2: Boolean,
     onBookmark2: () -> Unit,
     showBookmark2: Boolean,
-    onTafsir: () -> Unit,
-    onMeanings: () -> Unit,
+    onExplain: () -> Unit,
     onListenAyah: () -> Unit,
     onPlayFrom: () -> Unit,
     onRepeat: () -> Unit,
@@ -3101,7 +3313,7 @@ private fun AyahLongPressMenu(
                     shadowElevation = 12.dp,
                     tonalElevation = 2.dp,
                 ) {
-                    Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp)) {
+                    Column(modifier = Modifier.padding(start = 14.dp, end = 8.dp, bottom = 12.dp)) {
                         // The whole header is the drag handle; the bar on top says so.
                         Column(
                             modifier = Modifier
@@ -3122,6 +3334,7 @@ private fun AyahLongPressMenu(
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)),
                             )
+                            // Where the ayah is, first and largest; copy and share beside it, close apart.
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -3135,154 +3348,103 @@ private fun AyahLongPressMenu(
                                     ) {
                                         Text(
                                             text = ayah.surahNameAr,
-                                            style = MaterialTheme.typography.titleSmall,
+                                            style = MaterialTheme.typography.titleLarge.copy(fontSize = 19.sp, lineHeight = 24.sp),
                                             fontWeight = FontWeight.ExtraBold,
                                             color = ink,
                                             maxLines = 1
                                         )
                                         if (ayah.isSajdah) SajdahBadge()
                                     }
+                                    // No-break spaces: a narrow card wraps between the two, never inside one.
                                     Text(
-                                        text = "الآية ${ayah.ayahNumber.toArabicDigits()} • صفحة ${ayah.page.toArabicDigits()}" +
-                                            " • الجزء ${ayah.juz.toArabicDigits()} • الحزب ${ayah.hizb.toArabicDigits()}",
-                                        style = MaterialTheme.typography.labelSmall,
+                                        text = "الآية ${ayah.ayahNumber.toArabicDigits()} • صفحة ${ayah.page.toArabicDigits()}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = accent,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = "الجزء ${ayah.juz.toArabicDigits()} • الحزب ${ayah.hizb.toArabicDigits()}",
+                                        style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                 }
-                                IconButton(
-                                    onClick = onClose,
-                                    modifier = Modifier.size(40.dp),
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                                        .padding(horizontal = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Close,
-                                        contentDescription = "إغلاق",
-                                        modifier = Modifier.size(18.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                                    if (showBookmark) {
+                                        BookmarkToolButton(
+                                            set = bookmarked,
+                                            tint = BookmarkGoldColor,
+                                            name = "العلامة المرجعية",
+                                            onClick = onBookmark,
+                                        )
+                                    }
+                                    if (showBookmark2) {
+                                        BookmarkToolButton(
+                                            set = bookmarked2,
+                                            tint = BookmarkVioletColor,
+                                            name = "العلامة الثانية",
+                                            onClick = onBookmark2,
+                                        )
+                                    }
+                                    SmallToolButton(Icons.Filled.ContentCopy, "نسخ الآية") {
+                                        clipboardScope.launch {
+                                            clipboard.setClipEntry(
+                                                ClipEntry(ClipData.newPlainText("آية قرآنية", shareText)),
+                                            )
+                                            Toast.makeText(context, "تم نسخ الآية", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                    SmallToolButton(Icons.Filled.Share, "مشاركة الآية") {
+                                        val send = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_TEXT, shareText)
+                                        }
+                                        context.startActivity(Intent.createChooser(send, null))
+                                    }
                                 }
+                                CloseButtonApart(onClick = onClose)
                             }
                         }
 
                         if (hasText) {
                             Text(
                                 text = ayah.textUthmani,
-                                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 21.sp),
-                                color = ink.copy(alpha = 0.82f),
-                                maxLines = 1,
+                                style = ReadingType.bodyMedium,
+                                color = ink.copy(alpha = 0.9f),
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = 6.dp),
+                                modifier = Modifier.padding(top = 8.dp, end = 6.dp),
                             )
                         }
 
-                        // One group per row: reading the ayah (green), then listening to it (blue).
+                        // Reading the ayah (green) and listening to it (blue), one entry each.
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 10.dp),
+                                .padding(top = 12.dp, end = 6.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             AyahPillAction(
                                 modifier = Modifier.weight(1f),
-                                title = "التفسير",
+                                title = "التفسير والمعاني",
                                 icon = Icons.AutoMirrored.Filled.MenuBook,
                                 tint = MaterialTheme.colorScheme.primary,
-                                onClick = onTafsir,
+                                onClick = onExplain,
                             )
-                            AyahPillAction(
+                            ListenSplitButton(
                                 modifier = Modifier.weight(1f),
-                                title = "المعاني",
-                                icon = Icons.AutoMirrored.Outlined.ManageSearch,
-                                tint = MaterialTheme.colorScheme.primary,
-                                onClick = onMeanings,
-                            )
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            AyahPillAction(
-                                modifier = Modifier.weight(1f),
-                                title = "الآية وحدها",
-                                icon = Icons.Filled.Headphones,
-                                tint = StatusBlueColor,
-                                onClick = onListenAyah,
-                            )
-                            AyahPillAction(
-                                modifier = Modifier.weight(1f),
-                                title = "من هنا",
-                                icon = Icons.Filled.PlayArrow,
-                                tint = StatusBlueColor,
-                                onClick = onPlayFrom,
-                            )
-                            AyahPillAction(
-                                modifier = Modifier.weight(1f),
-                                title = "التكرار",
-                                icon = Icons.Filled.Repeat,
-                                tint = StatusBlueColor,
-                                onClick = onRepeat,
-                            )
-                        }
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
-                        )
-
-                        // Tools for the ayah: lighter than the actions above, so the eye goes there first.
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            if (showBookmark) {
-                                AyahToolAction(
-                                    modifier = Modifier.weight(1f),
-                                    title = "علامة ١",
-                                    icon = if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                                    tint = BookmarkGoldColor,
-                                    selected = bookmarked,
-                                    onClick = onBookmark,
-                                )
-                            }
-                            if (showBookmark2) {
-                                AyahToolAction(
-                                    modifier = Modifier.weight(1f),
-                                    title = "علامة ٢",
-                                    icon = if (bookmarked2) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                                    tint = BookmarkVioletColor,
-                                    selected = bookmarked2,
-                                    onClick = onBookmark2,
-                                )
-                            }
-                            AyahToolAction(
-                                modifier = Modifier.weight(1f),
-                                title = "نسخ",
-                                icon = Icons.Filled.ContentCopy,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                onClick = {
-                                    clipboardScope.launch {
-                                        clipboard.setClipEntry(
-                                            ClipEntry(ClipData.newPlainText("آية قرآنية", shareText)),
-                                        )
-                                        Toast.makeText(context, "تم نسخ الآية", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                            )
-                            AyahToolAction(
-                                modifier = Modifier.weight(1f),
-                                title = "مشاركة",
-                                icon = Icons.Filled.Share,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                onClick = {
-                                    val send = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, shareText)
-                                    }
-                                    context.startActivity(Intent.createChooser(send, null))
-                                },
+                                onPlayFrom = onPlayFrom,
+                                onListenAyah = onListenAyah,
+                                onRepeat = onRepeat,
                             )
                         }
                     }
@@ -3354,37 +3516,116 @@ private fun AyahPillAction(
     }
 }
 
-/** A secondary ayah tool (bookmark, copy, share): flat until [selected]. */
+/**
+ * Listening, as one split button: the main part recites on from this ayah, the arrow beside it opens
+ * the other ways — this ayah alone, or repeating it to memorise.
+ */
 @Composable
-private fun AyahToolAction(
+private fun ListenSplitButton(
     modifier: Modifier,
-    title: String,
-    icon: ImageVector,
-    tint: Color,
-    selected: Boolean = false,
-    onClick: () -> Unit,
+    onPlayFrom: () -> Unit,
+    onListenAyah: () -> Unit,
+    onRepeat: () -> Unit,
 ) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = 40.dp),
-        shape = RoundedCornerShape(10.dp),
-        color = if (selected) tint.copy(alpha = 0.14f) else Color.Transparent,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
+    var open by remember { mutableStateOf(false) }
+    val tint = StatusBlueColor
+    Box(modifier = modifier) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 44.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = tint.copy(alpha = 0.08f),
+            border = BorderStroke(1.dp, tint.copy(alpha = 0.18f)),
         ) {
-            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = tint)
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onPlayFrom)
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp), tint = tint)
+                    Text(
+                        text = "استماع",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .padding(vertical = 8.dp)
+                        .width(1.dp)
+                        .background(tint.copy(alpha = 0.3f)),
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(42.dp)
+                        .clickable(onClickLabel = "خيارات الاستماع") { open = true },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = "خيارات الاستماع", tint = tint)
+                }
+            }
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("من هذه الآية فما بعدها") },
+                leadingIcon = { Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = tint) },
+                onClick = {
+                    open = false
+                    onPlayFrom()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("الآية وحدها") },
+                leadingIcon = { Icon(Icons.Filled.Headphones, contentDescription = null, tint = tint) },
+                onClick = {
+                    open = false
+                    onListenAyah()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("التكرار والحفظ") },
+                leadingIcon = { Icon(Icons.Filled.Repeat, contentDescription = null, tint = tint) },
+                onClick = {
+                    open = false
+                    onRepeat()
+                },
             )
         }
+    }
+}
+
+/**
+ * A bookmark in the ayah card's tools: its own colour (gold for the first, violet for the second)
+ * even when unset, so the two are told apart; filled while this ayah holds it. A short message
+ * confirms each change, since the glyph alone is small.
+ */
+@Composable
+private fun BookmarkToolButton(set: Boolean, tint: Color, name: String, onClick: () -> Unit) {
+    val context = LocalContext.current
+    IconButton(
+        onClick = {
+            onClick()
+            val message = if (set) "أُزيلت $name" else "حُفظت $name على هذه الآية"
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        },
+        modifier = Modifier.size(38.dp),
+    ) {
+        Icon(
+            imageVector = if (set) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+            contentDescription = if (set) "إزالة $name" else "حفظ $name",
+            modifier = Modifier.size(21.dp),
+            tint = tint,
+        )
     }
 }
 
@@ -3393,7 +3634,7 @@ private fun AyahToolAction(
  *  number centered and Ltr-isolated so multi-digit numbers never bidi-flip. */
 @Composable
 private fun AyahMedallion(ayahNumber: Int, accent: Color, ornate: Boolean) {
-    Box(modifier = Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+    Box(modifier = Modifier.size(46.dp), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val outer = size.minDimension / 2f
             val ringStroke = 1.4.dp.toPx()
@@ -3419,7 +3660,7 @@ private fun AyahMedallion(ayahNumber: Int, accent: Color, ornate: Boolean) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Text(
                 text = ayahNumber.toArabicDigits(),
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.ExtraBold,
                 color = accent,
                 maxLines = 1
