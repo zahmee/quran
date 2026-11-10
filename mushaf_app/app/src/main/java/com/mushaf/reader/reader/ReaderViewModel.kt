@@ -86,6 +86,9 @@ data class SearchResult(
     val highlights: List<IntRange> = emptyList(),
 )
 
+/** A search result's ayah being flashed on its page; [token] tells one opening from the next. */
+data class SearchFlash(val verseKey: String, val page: Int, val token: Long)
+
 /** A surah whose name matched the query — shown once, not as every ayah in it. */
 data class SurahSearchResult(val number: Int, val nameAr: String, val firstPage: Int)
 
@@ -108,31 +111,13 @@ data class AyahExplanationUiState(
     val errorMessage: String? = null,
 )
 
-/** What the «المزيد» tab shows: one downloaded pack's text for one ayah. */
+/** What the sheet shows for a downloaded pack: that pack's text for one ayah. */
 data class PackContentUiState(
     val verseKey: String? = null,
     val packId: String? = null,
     val loading: Boolean = false,
     val content: PackContent? = null,
 )
-
-/**
- * The tafsirs the explanation sheet offers; [id] is what [ReadingStore] remembers. Sa'di is the app's
- * base tafsir: a reader who has never chosen opens on it, and one who chose Muyassar keeps Muyassar.
- */
-enum class TafsirChoice(val id: String) {
-    Saadi("saadi"),
-    Mukhtasar("mukhtasar"),
-    Muyassar("muyassar"),
-
-    /** The «المزيد» tab: a downloaded pack, the one in [ReaderViewModel.preferredPack]. */
-    More("more"),
-    ;
-
-    companion object {
-        fun fromId(id: String?): TafsirChoice = entries.firstOrNull { it.id == id } ?: Saadi
-    }
-}
 
 class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -211,39 +196,40 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setRecitationHandleOpacity(normalized) }
     }
 
-    /** The tafsir «التفسير» opens on: whichever one the reader last chose in the sheet. */
-    var preferredTafsir by mutableStateOf(TafsirChoice.Saadi)
+    /** The source the explanation sheet last showed, which it opens on next ([ExplanationSources]). */
+    var explanationSource by mutableStateOf(ExplanationSources.SAADI)
         private set
 
-    fun updatePreferredTafsir(value: TafsirChoice) {
-        if (value == preferredTafsir) return
-        preferredTafsir = value
-        viewModelScope.launch { store.setPreferredTafsir(value.id) }
+    fun updateExplanationSource(source: String) {
+        if (source == explanationSource) return
+        explanationSource = source
+        viewModelScope.launch { store.setExplanationSource(source) }
     }
 
-    /** The downloaded pack «المزيد» opens on: the one the reader last chose there. */
-    var preferredPack by mutableStateOf<String?>(null)
+    /** The sources pinned as the sheet's tabs, in order, including pins on packs deleted since. */
+    var pinnedSources by mutableStateOf(ExplanationSources.DEFAULT_PINNED)
         private set
 
-    fun updatePreferredPack(id: String) {
-        if (id == preferredPack) return
-        preferredPack = id
-        viewModelScope.launch { store.setPreferredPack(id) }
+    /**
+     * Pins or unpins [source]; false when every place is taken. Pins on deleted packs are dropped
+     * here, so a place they held is free again — until then they come back with their pack.
+     */
+    fun togglePinnedSource(source: String): Boolean {
+        val shown = ExplanationSources.visiblePinned(pinnedSources, installedPackIds)
+        val next = ExplanationSources.togglePin(shown, source) ?: return false
+        pinnedSources = next
+        viewModelScope.launch { store.setPinnedSources(next) }
+        return true
     }
 
-    /** The installed packs in the order the «المزيد» tab lists them. */
+    /** The installed packs in the order the sources menu lists them. */
     val installedPacks: List<InstalledPack>
         get() = PackStore.installed.values.sortedBy { PACK_ORDER.indexOf(it.id).let { i -> if (i < 0) Int.MAX_VALUE else i } }
 
-    /** The pack «المزيد» shows: the remembered one if still installed, else the first installed. */
-    fun currentPack(): InstalledPack? {
-        val installed = installedPacks
-        return installed.firstOrNull { it.id == preferredPack } ?: installed.firstOrNull()
-    }
+    private val installedPackIds: Set<String> get() = PackStore.installed.keys
 
-    /** The tab «التفسير» opens on: «المزيد» only while a pack is still installed to show there. */
-    fun openingTafsir(): TafsirChoice =
-        if (preferredTafsir == TafsirChoice.More && installedPacks.isEmpty()) TafsirChoice.Saadi else preferredTafsir
+    /** The source the sheet opens on: the last one read, unless its pack was deleted since. */
+    fun openingSource(): String = ExplanationSources.opening(explanationSource, installedPackIds)
 
     /** Text size of the tafsir / word-meanings sheet, percent of the reading size. */
     var explanationTextScale by mutableIntStateOf(ExplanationTextScale.DEFAULT)
@@ -262,8 +248,8 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
             recitationFollowPage = store.recitationFollowPage()
             store.recitationHandlePos()?.let { recitationHandlePos = it }
             recitationHandleOpacity = store.recitationHandleOpacity()
-            preferredTafsir = TafsirChoice.fromId(store.preferredTafsir())
-            preferredPack = store.preferredPack()
+            explanationSource = store.explanationSource()
+            pinnedSources = store.pinnedSources()
             explanationTextScale = store.explanationTextScale()
         }
         // Only lists the pack files already on the device; nothing here touches the network.
@@ -1010,6 +996,17 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearSelection() { selectedAyah = null }
 
+    /** The ayah a search result jumped to, flashed on its page until it fades or the page is touched. */
+    var searchFlash by mutableStateOf<SearchFlash?>(null)
+        private set
+
+    fun flashSearchResult(verseKey: String, page: Int) {
+        // A fresh token restarts the flash even when the same result is opened twice in a row.
+        searchFlash = SearchFlash(verseKey, page, token = System.nanoTime())
+    }
+
+    fun clearSearchFlash() { searchFlash = null }
+
     fun loadExplanation(ayah: AyahMarker) {
         explanationJob?.cancel()
         explanationState = AyahExplanationUiState(
@@ -1390,5 +1387,5 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 private fun AyahMarker.toSearchResult(tier: SearchTier, highlights: List<IntRange>) =
     SearchResult(verseKey, surahNameAr, ayahNumber, page, textUthmani, tier, highlights)
 
-/** The order the «المزيد» tab and the library list the packs in. */
+/** The order the sources menu and the library list the packs in. */
 val PACK_ORDER = listOf("ibn_kathir", "tabari", "baghawi", "irab")

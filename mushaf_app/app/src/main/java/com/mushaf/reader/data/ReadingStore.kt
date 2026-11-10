@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.mushaf.reader.reader.ExplanationSources
 import kotlinx.coroutines.flow.first
 import java.util.UUID
 
@@ -205,10 +206,14 @@ class ReadingStore(private val context: Context) {
     private val keyRecitationHandlePos = floatPreferencesKey("recitation_handle_pos")
     /** How solid the folded recitation handle is drawn, in percent. */
     private val keyRecitationHandleOpacity = intPreferencesKey("recitation_handle_opacity")
-    /** Which tafsir the ayah menu's «التفسير» opens on. Device-local, like the recitation choice. */
+    /** Which tafsir the ayah menu's «التفسير» opened on before 0.15; read once to carry it over. */
     private val keyPreferredTafsir = stringPreferencesKey("preferred_tafsir")
-    /** Which downloaded pack the sheet's «المزيد» tab opens on. Device-local, like the above. */
+    /** Which downloaded pack the old «المزيد» tab opened on; read once with the above. */
     private val keyPreferredPack = stringPreferencesKey("preferred_pack")
+    /** The source the explanation sheet opens on (see ExplanationSources). Device-local. */
+    private val keyExplanationSource = stringPreferencesKey("explanation_source")
+    /** The sources pinned as tabs in the explanation sheet, comma-separated, in order. */
+    private val keyPinnedSources = stringPreferencesKey("pinned_sources")
     /** Text size in the tafsir / word-meanings sheet, in percent of the reading size. */
     private val keyExplanationTextScale = intPreferencesKey("explanation_text_scale")
     private val keyUpdateDismissedVersion = intPreferencesKey("update_dismissed_version")
@@ -534,16 +539,22 @@ class ReadingStore(private val context: Context) {
         context.dataStore.edit { it[keyRecitationReciterId] = id }
     }
 
-    suspend fun preferredTafsir(): String? = context.dataStore.data.first()[keyPreferredTafsir]
-
-    suspend fun setPreferredTafsir(value: String) {
-        context.dataStore.edit { it[keyPreferredTafsir] = value }
+    /** The source the sheet opens on; before any is stored, the tafsir older versions remembered. */
+    suspend fun explanationSource(): String {
+        val prefs = context.dataStore.data.first()
+        return prefs[keyExplanationSource]
+            ?: ExplanationSources.fromLegacy(prefs[keyPreferredTafsir], prefs[keyPreferredPack])
     }
 
-    suspend fun preferredPack(): String? = context.dataStore.data.first()[keyPreferredPack]
+    suspend fun setExplanationSource(value: String) {
+        context.dataStore.edit { it[keyExplanationSource] = value }
+    }
 
-    suspend fun setPreferredPack(value: String) {
-        context.dataStore.edit { it[keyPreferredPack] = value }
+    suspend fun pinnedSources(): List<String> =
+        ExplanationSources.parsePinned(context.dataStore.data.first()[keyPinnedSources])
+
+    suspend fun setPinnedSources(value: List<String>) {
+        context.dataStore.edit { it[keyPinnedSources] = ExplanationSources.encodePinned(value) }
     }
 
     suspend fun explanationTextScale(): Int =

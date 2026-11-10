@@ -52,11 +52,13 @@ private const val SearchDebounceMs = 220L
  *  reader has typed since. */
 private class Answer(val query: String, val results: SearchResults)
 
-/** Full-screen search over ayah text + surah names; each hit jumps to its page. */
+/** Full-screen search over ayah text + surah names; a surah jumps to its page, an ayah to its page with
+ *  the ayah flashed there. */
 @Composable
 fun SearchScreen(
     onSearch: suspend (String) -> SearchResults,
     onJump: (Int) -> Unit,
+    onJumpToAyah: (SearchResult) -> Unit,
     onBack: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
@@ -124,7 +126,7 @@ fun SearchScreen(
                                     meta = "صفحة ${row.surah.firstPage.toArabicDigits()}",
                                     onClick = { onJump(row.surah.firstPage) },
                                 )
-                                is ResultRow.AyahRow -> AyahRow(row.result, mark, onClick = { onJump(row.result.page) })
+                                is ResultRow.AyahRow -> AyahRow(row.result, mark, onClick = { onJumpToAyah(row.result) })
                             }
                         }
                     }

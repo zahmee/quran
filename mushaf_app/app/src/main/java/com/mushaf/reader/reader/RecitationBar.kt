@@ -3,17 +3,15 @@ package com.mushaf.reader.reader
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideIn
+import androidx.compose.animation.slideOut
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.offset
@@ -32,6 +30,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -118,11 +124,15 @@ internal fun formatSpeed(speed: Float): String {
         .joinToString("") + "×"
 }
 
+/** Close stands out from the controls beside it, so stopping the recitation is never a guess. */
+private val CloseRed = Color(0xFFE53935)
+
 /**
- * What the recitation panel shows: what is being recited, then three small chips — the reciter
- * (opens the list), the speed (a menu) and repetition (opens the memorisation sheet; during a run
- * it shows which repetition this is) — and previous/next ayah, play/pause and close. In this
- * right-to-left screen the text sits on the right, "previous" points right and "next" left.
+ * What the recitation panel shows, in two lines. First what is being recited — the surah in the
+ * theme colour — and the reciter in blue, opening the list, with close apart in red. Then the speed
+ * (a menu) and repetition (the memorisation sheet; during a run it shows which repetition this is),
+ * and previous/next ayah around play/pause. In this right-to-left screen the text sits on the right,
+ * "previous" points right and "next" left.
  */
 @Composable
 private fun RecitationControls(
@@ -143,119 +153,133 @@ private fun RecitationControls(
     onRepeat: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-        Row(
-            modifier = modifier
-                .heightIn(min = 56.dp)
-                .padding(horizontal = 4.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 4.dp),
-            ) {
+    val accent = MaterialTheme.colorScheme.primary
+    Column(modifier = modifier.padding(start = 6.dp, end = 2.dp, top = 2.dp, bottom = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (error != null) {
+                // An error says what to do about it, so it gets the line and a second one.
                 Text(
-                    text = error ?: buildString {
-                        append("سورة ").append(surahName)
-                        if (ayah != null) append(" • الآية ").append(ayah.toArabicDigits())
+                    text = error,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 4.dp),
+                )
+            } else {
+                Text(
+                    text = buildAnnotatedString {
+                        withStyle(SpanStyle(color = accent)) { append(surahName) }
+                        if (ayah != null) append(" • آية ${ayah.toArabicDigits()}")
                     },
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
-                    color = if (error != null) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurface,
-                    // An error says what to do about it, so it gets a second line.
-                    maxLines = if (error != null) 2 else 1,
-                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    BarChip(
-                        onClick = onPickReciter,
-                        modifier = Modifier.weight(1f, fill = false),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.RecordVoiceOver,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            text = reciterName ?: "اختيار القارئ",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        Icon(
-                            imageVector = Icons.Filled.ArrowDropDown,
-                            contentDescription = "تغيير القارئ",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    SpeedChip(speed = speed, onSpeed = onSpeed)
-                    BarChip(onClick = onRepeat) {
-                        Icon(
-                            imageVector = Icons.Filled.Repeat,
-                            contentDescription = "التكرار والحفظ",
-                            modifier = Modifier.size(14.dp),
-                            tint = if (repeatLabel != null) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        if (repeatLabel != null) {
-                            Text(
-                                text = repeatLabel,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                }
-            }
-
-            IconButton(onClick = onPrevious) {
-                Icon(Icons.AutoMirrored.Filled.NavigateBefore, contentDescription = "الآية السابقة")
-            }
-            FilledIconButton(onClick = onToggle, modifier = Modifier.size(44.dp)) {
-                when {
-                    buffering && error == null -> CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
+                BarChip(onClick = onPickReciter, modifier = Modifier.weight(1f)) {
+                    Icon(
+                        imageVector = Icons.Outlined.RecordVoiceOver,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = StatusBlueColor,
                     )
-                    error != null -> Icon(Icons.Filled.Refresh, contentDescription = "إعادة المحاولة")
-                    isPlaying -> Icon(Icons.Filled.Pause, contentDescription = "إيقاف مؤقت")
-                    else -> Icon(Icons.Filled.PlayArrow, contentDescription = "تشغيل")
+                    Text(
+                        text = reciterName ?: "اختيار القارئ",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = StatusBlueColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.ArrowDropDown,
+                        contentDescription = "تغيير القارئ",
+                        modifier = Modifier.size(18.dp),
+                        tint = StatusBlueColor,
+                    )
                 }
             }
-            IconButton(onClick = onNext) {
-                Icon(Icons.AutoMirrored.Filled.NavigateNext, contentDescription = "الآية التالية")
-            }
-            IconButton(onClick = onClose) {
+            IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
                 Icon(
                     Icons.Filled.Close,
                     contentDescription = "إغلاق التلاوة",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                    tint = CloseRed,
                 )
             }
         }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            SpeedChip(speed = speed, onSpeed = onSpeed)
+            BarChip(onClick = onRepeat, filled = true) {
+                Icon(
+                    imageVector = Icons.Filled.Repeat,
+                    contentDescription = "التكرار والحفظ",
+                    modifier = Modifier.size(16.dp),
+                    tint = if (repeatLabel != null) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = repeatLabel ?: "تكرار",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (repeatLabel != null) FontWeight.Bold else FontWeight.Normal,
+                    color = if (repeatLabel != null) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onPrevious, modifier = Modifier.size(42.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Filled.NavigateBefore,
+                    contentDescription = "الآية السابقة",
+                    modifier = Modifier.size(28.dp),
+                )
+            }
+            FilledIconButton(onClick = onToggle, modifier = Modifier.size(38.dp)) {
+                val glyph = Modifier.size(22.dp)
+                when {
+                    buffering && error == null -> CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                    error != null -> Icon(Icons.Filled.Refresh, contentDescription = "إعادة المحاولة", modifier = glyph)
+                    isPlaying -> Icon(Icons.Filled.Pause, contentDescription = "إيقاف مؤقت", modifier = glyph)
+                    else -> Icon(Icons.Filled.PlayArrow, contentDescription = "تشغيل", modifier = glyph)
+                }
+            }
+            IconButton(onClick = onNext, modifier = Modifier.size(42.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Filled.NavigateNext,
+                    contentDescription = "الآية التالية",
+                    modifier = Modifier.size(28.dp),
+                )
+            }
+        }
+    }
 }
 
 /** How long the panel stays open after it opened or was last touched. */
 private const val AUTO_COLLAPSE_MS = 5_000L
 
+/** The open panel's height before it is first measured: two lines of controls. */
+private val PANEL_HEIGHT_GUESS = 88.dp
+
 /**
  * Recitation as a drawer on the screen's right edge, floating over the page so the page never
  * resizes for it. Folded, it is one small handle in the theme colour — as solid as the reader chose
  * in the recitation settings, showing whether it plays — that can be dragged up or down the edge,
- * away from the line being read; tapping it slides the controls out to the left, tapping again
- * folds them back. It opens by itself when a
+ * away from the line being read. Tapping it slides the open panel in from the edge, centred on the
+ * handle; tapping the handle again slides it back out. The panel moves as one rigid piece: growing
+ * or squeezing it in place made its lines reflow and its height jump. It opens by itself when a
  * recitation starts or something goes wrong, and folds itself after a few untouched seconds. The
  * caller shows it only while a recitation is loaded.
  */
@@ -304,69 +328,94 @@ internal fun FloatingRecitationBar(
         action()
     }
     val folded = !expanded && error == null
-    val alpha by animateFloatAsState(
-        if (folded) foldedOpacity.coerceIn(0.25f, 1f) else 1f,
-        label = "recitation handle alpha",
-    )
-    // Folded, the handle takes the theme colour: in the page's own colour it vanished into the page.
-    val barColor by animateColorAsState(
-        if (folded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-        label = "recitation handle color",
-    )
-    val barContent by animateColorAsState(
-        if (folded) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-        label = "recitation handle content color",
-    )
     val currentPos by rememberUpdatedState(handlePos)
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val density = LocalDensity.current
-        var barHeightPx by remember { mutableIntStateOf(with(density) { HANDLE_SIZE.roundToPx() }) }
-        val travel = (constraints.maxHeight - barHeightPx).coerceAtLeast(1).toFloat()
-        val controlsWidth = (minOf(maxWidth - 8.dp, 440.dp) - HANDLE_SIZE).coerceAtLeast(0.dp)
+        val boxHeight = constraints.maxHeight.toFloat()
+        val handleHeightPx = with(density) { HANDLE_HEIGHT.toPx() }
+        // The handle's travel along the edge; the panel follows it, centred on it.
+        val travel = (boxHeight - handleHeightPx).coerceAtLeast(1f)
+        val handleTop = handlePos.coerceIn(0f, 1f) * travel
+        var panelHeightPx by remember { mutableIntStateOf(with(density) { PANEL_HEIGHT_GUESS.roundToPx() }) }
+        val panelWidth = minOf(maxWidth - 8.dp, 440.dp)
+        val dragAlongEdge = Modifier.pointerInput(travel) {
+            detectVerticalDragGestures(onDragEnd = onHandleDragEnd) { change, dy ->
+                change.consume()
+                onHandleDrag(currentPos + dy / travel)
+            }
+        }
 
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = AbsoluteAlignment.TopRight) {
-            Surface(
-                modifier = Modifier
-                    .offset { IntOffset(0, (handlePos.coerceIn(0f, 1f) * travel).roundToInt()) }
-                    .onSizeChanged { barHeightPx = it.height }
-                    .alpha(alpha),
-                // Docked to the right edge: rounded on the inner side only.
-                shape = AbsoluteRoundedCornerShape(topLeft = 22.dp, bottomLeft = 22.dp),
-                color = barColor,
-                contentColor = barContent,
-                shadowElevation = 6.dp,
+            AnimatedVisibility(
+                visible = folded,
+                modifier = Modifier.offset { IntOffset(0, handleTop.roundToInt()) },
+                enter = fadeIn(tween(durationMillis = 220, delayMillis = 120)),
+                exit = fadeOut(tween(durationMillis = 100)),
             ) {
-                // In this right-to-left row the handle comes first, so it sits against the edge
-                // and the controls slide out to its left.
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // Folded, the handle takes the theme colour: in the page's own colour it vanished.
+                Surface(
+                    modifier = Modifier.alpha(foldedOpacity.coerceIn(0.25f, 1f)),
+                    shape = AbsoluteRoundedCornerShape(topLeft = 16.dp, bottomLeft = 16.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shadowElevation = 4.dp,
+                ) {
                     Box(
                         modifier = Modifier
-                            .size(HANDLE_SIZE)
-                            .semantics {
-                                contentDescription = if (expanded) "طيّ شريط التلاوة" else "فتح شريط التلاوة"
-                            }
-                            .pointerInput(travel) {
-                                detectVerticalDragGestures(onDragEnd = onHandleDragEnd) { change, dy ->
-                                    change.consume()
-                                    onHandleDrag(currentPos + dy / travel)
-                                }
-                            }
-                            .clickable(
-                                onClickLabel = if (expanded) "طيّ شريط التلاوة" else "فتح شريط التلاوة",
-                            ) {
-                                expanded = !expanded
+                            .size(width = HANDLE_WIDTH, height = HANDLE_HEIGHT)
+                            .semantics { contentDescription = "فتح شريط التلاوة" }
+                            .then(dragAlongEdge)
+                            .clickable(onClickLabel = "فتح شريط التلاوة") {
+                                expanded = true
                                 touches++
                             },
                         contentAlignment = Alignment.Center,
                     ) {
-                        HandleIcon(isPlaying = isPlaying, buffering = buffering, error = error, folded = folded)
+                        HandleIcon(isPlaying = isPlaying, buffering = buffering, error = error, folded = true)
                     }
-                    AnimatedVisibility(
-                        visible = expanded,
-                        enter = expandHorizontally(expandFrom = Alignment.Start) + fadeIn(),
-                        exit = shrinkHorizontally(shrinkTowards = Alignment.Start) + fadeOut(),
-                    ) {
+                }
+            }
+
+            AnimatedVisibility(
+                visible = !folded,
+                modifier = Modifier.offset {
+                    val h = panelHeightPx.toFloat()
+                    val top = (handleTop + handleHeightPx / 2f - h / 2f)
+                        .coerceIn(0f, (boxHeight - h).coerceAtLeast(0f))
+                    IntOffset(0, top.roundToInt())
+                },
+                // Physical offsets: in from the right edge and back out to it, in either layout direction.
+                enter = slideIn(tween(durationMillis = 260)) { IntOffset(it.width, 0) } +
+                    fadeIn(tween(durationMillis = 200)),
+                exit = slideOut(tween(durationMillis = 220)) { IntOffset(it.width, 0) } +
+                    fadeOut(tween(durationMillis = 200)),
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .width(panelWidth)
+                        .onSizeChanged { panelHeightPx = it.height },
+                    // Docked to the right edge: rounded on the inner side only.
+                    shape = AbsoluteRoundedCornerShape(topLeft = 18.dp, bottomLeft = 18.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shadowElevation = 6.dp,
+                ) {
+                    // In this right-to-left row the handle comes first, against the edge.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = HANDLE_WIDTH, height = HANDLE_HEIGHT)
+                                .semantics { contentDescription = "طيّ شريط التلاوة" }
+                                .then(dragAlongEdge)
+                                .clickable(onClickLabel = "طيّ شريط التلاوة") {
+                                    expanded = false
+                                    touches++
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            HandleIcon(isPlaying = isPlaying, buffering = buffering, error = error, folded = false)
+                        }
                         RecitationControls(
                             surahName = surahName,
                             ayah = ayah,
@@ -383,7 +432,7 @@ internal fun FloatingRecitationBar(
                             onPickReciter = touched(onPickReciter),
                             onSpeed = { touches++; onSpeed(it) },
                             onRepeat = touched(onRepeat),
-                            modifier = Modifier.width(controlsWidth),
+                            modifier = Modifier.weight(1f),
                         )
                     }
                 }
@@ -392,21 +441,25 @@ internal fun FloatingRecitationBar(
     }
 }
 
-private val HANDLE_SIZE = 44.dp
+/** The folded handle: narrow, so it covers as little of the line beside it as it can. */
+private val HANDLE_WIDTH = 30.dp
+private val HANDLE_HEIGHT = 40.dp
 
 /** The folded handle's face: what the recitation is doing, at a glance. [folded] draws it on the
  *  theme-coloured handle, so every state takes the colour that reads on it. */
 @Composable
 private fun HandleIcon(isPlaying: Boolean, buffering: Boolean, error: String?, folded: Boolean) {
     val onHandle = MaterialTheme.colorScheme.onPrimary
+    val glyph = Modifier.size(20.dp)
     when {
         error != null -> Icon(
             Icons.Filled.ErrorOutline,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.error,
+            modifier = glyph,
         )
         buffering -> CircularProgressIndicator(
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(16.dp),
             strokeWidth = 2.dp,
             color = if (folded) onHandle else MaterialTheme.colorScheme.primary,
         )
@@ -421,30 +474,39 @@ private fun HandleIcon(isPlaying: Boolean, buffering: Boolean, error: String?, f
                 Icons.Filled.GraphicEq,
                 contentDescription = null,
                 tint = if (folded) onHandle else MaterialTheme.colorScheme.primary,
-                modifier = Modifier.alpha(pulse),
+                modifier = glyph.alpha(pulse),
             )
         }
+        // Open, the headphones take the theme's green, like the surah name beside them.
         else -> Icon(
             Icons.Filled.Headphones,
             contentDescription = null,
-            tint = if (folded) onHandle else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (folded) onHandle else MaterialTheme.colorScheme.primary,
+            modifier = glyph,
         )
     }
 }
 
+/** A tappable line of the panel; [filled] gives it a light ground, for the speed and repetition. */
 @Composable
 private fun BarChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
+    filled: Boolean = false,
+    content: @Composable RowScope.() -> Unit,
 ) {
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(10.dp))
+            .then(
+                if (filled) Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                else Modifier,
+            )
             .clickable(onClick = onClick)
-            .padding(horizontal = 5.dp, vertical = 3.dp),
+            .heightIn(min = 34.dp)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) { content() }
 }
 
@@ -452,17 +514,17 @@ private fun BarChip(
 private fun SpeedChip(speed: Float, onSpeed: (Float) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        BarChip(onClick = { open = true }) {
+        BarChip(onClick = { open = true }, filled = true) {
             Icon(
                 imageVector = Icons.Filled.Speed,
                 contentDescription = "سرعة التلاوة",
-                modifier = Modifier.size(14.dp),
+                modifier = Modifier.size(18.dp),
                 tint = if (speed != 1f) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 text = formatSpeed(speed),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = if (speed != 1f) FontWeight.Bold else FontWeight.Normal,
                 color = if (speed != 1f) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant,
