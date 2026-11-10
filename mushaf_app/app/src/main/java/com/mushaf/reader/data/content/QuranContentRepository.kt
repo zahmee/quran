@@ -41,7 +41,8 @@ class QuranContentRepository(context: Context) {
             )
         }
         return AyahExplanation(
-            tafsirHtml = tafsir?.textHtml,
+            // Fixed here, so the sheet and anything copied or shared from it read the same.
+            tafsirHtml = tafsir?.textHtml?.let(MuyassarText::normalize),
             meanings = meanings,
             saadi = if (ayah != null && saadiRows.isNotEmpty()) TafsirPassage(saadiRows, ayah) else null,
             mukhtasar = dao.passageForVerse(MUKHTASAR_SOURCE_ID, verseKey).firstOrNull()?.text,
