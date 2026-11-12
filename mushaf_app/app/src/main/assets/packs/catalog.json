@@ -44,6 +44,48 @@
       "minAppVersionCode": 58
     },
     {
+      "id": "qurtubi",
+      "kind": "tafsir",
+      "version": 1,
+      "schema": 1,
+      "title": "تفسير القرطبي",
+      "work": "الجامع لأحكام القرآن",
+      "author": "القرطبي",
+      "url": "https://github.com/zahmee/natlu-data/releases/download/packs-2026.11.13/qurtubi-v1.db.gz",
+      "sha256": "176d0dccedc6ab023fe73085aa27b15046b2d7d91a436507041b9d18d0f97832",
+      "compressedBytes": 5182856,
+      "installedBytes": 20725760,
+      "minAppVersionCode": 58
+    },
+    {
+      "id": "shawkani",
+      "kind": "tafsir",
+      "version": 1,
+      "schema": 1,
+      "title": "فتح القدير",
+      "work": "فتح القدير",
+      "author": "الشوكاني",
+      "url": "https://github.com/zahmee/natlu-data/releases/download/packs-2026.11.13/shawkani-v1.db.gz",
+      "sha256": "4c6b23c702894791f928a65934a8b2b5c1c90964a455419bd13a53850f97cc33",
+      "compressedBytes": 3242603,
+      "installedBytes": 13393920,
+      "minAppVersionCode": 58
+    },
+    {
+      "id": "ibn_ashur",
+      "kind": "tafsir",
+      "version": 1,
+      "schema": 1,
+      "title": "التحرير والتنوير",
+      "work": "التحرير والتنوير",
+      "author": "محمد الطاهر ابن عاشور",
+      "url": "https://github.com/zahmee/natlu-data/releases/download/packs-2026.11.13/ibn_ashur-v1.db.gz",
+      "sha256": "4a9f65b04a0469789352324fb3db802301df8323ea58ff44388092f5470fc082",
+      "compressedBytes": 7559770,
+      "installedBytes": 30048256,
+      "minAppVersionCode": 58
+    },
+    {
       "id": "irab",
       "kind": "irab",
       "version": 1,
