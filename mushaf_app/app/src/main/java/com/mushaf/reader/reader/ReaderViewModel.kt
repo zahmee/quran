@@ -31,7 +31,9 @@ import com.mushaf.reader.data.backup.CloudStage
 import com.mushaf.reader.data.backup.CloudUiState
 import com.mushaf.reader.data.backup.FileBackupRepository
 import com.mushaf.reader.data.content.GharibMeaning
+import com.mushaf.reader.data.content.CenterExtrasRepository
 import com.mushaf.reader.data.content.QuranContentRepository
+import com.mushaf.reader.data.content.SurahCard
 import com.mushaf.reader.data.content.TafsirPassage
 import com.mushaf.reader.data.content.TafsirPassageRow
 import com.mushaf.reader.data.packs.InstalledPack
@@ -124,6 +126,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     private val pageRepo = PageRepository(app)
     private val ayahRepo = AyahRepository(app)
     private val contentRepo = QuranContentRepository(app)
+    private val centerExtras = CenterExtrasRepository(app)
     private val store = ReadingStore(app)
     private val statsRepo = StatsRepository(app)
     private val backupRepo = FileBackupRepository(app)
@@ -1034,6 +1037,18 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    /** The fawaed the Mukhtasar draws from [page]; empty when the page has none or cannot be read. */
+    suspend fun pageFawaed(page: Int): List<String> =
+        runCatching { centerExtras.fawaedForPage(page) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrDefault(emptyList())
+
+    /** [surah]'s introduction, or null when it cannot be read. */
+    suspend fun surahCard(surah: Int): SurahCard? =
+        runCatching { centerExtras.surahCard(surah) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
 
     fun clearExplanation() {
         explanationJob?.cancel()

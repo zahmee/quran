@@ -70,6 +70,8 @@ internal object CenterAttribution {
         "وفيه تكملة من موسوعة القرآن الكريم (QuranEnc.com، الإصدار $SUPPLEMENT_VERSION)."
     const val MUKHTASAR_CREDIT =
         "المصدر: المختصر في تفسير القرآن الكريم، $LICENSED، مع إبراز الكلمات المفسَّرة وإصلاح علامات يسيرة."
+    const val FAWAED_CREDIT = "المصدر: فوائد «المختصر في تفسير القرآن الكريم»، $LICENSED."
+    const val SURAH_CARD_CREDIT = "المصدر: $LICENSED."
 }
 
 private const val COMPLEX_NAME = "مجمع الملك فهد لطباعة المصحف الشريف"
@@ -162,6 +164,23 @@ private val SourceGroups = listOf(
                     "${CenterAttribution.LICENSE_NAME.unbroken()}. ولا تذكر القاعدة الكتاب الذي نُقلت منه.\n\n" +
                     "وقد عُدّل: حُذفت الوسوم وأكثر حواشي المحقق وأُبقي تخريج الأحاديث، وحُذف صفّان مكرران " +
                     "منسوبان إلى غير آيتهما.",
+                links = listOf(CenterLink, CcByLink),
+            ),
+            SourceEntry(
+                title = "فوائد الصفحة",
+                body = "الفوائد التي يستخلصها «المختصر في تفسير القرآن الكريم» من آيات كل صفحة من صفحات " +
+                    "المصحف، من قاعدة بيانات ${CenterAttribution.CENTER_NAME}، برخصة المشاع الإبداعي " +
+                    "${CenterAttribution.LICENSE_NAME.unbroken()}. ولم يُغيَّر نصها.",
+                links = listOf(CenterLink, CcByLink),
+            ),
+            SourceEntry(
+                title = "عن السورة",
+                body = "مكان نزول السورة وترتيبه، وطبقتها في الطول، وسجداتها، ومقصدها، وفصول في أسمائها " +
+                    "ونزولها وفضائلها وعدد آياتها، من قاعدة بيانات ${CenterAttribution.CENTER_NAME}، برخصة " +
+                    "المشاع الإبداعي ${CenterAttribution.LICENSE_NAME.unbroken()}.\n\n" +
+                    "وقد عُدّل: حُذفت الوسوم وأكثر حواشي المحقق وأُبقي تخريج الأحاديث، وأُغلقت حواشٍ لم تُغلق " +
+                    "في المصدر، وأُعيدت حاشيتان نقلتهما الطبعة إلى الصفحة التالية إلى موضعهما، ووُسمت سبعة " +
+                    "فصول قُطع نصها في المصدر. وتُرك عدٌّ ثانٍ للآيات أدقّ من أن يفيد القارئ.",
                 links = listOf(CenterLink, CcByLink),
             ),
         ),
