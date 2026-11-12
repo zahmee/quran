@@ -183,6 +183,8 @@ dependencies {
     implementation(libs.androidx.media3.session)
     // Downloads resume through WorkManager when the network they wait for comes back.
     implementation(libs.androidx.media3.exoplayer.workmanager)
+    // Sharing ayahs as audio: cuts the ayahs out of the surah file and writes them as AAC (m4a).
+    implementation(libs.androidx.media3.transformer)
     debugImplementation(libs.androidx.ui.tooling)
     // Local JVM tests only — the pure logic (juz layout, Arabic folding, day arithmetic) is kept
     // free of Android types precisely so it can be tested without a device or Robolectric.

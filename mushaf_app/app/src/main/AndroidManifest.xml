@@ -59,6 +59,18 @@
             </intent-filter>
         </service>
 
+        <!-- Hands share images (an ayah or a page, see ShareImageExport) to the app picked in the
+             share sheet. Not exported: access is granted per file, with the share intent. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.share"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths" />
+        </provider>
+
         <!-- WorkManager's own foreground service, which runs a tafsir pack download
              (PackDownloadWorker); Android 14+ wants its type declared. -->
         <service
