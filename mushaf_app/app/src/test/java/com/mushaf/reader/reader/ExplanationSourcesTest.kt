@@ -86,11 +86,4 @@ class ExplanationSourcesTest {
         assertTrue(ExplanationSources.isAvailable(MEANINGS, emptySet()))
         assertFalse(ExplanationSources.isAvailable(ibnKathir, setOf("tabari")))
     }
-
-    @Test
-    fun packLabelsAreShortForTabs() {
-        assertEquals("ابن كثير", ExplanationSources.packLabel("ibn_kathir", "تفسير ابن كثير"))
-        assertEquals("الإعراب", ExplanationSources.packLabel("irab", "إعراب القرآن"))
-        assertEquals("القرطبي", ExplanationSources.packLabel("qurtubi", "تفسير القرطبي"))
-    }
 }

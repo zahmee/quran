@@ -4,8 +4,8 @@ package com.mushaf.reader.reader
  * The sources the explanation sheet can show, under the ids the store remembers them by: the app's
  * own tafsirs, the word meanings, and each downloaded pack as `pack:<id>`.
  *
- * The reader pins up to [MAX_PINNED] of them as tabs at the top of the sheet; every source, pinned or
- * not, is in the sheet's sources menu. The sheet opens on the source read last.
+ * The reader pins up to [MAX_PINNED] of them: those are the pages the sheet swipes between. Every
+ * source, pinned or not, is in the sheet's sources menu. The sheet opens on the source read last.
  */
 object ExplanationSources {
     const val SAADI = "saadi"
@@ -17,10 +17,10 @@ object ExplanationSources {
     /** The sheet's own sources, in the order the sources menu lists them. */
     val BUILT_IN = listOf(SAADI, MUKHTASAR, MUYASSAR, MEANINGS)
 
-    /** The tabs before the reader changes them: the sheet's own four, as they were before pinning. */
+    /** The pins before the reader changes them: the sheet's own four. */
     val DEFAULT_PINNED = BUILT_IN
 
-    /** More tabs than this would squeeze their labels unreadably on a phone. */
+    /** More pages than this is a long way to swipe; the rest stay one tap away in the menu. */
     const val MAX_PINNED = 4
 
     fun pack(packId: String): String = PACK_PREFIX + packId
@@ -68,16 +68,7 @@ object ExplanationSources {
         else -> pinned + source
     }
 
-    /** The pins that can be shown as tabs now: a pin on a deleted pack stays stored but is hidden. */
+    /** The pins that can be shown now: a pin on a deleted pack stays stored but is hidden. */
     fun visiblePinned(pinned: List<String>, installedPacks: Set<String>): List<String> =
         pinned.filter { isAvailable(it, installedPacks) }
-
-    /** Short tab labels for the packs the app knows; any other pack falls back to its own title. */
-    fun packLabel(packId: String, title: String): String = when (packId) {
-        "ibn_kathir" -> "ابن كثير"
-        "tabari" -> "الطبري"
-        "baghawi" -> "البغوي"
-        "irab" -> "الإعراب"
-        else -> title.removePrefix("تفسير ").ifBlank { title }
-    }
 }
