@@ -1,5 +1,6 @@
 package com.mushaf.reader.reader
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,10 +11,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -34,6 +38,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.mushaf.reader.data.RootSearch
 import com.mushaf.reader.data.SearchTier
 import com.mushaf.reader.ui.components.MushafNavigationRow
 import com.mushaf.reader.ui.components.MushafSoftDivider
@@ -60,8 +65,12 @@ fun SearchScreen(
     onJump: (Int) -> Unit,
     onJumpToAyah: (SearchResult) -> Unit,
     onBack: () -> Unit,
+    onRootResults: suspend (RootSearch.Root, Int?) -> RootResults,
 ) {
     var query by remember { mutableStateOf("") }
+    // The root whose words are listed, over the results it was chosen from; Back returns to them.
+    var openRoot by remember { mutableStateOf<RootSearch.Root?>(null) }
+    BackHandler(enabled = openRoot != null) { openRoot = null }
     var answer by remember { mutableStateOf(Answer("", SearchResults())) }
     var searching by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
@@ -89,6 +98,12 @@ fun SearchScreen(
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxSize()) {
+            val root = openRoot
+            if (root != null) {
+                MushafTopBar(title = "جذر «${root.root}»", onBack = { openRoot = null })
+                RootResultsView(root = root, load = onRootResults, onJumpToAyah = onJumpToAyah)
+                return@Column
+            }
             MushafTopBar(title = "البحث", onBack = onBack)
             OutlinedTextField(
                 value = query,
@@ -121,6 +136,7 @@ fun SearchScreen(
                         items(rows, key = { it.key }) { row ->
                             when (row) {
                                 is ResultRow.Header -> GroupHeader(row, first = row === rows.first())
+                                is ResultRow.RootRow -> RootSuggestionRow(row.root, onClick = { openRoot = row.root })
                                 is ResultRow.SurahRow -> MushafNavigationRow(
                                     title = "سورة ${row.surah.nameAr}",
                                     meta = "صفحة ${row.surah.firstPage.toArabicDigits()}",
@@ -144,6 +160,10 @@ private sealed interface ResultRow {
         override val key get() = "header:$title"
     }
 
+    class RootRow(val root: RootSearch.Root) : ResultRow {
+        override val key get() = "root:${root.id}"
+    }
+
     class SurahRow(val surah: SurahSearchResult) : ResultRow {
         override val key get() = "surah:${surah.number}"
     }
@@ -162,6 +182,10 @@ private sealed interface ResultRow {
  */
 private fun searchRows(answer: Answer): List<ResultRow> = buildList {
     val results = answer.results
+    if (results.roots.isNotEmpty()) {
+        add(ResultRow.Header("البحث بالجذر", "", note = "كل الكلمات المشتقة من الجذر، بكل صيغها"))
+        results.roots.forEach { add(ResultRow.RootRow(it)) }
+    }
     if (results.surahs.isNotEmpty()) {
         add(ResultRow.Header("السور", surahsLabel(results.surahs.size), note = null))
         results.surahs.forEach { add(ResultRow.SurahRow(it)) }
@@ -179,7 +203,7 @@ private fun searchRows(answer: Answer): List<ResultRow> = buildList {
 }
 
 private fun tierHeader(tier: SearchTier, count: Int, phrase: Boolean): ResultRow.Header? = when (tier) {
-    SearchTier.VERSE -> null
+    SearchTier.VERSE, SearchTier.ROOT -> null
     SearchTier.WORD -> ResultRow.Header(
         title = if (phrase) "العبارة نفسها" else "الكلمة نفسها",
         count = ayahsLabel(count),
@@ -291,6 +315,104 @@ private fun markedSnippet(text: String, highlights: List<IntRange>, mark: SpanSt
             val start = maxOf(h.first, begin)
             val end = minOf(h.last + 1, body.length)
             if (start < end) addStyle(mark, start + shift, end + shift)
+        }
+    }
+}
+
+/** «موضع واحد»، «موضعان»، «٣ مواضع»، «٣٣٩ موضعًا». */
+private fun placesLabel(n: Int): String = when {
+    n == 1 -> "موضع واحد"
+    n == 2 -> "موضعان"
+    n % 100 in 3..10 -> "${n.toArabicDigits()} مواضع"
+    else -> "${n.toArabicDigits()} موضعًا"
+}
+
+/** «صيغة واحدة»، «صيغتين»، «٣ صيغ»، «٤٧ صيغة» — after «على», hence the genitive dual. */
+private fun formsLabel(n: Int): String = when {
+    n == 1 -> "صيغة واحدة"
+    n == 2 -> "صيغتين"
+    n % 100 in 3..10 -> "${n.toArabicDigits()} صيغ"
+    else -> "${n.toArabicDigits()} صيغة"
+}
+
+/** A root offered for the typed word: how often it occurs, and its commonest forms to recognise it by. */
+@Composable
+private fun RootSuggestionRow(root: RootSearch.Root, onClick: () -> Unit) {
+    MushafNavigationRow(
+        title = "جذر «${root.root}»",
+        meta = placesLabel(root.wordCount),
+        supportingText = "في ${ayahsLabel(root.ayahCount)} • منه: " +
+            root.forms.take(4).joinToString("، ") { it.text },
+        onClick = onClick,
+    )
+}
+
+/**
+ * Every ayah holding a word from [root], the words marked. The forms above narrow the list to one of
+ * them — «النار» and «النور» are both from نور — and «الكل» widens it again.
+ */
+@Composable
+private fun RootResultsView(
+    root: RootSearch.Root,
+    load: suspend (RootSearch.Root, Int?) -> RootResults,
+    onJumpToAyah: (SearchResult) -> Unit,
+) {
+    var form by remember(root.id) { mutableStateOf<Int?>(null) }
+    var results by remember(root.id) { mutableStateOf<RootResults?>(null) }
+    LaunchedEffect(root.id, form) {
+        results = null
+        results = load(root, form)
+    }
+    val mark = SpanStyle(
+        color = MaterialTheme.colorScheme.primary,
+        background = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+    )
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text(
+            text = "${placesLabel(root.wordCount)} في ${ayahsLabel(root.ayahCount)}، " +
+                "على ${formsLabel(root.forms.size)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        LazyRow(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item {
+                FilterChip(
+                    selected = form == null,
+                    onClick = { form = null },
+                    label = { Text("الكل") },
+                )
+            }
+            itemsIndexed(root.forms) { index, f ->
+                FilterChip(
+                    selected = form == index,
+                    onClick = { form = if (form == index) null else index },
+                    label = { Text("${f.text} (${f.count.toArabicDigits()})") },
+                )
+            }
+        }
+        val shown = results
+        when {
+            shown == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            shown.ayahs.isEmpty() -> Hint("لا توجد نتائج")
+            else -> {
+                Text(
+                    text = ayahsLabel(shown.ayahs.size),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp),
+                )
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(shown.ayahs, key = { "root-ayah:${it.verseKey}" }) { r ->
+                        AyahRow(r, mark, onClick = { onJumpToAyah(r) })
+                    }
+                }
+            }
         }
     }
 }

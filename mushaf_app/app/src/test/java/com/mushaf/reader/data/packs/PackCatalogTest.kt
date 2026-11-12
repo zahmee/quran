@@ -26,10 +26,15 @@ class PackCatalogTest {
         """{"schema":$schema,"packs":[${packs.joinToString(",")}]}"""
 
     @Test
-    fun theShippedCatalogListsTheFourPacks() {
+    fun theShippedCatalogListsTheSevenPacks() {
         val text = File("src/main/assets/packs/catalog.json").readText()
         val parsed = PackCatalog.parse(text)
-        assertEquals(listOf("ibn_kathir", "tabari", "baghawi", "irab"), parsed.packs.map { it.id })
+        // In the order the library and the sources menu show them, so a pack added to one is added to both.
+        assertEquals(
+            listOf("ibn_kathir", "tabari", "baghawi", "qurtubi", "shawkani", "ibn_ashur", "irab"),
+            parsed.packs.map { it.id },
+        )
+        assertEquals(com.mushaf.reader.reader.PACK_ORDER, parsed.packs.map { it.id })
         assertEquals(PackKind.Irab, parsed.find("irab")?.kind)
         assertTrue(parsed.packs.all { it.url.startsWith("https://github.com/zahmee/natlu-data/releases/download/") })
         assertTrue(parsed.packs.all { it.compressedBytes in 1 until it.installedBytes })

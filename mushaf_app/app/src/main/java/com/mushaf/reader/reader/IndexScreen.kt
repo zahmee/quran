@@ -38,6 +38,8 @@ fun IndexScreen(
     onBack: () -> Unit,
     initialTab: Int = 0,
     currentPage: Int = 1,
+    /** Opens a surah's card; the row itself still jumps to the surah. */
+    onSurahInfo: ((SurahEntry) -> Unit)? = null,
 ) {
     var tab by remember { mutableStateOf(initialTab) }
 
@@ -98,7 +100,9 @@ fun IndexScreen(
                             title = "${s.number.toArabicDigits()}.  سورة ${s.nameAr} (${s.ayahCount.toArabicDigits()} آية)",
                             page = s.firstPage,
                             isCurrent = surahs.getOrNull(surahTarget) === s,
-                            onClick = { onJump(s.firstPage) }
+                            onClick = { onJump(s.firstPage) },
+                            onInfo = onSurahInfo?.let { open -> { open(s) } },
+                            infoLabel = "عن سورة ${s.nameAr}",
                         )
                     }
                 }
@@ -118,11 +122,30 @@ fun IndexScreen(
 }
 
 @Composable
-private fun IndexRow(title: String, page: Int, isCurrent: Boolean, onClick: () -> Unit) {
+private fun IndexRow(
+    title: String,
+    page: Int,
+    isCurrent: Boolean,
+    onClick: () -> Unit,
+    onInfo: (() -> Unit)? = null,
+    infoLabel: String = "",
+) {
     MushafNavigationRow(
         title = title,
         meta = "صفحة ${page.toArabicDigits()}",
         selected = isCurrent,
         onClick = onClick,
+        trailing = onInfo?.let { info ->
+            {
+                IconButton(onClick = info, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        Icons.Outlined.Info,
+                        contentDescription = infoLabel,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        },
     )
 }

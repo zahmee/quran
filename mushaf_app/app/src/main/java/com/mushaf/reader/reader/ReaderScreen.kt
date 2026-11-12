@@ -107,6 +107,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
@@ -179,6 +180,7 @@ import com.mushaf.reader.ui.theme.StatusRedColor
 import com.mushaf.reader.ui.theme.pageRecolor
 import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.QuranPagePosition
+import com.mushaf.reader.data.SurahAyahCounts
 import com.mushaf.reader.data.ExplanationTextScale
 import com.mushaf.reader.data.content.MukhtasarText
 import androidx.compose.foundation.horizontalScroll
@@ -195,7 +197,9 @@ import com.mushaf.reader.data.packs.InstalledPack
 import com.mushaf.reader.data.packs.PackContent
 import com.mushaf.reader.data.packs.PackDownloads
 import com.mushaf.reader.data.content.TafsirPassage
+import com.mushaf.reader.data.content.SurahCard
 import com.mushaf.reader.data.content.TafsirPassageRow
+import com.mushaf.reader.data.content.TajweedNote
 import com.mushaf.reader.data.content.TafsirRowKind
 import com.mushaf.reader.data.recitation.AyahRef
 import com.mushaf.reader.data.recitation.RepeatPlan
@@ -232,6 +236,9 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     var repeatFrom by remember { mutableStateOf<AyahRef?>(null) }
     // The share-as-image sheet's choices, while it (or its ayah picker) is open.
     var share by remember { mutableStateOf<ShareSession?>(null) }
+    // The page whose fawaed are open from the header, and the surah whose card is open from the index.
+    var fawaedPage by remember { mutableStateOf<Int?>(null) }
+    var surahCardFor by remember { mutableStateOf<SurahEntry?>(null) }
     val recitation = viewModel.recitation
     // Bar-placed header actions the current window has no room for; settings flags them.
     var barOverflow by remember { mutableStateOf(emptySet<String>()) }
@@ -241,6 +248,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     // Focus also excludes system pickers, update dialogs and other windows covering the reader.
     val canRead = !showStatsScreen && !showKhatmaMap && !showIndex && !showSearch &&
         !showAbout && !showSettings && !showBackup && !showGoTo && selected == null && share == null &&
+        fawaedPage == null &&
         !viewModel.backupUiState.busy && LocalWindowInfo.current.isWindowFocused
     LifecycleResumeEffect(viewModel, canRead) {
         viewModel.setReaderVisible(canRead)
@@ -351,6 +359,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                             }
                         },
                         onSharePage = { share = ShareSession(currentPage, ayah = null, viewModel.themeId) },
+                        onPageFawaed = { fawaedPage = currentPage },
                         onPaletteChange = { viewModel.updateThemeId(it) },
                         onBookmarkJump = {
                             viewModel.bookmarkJumpPage()?.let { p ->
@@ -626,7 +635,36 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     jumpToPage(page)
                 },
                 onAbout = { showAbout = true },
-                onBack = { showIndex = false }
+                onBack = { showIndex = false },
+                onSurahInfo = { surahCardFor = it },
+            )
+        }
+
+        fawaedPage?.let { page ->
+            PageFawaedSheet(
+                page = page,
+                surahName = remember(page, viewModel.ayahLoaded) {
+                    viewModel.surahIndex().lastOrNull { it.firstPage <= page }?.nameAr
+                },
+                load = viewModel::pageFawaed,
+                textScale = viewModel.explanationTextScale,
+                onTextScaleStep = viewModel::stepExplanationTextScale,
+                onDismiss = { fawaedPage = null },
+            )
+        }
+
+        surahCardFor?.let { surah ->
+            SurahCardSheet(
+                surah = surah,
+                load = viewModel::surahCard,
+                textScale = viewModel.explanationTextScale,
+                onTextScaleStep = viewModel::stepExplanationTextScale,
+                onOpenSurah = {
+                    surahCardFor = null
+                    showIndex = false
+                    jumpToPage(surah.firstPage)
+                },
+                onDismiss = { surahCardFor = null },
             )
         }
 
@@ -797,7 +835,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     jumpToPage(result.page)
                     viewModel.flashSearchResult(result.verseKey, result.page)
                 },
-                onBack = { showSearch = false }
+                onBack = { showSearch = false },
+                onRootResults = viewModel::rootResults,
             )
         }
     }
@@ -822,6 +861,9 @@ private enum class ExplanationTab(
     ),
     Muyassar("التفسير الميسر", "التفسير الميسر", ExplanationSources.MUYASSAR, MUYASSAR_CREDIT),
     Meanings("معاني الكلمات", "معاني الكلمات", ExplanationSources.MEANINGS, GHARIB_CREDIT),
+    Tajweed("التجويد", "أحكام التجويد", ExplanationSources.TAJWEED, CenterAttribution.TAJWEED_CREDIT),
+    PageFawaed("فوائد الصفحة", "فوائد الصفحة", ExplanationSources.PAGE_FAWAED, CenterAttribution.FAWAED_CREDIT),
+    AboutSurah("عن السورة", "عن السورة", ExplanationSources.SURAH_CARD, CenterAttribution.SURAH_CARD_CREDIT),
 
     /** A downloaded pack. Its name, title and credit are the pack's own, from the pack file. */
     Pack("", "", null, ""),
@@ -1034,6 +1076,9 @@ private fun ReaderPager(
                 packState = viewModel.packState,
                 onLoadPack = viewModel::loadPackContent,
                 downloads = viewModel.packDownloads,
+                loadFawaed = viewModel::pageFawaed,
+                loadSurahCard = viewModel::surahCard,
+                loadTajweed = viewModel::tajweed,
                 onDismiss = {
                     explanationRequest = null
                     viewModel.clearExplanation()
@@ -1144,6 +1189,7 @@ private fun ReaderHeader(
     onHideHeader: () -> Unit,
     onListen: () -> Unit,
     onSharePage: () -> Unit,
+    onPageFawaed: () -> Unit,
     onPaletteChange: (String) -> Unit,
     onBookmarkJump: () -> Unit,
     onBookmark2Jump: () -> Unit,
@@ -1328,7 +1374,8 @@ private fun ReaderHeader(
                         onToggleFillScreen = onToggleFillScreen,
                         onHideHeader = onHideHeader,
                         onListen = onListen,
-                        onSharePage = onSharePage
+                        onSharePage = onSharePage,
+                        onPageFawaed = onPageFawaed,
                     )
                     HeaderMoreMenu(
                         btnSize = btnSize,
@@ -1351,6 +1398,7 @@ private fun ReaderHeader(
                         onHideHeader = onHideHeader,
                         onListen = onListen,
                         onSharePage = onSharePage,
+                        onPageFawaed = onPageFawaed,
                         onAbout = onAbout
                     )
                 }
@@ -1446,7 +1494,8 @@ private fun ReaderHeader(
                         onToggleFillScreen = onToggleFillScreen,
                         onHideHeader = onHideHeader,
                         onListen = onListen,
-                        onSharePage = onSharePage
+                        onSharePage = onSharePage,
+                        onPageFawaed = onPageFawaed,
                     )
                     HeaderMoreMenu(
                         btnSize = btnSize,
@@ -1469,6 +1518,7 @@ private fun ReaderHeader(
                         onHideHeader = onHideHeader,
                         onListen = onListen,
                         onSharePage = onSharePage,
+                        onPageFawaed = onPageFawaed,
                         onAbout = onAbout
                     )
                 }
@@ -1558,6 +1608,7 @@ private fun HeaderMoreMenu(
     onHideHeader: () -> Unit,
     onListen: () -> Unit,
     onSharePage: () -> Unit,
+    onPageFawaed: () -> Unit,
     onAbout: () -> Unit,
 ) {
     // Actions assigned to the menu plus any preferred bar actions that did not fit this window.
@@ -1604,7 +1655,7 @@ private fun HeaderMoreMenu(
                         } else {
                             runHeaderAction(
                                 action.id, onOpenSearch, onBookmarkJump, onBookmark2Jump,
-                                onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen, onSharePage
+                                onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen, onSharePage, onPageFawaed
                             )
                         }
                     }
@@ -1662,6 +1713,7 @@ private fun HeaderBarActions(
     onHideHeader: () -> Unit,
     onListen: () -> Unit,
     onSharePage: () -> Unit,
+    onPageFawaed: () -> Unit,
 ) {
     HeaderActions.forEach { action ->
         if (!isVisible(action.id) || action.id !in visibleBarActionIds) return@forEach
@@ -1685,7 +1737,7 @@ private fun HeaderBarActions(
             onClick = {
                 runHeaderAction(
                     action.id, onOpenSearch, onBookmarkJump, onBookmark2Jump,
-                    onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen, onSharePage
+                    onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen, onSharePage, onPageFawaed
                 )
             },
             enabled = enabled,
@@ -1772,10 +1824,12 @@ private fun runHeaderAction(
     onHideHeader: () -> Unit,
     onListen: () -> Unit,
     onSharePage: () -> Unit,
+    onPageFawaed: () -> Unit,
 ) {
     when (id) {
         "search" -> onOpenSearch()
         "share" -> onSharePage()
+        "fawaed" -> onPageFawaed()
         "bookmark" -> onBookmarkJump()
         "bookmark2" -> onBookmark2Jump()
         "stats" -> onStats()
@@ -2290,11 +2344,26 @@ private fun AyahExplanationSheet(
     packState: PackContentUiState,
     onLoadPack: (verseKey: String, packId: String) -> Unit,
     downloads: PackDownloads,
+    loadFawaed: suspend (Int) -> List<String>,
+    loadSurahCard: suspend (Int) -> SurahCard?,
+    loadTajweed: suspend (surah: Int, ayah: Int) -> TajweedNote?,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val sheetScope = rememberCoroutineScope()
     val scale = textScale / 100f
+    // The page's fawaed and the surah's card, loaded with the sheet: they are small, and the share
+    // button needs them whichever source is showing.
+    val ayahPage = request.ayah.page
+    val ayahSurah = request.ayah.surahNumber
+    val surahAyahCount = SurahAyahCounts.of(ayahSurah)
+    val fawaed by produceState<List<String>?>(initialValue = null, ayahPage) { value = loadFawaed(ayahPage) }
+    val surahCard by produceState(initialValue = SurahCardLoad(), ayahSurah) {
+        value = SurahCardLoad(card = loadSurahCard(ayahSurah), loaded = true)
+    }
+    val tajweed by produceState(initialValue = TajweedLoad(), request.ayah.verseKey) {
+        value = TajweedLoad(note = loadTajweed(ayahSurah, request.ayah.ayahNumber), loaded = true)
+    }
     val bodyLarge = ReadingType.bodyLarge.scaled(scale)
     val bodyMedium = ReadingType.bodyMedium.scaled(scale)
     val wordStyle = MaterialTheme.typography.titleMedium.scaled(scale)
@@ -2366,7 +2435,7 @@ private fun AyahExplanationSheet(
         if (currentPack != null) onLoadPack(request.ayah.verseKey, currentPack.id)
     }
     val shareTitle = if (selectedTab == ExplanationTab.Pack) currentPack?.title.orEmpty() else selectedTab.title
-    val shareText = remember(request.ayah, currentState, selectedTab, packContent, currentPack) {
+    val shareText = remember(request.ayah, currentState, selectedTab, packContent, currentPack, fawaed, surahCard, tajweed) {
         if (currentState == null || currentState.loading || currentState.errorMessage != null) {
             null
         } else {
@@ -2384,6 +2453,18 @@ private fun AyahExplanationSheet(
                     is PackContent.Text -> pack.row.plainText
                     null -> null
                 }
+                ExplanationTab.Tajweed, ExplanationTab.PageFawaed, ExplanationTab.AboutSurah -> null
+            }
+            // Page- and surah-wide, or a note that may cover several ayahs: their text names its own place.
+            when (selectedTab) {
+                ExplanationTab.Tajweed -> return@remember tajweed.note?.let {
+                    tajweedShareText(request.ayah.surahNameAr, it)
+                }
+                ExplanationTab.PageFawaed -> return@remember fawaed?.let { fawaedShareText(ayahPage, it) }
+                ExplanationTab.AboutSurah -> return@remember surahCard.card?.let {
+                    surahCardShareText(it, request.ayah.surahNameAr, surahAyahCount)
+                }
+                else -> Unit
             }
             // The text leaves the app here, where the sources screen cannot follow it.
             val supplement = selectedTab == ExplanationTab.Saadi && currentState.saadi?.sharesSupplement == true
@@ -2481,7 +2562,10 @@ private fun AyahExplanationSheet(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
 
-            currentState?.nozool?.takeIf { !currentState.loading }?.let { row ->
+            currentState?.nozool?.takeIf {
+                !currentState.loading &&
+                    selectedTab != ExplanationTab.PageFawaed && selectedTab != ExplanationTab.AboutSurah
+            }?.let { row ->
                 NozoolBar(row = row, scale = scale)
             }
 
@@ -2588,6 +2672,38 @@ private fun AyahExplanationSheet(
                             }
                             item { SourcesLink(openSources) }
                         }
+                    }
+
+                    pageTab == ExplanationTab.Tajweed -> {
+                        TajweedContent(
+                            note = tajweed.note,
+                            loaded = tajweed.loaded,
+                            scale = scale,
+                            onOpenSources = openSources,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+
+                    pageTab == ExplanationTab.PageFawaed -> {
+                        PageFawaedContent(
+                            page = ayahPage,
+                            fawaed = fawaed,
+                            scale = scale,
+                            onOpenSources = openSources,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+
+                    pageTab == ExplanationTab.AboutSurah -> {
+                        SurahCardContent(
+                            surahNumber = ayahSurah,
+                            ayahCount = surahAyahCount,
+                            card = surahCard.card,
+                            loaded = surahCard.loaded,
+                            scale = scale,
+                            onOpenSources = openSources,
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     }
 
                     pageTab == ExplanationTab.Pack -> {
@@ -2965,7 +3081,7 @@ private fun SaadiRow(row: TafsirPassageRow, focused: Boolean, scale: Float) {
 
 /** The editor's notes on a row, folded away under a small button until the reader asks for them. */
 @Composable
-private fun SaadiNotes(notes: List<String>, scale: Float) {
+internal fun SaadiNotes(notes: List<String>, scale: Float) {
     if (notes.isEmpty()) return
     var open by rememberSaveable(notes) { mutableStateOf(false) }
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
@@ -3006,7 +3122,7 @@ private fun SaadiNotes(notes: List<String>, scale: Float) {
  * direction.
  */
 @Composable
-private fun SheetTextTools(text: String?, title: String, scale: Int, onStep: (Int) -> Unit) {
+internal fun SheetTextTools(text: String?, title: String, scale: Int, onStep: (Int) -> Unit) {
     val context = LocalContext.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
@@ -3280,7 +3396,7 @@ private fun SourceMenuItem(
 }
 
 /** [this] with its size and line height multiplied by [factor], for the sheet's text-size steps. */
-private fun TextStyle.scaled(factor: Float): TextStyle {
+internal fun TextStyle.scaled(factor: Float): TextStyle {
     if (factor == 1f) return this
     return copy(
         fontSize = if (fontSize.isSpecified) fontSize * factor else fontSize,
@@ -3294,7 +3410,7 @@ private fun TextStyle.scaled(factor: Float): TextStyle {
  */
 private val SaadiMarkup = Regex("""\{[^{}\n]*\}|${TafsirPassageRow.NoteAnchor.pattern}""")
 
-private fun formatSaadiText(raw: String, accent: Color): AnnotatedString = buildAnnotatedString {
+internal fun formatSaadiText(raw: String, accent: Color): AnnotatedString = buildAnnotatedString {
     fun appendAnchored(part: String) {
         var at = 0
         TafsirPassageRow.NoteAnchor.findAll(part).forEach { anchor ->
@@ -3322,7 +3438,7 @@ private fun formatSaadiText(raw: String, accent: Color): AnnotatedString = build
 }
 
 @Composable
-private fun EmptyExplanationMessage(message: String) {
+internal fun EmptyExplanationMessage(message: String) {
     Text(
         text = message,
         modifier = Modifier
@@ -3352,14 +3468,14 @@ private fun formatMukhtasarText(raw: String, accent: Color): AnnotatedString = b
  * the reader's next tap, say on the link below the text, would only stop that motion. A fling
  * downwards still goes up to the sheet, which is how it is swiped away.
  */
-private object KeepFlingInSheet : NestedScrollConnection {
+internal object KeepFlingInSheet : NestedScrollConnection {
     override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
         if (available.y < 0f) available else Velocity.Zero
 }
 
 /** All that an explanation says about its source: the way to the screen that names every source. */
 @Composable
-private fun SourcesLink(onOpen: () -> Unit) {
+internal fun SourcesLink(onOpen: () -> Unit) {
     TextButton(onClick = onOpen, modifier = Modifier.padding(bottom = 8.dp)) {
         Icon(Icons.Outlined.Info, contentDescription = null, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(6.dp))

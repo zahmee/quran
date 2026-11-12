@@ -277,6 +277,7 @@ fun MushafNavigationRow(
     supportingText: String? = null,
     selected: Boolean = false,
     supportingStyle: TextStyle = MaterialTheme.typography.bodyMedium,
+    trailing: (@Composable () -> Unit)? = null,
 ) = MushafNavigationRow(
     title = title,
     meta = meta,
@@ -285,6 +286,7 @@ fun MushafNavigationRow(
     modifier = modifier,
     selected = selected,
     supportingStyle = supportingStyle,
+    trailing = trailing,
 )
 
 /** The same row with styled supporting text — the search screen uses it to mark the matched words. */
@@ -297,6 +299,8 @@ fun MushafNavigationRow(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     supportingStyle: TextStyle = MaterialTheme.typography.bodyMedium,
+    /** Shown at the row's far end, outside its own click: a second action on the same item. */
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     Surface(
         onClick = onClick,
@@ -350,6 +354,7 @@ fun MushafNavigationRow(
                     )
                 }
             }
+            trailing?.invoke()
         }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

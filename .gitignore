@@ -55,6 +55,7 @@ old/
 /qurancomplex_tafsir_gharib_*/
 /quranenc_saadi_*/
 /tafsircenter_*/
+/openiti_*/
 
 # Python
 __pycache__/

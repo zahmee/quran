@@ -214,6 +214,16 @@ private fun TafsirLibraryScreen(downloads: PackDownloads, onBack: () -> Unit) {
     }
 }
 
+/**
+ * What a download that has not started says. A failed try is retried after a pause that grows each
+ * time, and plain «في الانتظار» through that pause reads as a download that has hung.
+ */
+internal fun queuedLabel(waitsForWifi: Boolean, failedAttempts: Int): String = when {
+    waitsForWifi -> "بانتظار شبكة واي فاي"
+    failedAttempts > 0 -> "تعذّر الاتصال، ستُعاد المحاولة تلقائيًا…"
+    else -> "في الانتظار…"
+}
+
 @Composable
 private fun LibraryEntryPanel(
     entry: LibraryEntry,
@@ -264,7 +274,7 @@ private fun LibraryEntryPanel(
             }
             PackDownloads.Status.QUEUED -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = if (waitsForWifi) "بانتظار شبكة واي فاي" else "في الانتظار…",
+                    text = queuedLabel(waitsForWifi, progress.failedAttempts),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall,
                     color = muted,

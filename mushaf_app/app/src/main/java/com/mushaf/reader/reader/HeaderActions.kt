@@ -9,11 +9,13 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.Search
@@ -44,6 +46,10 @@ internal val HeaderActions = listOf(
     HeaderAction(
         "listen", "الاستماع للتلاوة", "تشغيل التلاوة من أول آية في الصفحة.",
         Icons.Outlined.Headphones, Icons.Filled.Headphones,
+    ),
+    HeaderAction(
+        "fawaed", "فوائد الصفحة", "ما يُستفاد من آيات الصفحة الحالية، من المختصر في التفسير.",
+        Icons.Outlined.Lightbulb, Icons.Filled.Lightbulb,
     ),
     HeaderAction(
         "share", "مشاركة الصفحة", "إرسال الصفحة الحالية صورةً كما في المصحف.",

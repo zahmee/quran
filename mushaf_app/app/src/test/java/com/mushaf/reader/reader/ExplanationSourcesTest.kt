@@ -86,4 +86,19 @@ class ExplanationSourcesTest {
         assertTrue(ExplanationSources.isAvailable(MEANINGS, emptySet()))
         assertFalse(ExplanationSources.isAvailable(ibnKathir, setOf("tabari")))
     }
+
+    @Test
+    fun pageFawaedAndSurahCardAreSourcesButNotPinnedOutOfTheBox() {
+        val fawaed = ExplanationSources.PAGE_FAWAED
+        val card = ExplanationSources.SURAH_CARD
+        assertTrue(ExplanationSources.isAvailable(fawaed, emptySet()))
+        assertTrue(ExplanationSources.isAvailable(card, emptySet()))
+        assertEquals(card, ExplanationSources.opening(card, emptySet()))
+        assertFalse(fawaed in ExplanationSources.DEFAULT_PINNED)
+        assertFalse(card in ExplanationSources.DEFAULT_PINNED)
+        assertTrue(ExplanationSources.isAvailable(ExplanationSources.TAJWEED, emptySet()))
+        assertFalse(ExplanationSources.TAJWEED in ExplanationSources.DEFAULT_PINNED)
+        // Pinned by the reader, they are kept like any other source.
+        assertEquals(listOf(SAADI, fawaed, card), ExplanationSources.parsePinned("saadi,page_fawaed,surah_card"))
+    }
 }

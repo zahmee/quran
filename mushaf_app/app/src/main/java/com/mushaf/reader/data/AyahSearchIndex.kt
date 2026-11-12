@@ -14,6 +14,9 @@ enum class SearchTier {
 
     /** Reached only by the stemmed pass — a widened, and therefore less certain, match. */
     STEMMED,
+
+    /** A word from the root being searched for: see [RootSearch]. */
+    ROOT,
 }
 
 /**
@@ -191,6 +194,22 @@ internal class AyahSearchIndex private constructor(
             }
         }
         return Results(surahHits, ayahs)
+    }
+
+    /**
+     * The ayahs holding [words] — verse key to the indices of its Uthmani words, counted from 0 —
+     * in mushaf order, each with those words marked. An index past the ayah's last word is ignored.
+     */
+    fun hitsAt(words: Map<String, Set<Int>>, tier: SearchTier = SearchTier.ROOT): List<Hit> {
+        if (words.isEmpty()) return emptyList()
+        val out = ArrayList<Hit>(words.size)
+        for (entry in entries) {
+            val indices = words[entry.marker.verseKey] ?: continue
+            val marked = BooleanArray(entry.uthmaniWordCount)
+            for (i in indices) if (i in marked.indices) marked[i] = true
+            out += Hit(entry.marker, tier, entry.spansOf(marked))
+        }
+        return out
     }
 
     /** The Uthmani words one ayah's occurrences touched, split by whether the occurrence was a
