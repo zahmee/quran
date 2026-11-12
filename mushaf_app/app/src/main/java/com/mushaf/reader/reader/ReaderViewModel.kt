@@ -1450,4 +1450,4 @@ private fun AyahMarker.toSearchResult(tier: SearchTier, highlights: List<IntRang
     SearchResult(verseKey, surahNameAr, ayahNumber, page, textUthmani, tier, highlights)
 
 /** The order the sources menu and the library list the packs in. */
-val PACK_ORDER = listOf("ibn_kathir", "tabari", "baghawi", "irab")
+val PACK_ORDER = listOf("ibn_kathir", "tabari", "baghawi", "qurtubi", "shawkani", "ibn_ashur", "irab")
