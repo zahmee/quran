@@ -31,7 +31,14 @@ class PackDownloads(
 ) {
     enum class Status { QUEUED, DOWNLOADING, VERIFYING, FAILED }
 
-    data class Progress(val status: Status, val bytes: Long, val total: Long, val error: String? = null) {
+    data class Progress(
+        val status: Status,
+        val bytes: Long,
+        val total: Long,
+        val error: String? = null,
+        /** For a queued download: how many tries have already failed, and are waiting to be retried. */
+        val failedAttempts: Int = 0,
+    ) {
         val fraction: Float get() = if (total > 0) (bytes.toFloat() / total).coerceIn(0f, 1f) else 0f
     }
 
@@ -147,8 +154,9 @@ class PackDownloads(
             val id = info.tags.firstOrNull { it.startsWith("pack:") }?.removePrefix("pack:") ?: continue
             val data = info.progress
             val entry = when (info.state) {
+                // A run that ends in a retry puts the work back here until its backoff is over.
                 WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED ->
-                    Progress(Status.QUEUED, 0, 0)
+                    Progress(Status.QUEUED, 0, 0, failedAttempts = info.runAttemptCount)
                 WorkInfo.State.RUNNING -> {
                     val verifying = data.getString(PackDownloadWorker.KEY_PHASE) == PackDownloadWorker.PHASE_VERIFY
                     Progress(
