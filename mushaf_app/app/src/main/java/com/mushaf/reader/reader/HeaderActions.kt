@@ -11,6 +11,8 @@ import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.QueryStats
@@ -42,6 +44,10 @@ internal val HeaderActions = listOf(
     HeaderAction(
         "listen", "الاستماع للتلاوة", "تشغيل التلاوة من أول آية في الصفحة.",
         Icons.Outlined.Headphones, Icons.Filled.Headphones,
+    ),
+    HeaderAction(
+        "share", "مشاركة الصفحة", "إرسال الصفحة الحالية صورةً كما في المصحف.",
+        Icons.Outlined.Share, Icons.Filled.Share,
     ),
     HeaderAction(
         "bookmark", "العلامة المرجعية", "الانتقال إلى الفاصل الذهبي المحفوظ.",

@@ -226,6 +226,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     var showReciterPicker by remember { mutableStateOf(false) }
     // The ayah the memorisation sheet starts from, while it is open.
     var repeatFrom by remember { mutableStateOf<AyahRef?>(null) }
+    // The share-as-image sheet's choices, while it (or its ayah picker) is open.
+    var share by remember { mutableStateOf<ShareSession?>(null) }
     val recitation = viewModel.recitation
     // Bar-placed header actions the current window has no room for; settings flags them.
     var barOverflow by remember { mutableStateOf(emptySet<String>()) }
@@ -234,7 +236,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     // Screens are overlays in this activity, so its lifecycle alone cannot time reading.
     // Focus also excludes system pickers, update dialogs and other windows covering the reader.
     val canRead = !showStatsScreen && !showKhatmaMap && !showIndex && !showSearch &&
-        !showAbout && !showSettings && !showBackup && !showGoTo && selected == null &&
+        !showAbout && !showSettings && !showBackup && !showGoTo && selected == null && share == null &&
         !viewModel.backupUiState.busy && LocalWindowInfo.current.isWindowFocused
     LifecycleResumeEffect(viewModel, canRead) {
         viewModel.setReaderVisible(canRead)
@@ -344,6 +346,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                                 recitation.playFrom(AyahRef(it.surahNumber, it.ayahNumber))
                             }
                         },
+                        onSharePage = { share = ShareSession(currentPage, ayah = null, viewModel.themeId) },
                         onPaletteChange = { viewModel.updateThemeId(it) },
                         onBookmarkJump = {
                             viewModel.bookmarkJumpPage()?.let { p ->
@@ -393,6 +396,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     readerVisible = canRead,
                     updates = updates,
                     onOpenRepeat = { repeatFrom = it },
+                    onShareAyah = { share = ShareSession(it.page, it, viewModel.themeId) },
                 )
             }
 
@@ -517,6 +521,36 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 },
                 onDismiss = { repeatFrom = null },
             )
+        }
+
+        share?.let { session ->
+            val markers = viewModel.markersForPage(session.page)
+            if (session.picking && markers.isNotEmpty()) {
+                AyahRangePicker(
+                    model = viewModel.assetModel(session.page),
+                    recolor = remember(viewModel.palette) { viewModel.palette.pageRecolor() },
+                    palette = viewModel.palette,
+                    markers = markers,
+                    imageWidth = viewModel.imageWidth,
+                    imageHeight = viewModel.imageHeight,
+                    initial = session.initialSpan(markers),
+                    onDone = { span ->
+                        session.span = span
+                        session.kind = ShareKind.Span
+                        session.picking = false
+                    },
+                    onCancel = { session.picking = false },
+                )
+            } else {
+                ShareImageSheet(
+                    session = session,
+                    pageMarkers = markers,
+                    onDismiss = {
+                        share = null
+                        viewModel.clearSelection()
+                    },
+                )
+            }
         }
 
         if (showReciterPicker) {
@@ -805,6 +839,7 @@ private fun ReaderPager(
     readerVisible: Boolean,
     updates: AppUpdateUi?,
     onOpenRepeat: (AyahRef) -> Unit,
+    onShareAyah: (AyahMarker) -> Unit,
 ) {
     // The long-pressed ayah's bounds on screen, so its menu can sit clear of it.
     var ayahBounds by remember { mutableStateOf(Rect.Zero) }
@@ -961,6 +996,11 @@ private fun ReaderPager(
                     viewModel.clearSelection()
                     onOpenRepeat(AyahRef(ayah.surahNumber, ayah.ayahNumber))
                 },
+                // The ayah stays highlighted behind the sheet; the sheet clears it on close.
+                onShare = {
+                    longPressAyah = null
+                    onShareAyah(ayah)
+                },
                 onClose = {
                     longPressAyah = null
                     viewModel.clearSelection()
@@ -1091,6 +1131,7 @@ private fun ReaderHeader(
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
     onListen: () -> Unit,
+    onSharePage: () -> Unit,
     onPaletteChange: (String) -> Unit,
     onBookmarkJump: () -> Unit,
     onBookmark2Jump: () -> Unit,
@@ -1274,7 +1315,8 @@ private fun ReaderHeader(
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
                         onHideHeader = onHideHeader,
-                        onListen = onListen
+                        onListen = onListen,
+                        onSharePage = onSharePage
                     )
                     HeaderMoreMenu(
                         btnSize = btnSize,
@@ -1296,6 +1338,7 @@ private fun ReaderHeader(
                         onToggleFillScreen = onToggleFillScreen,
                         onHideHeader = onHideHeader,
                         onListen = onListen,
+                        onSharePage = onSharePage,
                         onAbout = onAbout
                     )
                 }
@@ -1390,7 +1433,8 @@ private fun ReaderHeader(
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
                         onHideHeader = onHideHeader,
-                        onListen = onListen
+                        onListen = onListen,
+                        onSharePage = onSharePage
                     )
                     HeaderMoreMenu(
                         btnSize = btnSize,
@@ -1412,6 +1456,7 @@ private fun ReaderHeader(
                         onToggleFillScreen = onToggleFillScreen,
                         onHideHeader = onHideHeader,
                         onListen = onListen,
+                        onSharePage = onSharePage,
                         onAbout = onAbout
                     )
                 }
@@ -1500,6 +1545,7 @@ private fun HeaderMoreMenu(
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
     onListen: () -> Unit,
+    onSharePage: () -> Unit,
     onAbout: () -> Unit,
 ) {
     // Actions assigned to the menu plus any preferred bar actions that did not fit this window.
@@ -1546,7 +1592,7 @@ private fun HeaderMoreMenu(
                         } else {
                             runHeaderAction(
                                 action.id, onOpenSearch, onBookmarkJump, onBookmark2Jump,
-                                onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen
+                                onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen, onSharePage
                             )
                         }
                     }
@@ -1603,6 +1649,7 @@ private fun HeaderBarActions(
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
     onListen: () -> Unit,
+    onSharePage: () -> Unit,
 ) {
     HeaderActions.forEach { action ->
         if (!isVisible(action.id) || action.id !in visibleBarActionIds) return@forEach
@@ -1626,7 +1673,7 @@ private fun HeaderBarActions(
             onClick = {
                 runHeaderAction(
                     action.id, onOpenSearch, onBookmarkJump, onBookmark2Jump,
-                    onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen
+                    onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen, onSharePage
                 )
             },
             enabled = enabled,
@@ -1712,9 +1759,11 @@ private fun runHeaderAction(
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
     onListen: () -> Unit,
+    onSharePage: () -> Unit,
 ) {
     when (id) {
         "search" -> onOpenSearch()
+        "share" -> onSharePage()
         "bookmark" -> onBookmarkJump()
         "bookmark2" -> onBookmark2Jump()
         "stats" -> onStats()
@@ -3256,6 +3305,7 @@ private fun AyahLongPressMenu(
     onListenAyah: () -> Unit,
     onPlayFrom: () -> Unit,
     onRepeat: () -> Unit,
+    onShare: () -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -3403,13 +3453,8 @@ private fun AyahLongPressMenu(
                                             Toast.makeText(context, "تم نسخ الآية", Toast.LENGTH_SHORT).show()
                                         }
                                     }
-                                    SmallToolButton(Icons.Filled.Share, "مشاركة الآية") {
-                                        val send = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, shareText)
-                                        }
-                                        context.startActivity(Intent.createChooser(send, null))
-                                    }
+                                    // Opens the share sheet: the ayah as an image, its text one tap away.
+                                    SmallToolButton(Icons.Filled.Share, "مشاركة الآية", onClick = onShare)
                                 }
                                 CloseButtonApart(onClick = onClose)
                             }
