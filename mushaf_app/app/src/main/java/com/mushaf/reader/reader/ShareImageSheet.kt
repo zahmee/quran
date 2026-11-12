@@ -58,14 +58,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mushaf.reader.data.AyahMarker
-import com.mushaf.reader.share.AyahSpan
 import com.mushaf.reader.share.ShareImageExport
 import com.mushaf.reader.share.ShareImageRenderer
 import com.mushaf.reader.share.ShareScope
 import com.mushaf.reader.ui.theme.MushafPalettes
 import com.mushaf.reader.ui.theme.paletteFor
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** What the share image holds. */
 internal enum class ShareKind { Ayah, Span, Page }
@@ -84,24 +85,21 @@ internal class ShareSession(val page: Int, val ayah: AyahMarker?, readingPalette
     var kind by mutableStateOf(if (ayah != null) ShareKind.Ayah else ShareKind.Page)
     var paletteId by mutableStateOf(readingPaletteId)
     var framed by mutableStateOf(true)
-    /** The chosen run, once one has been picked. */
-    var span by mutableStateOf<AyahSpan?>(null)
+    /** The chosen run once one has been picked — on this page or running over the next ones. */
+    var run by mutableStateOf<List<AyahMarker>?>(null)
     /** True while [AyahRangePicker] is up in place of the sheet. */
     var picking by mutableStateOf(false)
 
     /** Where the picker starts: the run picked before, else the long-pressed ayah, else the
-     *  page's first. */
-    fun initialSpan(markers: List<AyahMarker>): AyahSpan =
-        span ?: markers.indexOfFirst { it.verseKey == ayah?.verseKey }
-            .takeIf { it >= 0 }?.let { AyahSpan(it, it) }
-        ?: AyahSpan(0, 0)
+     *  page's first. Empty for a page without ayahs, which offers no picker. */
+    fun initialRun(pageMarkers: List<AyahMarker>): List<AyahMarker> =
+        run ?: listOfNotNull(ayah).ifEmpty { pageMarkers.take(1) }
 
-    fun scope(markers: List<AyahMarker>): ShareScope {
-        val s = span
+    fun scope(): ShareScope {
+        val r = run
         return when {
-            kind == ShareKind.Ayah && ayah != null -> ShareScope.Ayahs(page, listOf(ayah))
-            kind == ShareKind.Span && s != null && s.end < markers.size ->
-                ShareScope.Ayahs(page, markers.subList(s.start, s.end + 1))
+            kind == ShareKind.Ayah && ayah != null -> ShareScope.Ayahs(listOf(ayah))
+            kind == ShareKind.Span && !r.isNullOrEmpty() -> ShareScope.Ayahs(r)
             else -> ShareScope.Page(page)
         }
     }
@@ -120,7 +118,7 @@ internal class ShareSession(val page: Int, val ayah: AyahMarker?, readingPalette
 @Composable
 internal fun ShareImageSheet(
     session: ShareSession,
-    pageMarkers: List<AyahMarker>,
+    markersFor: (Int) -> List<AyahMarker>,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -128,13 +126,17 @@ internal fun ShareImageSheet(
     val coroutines = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val page = session.page
+    val pageMarkers = remember(page) { markersFor(page) }
 
+    // The image to send, and a smaller copy to show: a run over three pages is several thousand
+    // pixels tall, more than a screen needs and more than every GPU will take as one texture.
     var image by remember { mutableStateOf<Bitmap?>(null) }
+    var preview by remember { mutableStateOf<Bitmap?>(null) }
     var rendering by remember { mutableStateOf(true) }
     var failed by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
 
-    val scope = session.scope(pageMarkers)
+    val scope = session.scope()
     val ayahs = (scope as? ShareScope.Ayahs)?.ayahs
     val pageLabel = "صفحة ${page.toArabicDigits()}"
     val reference = if (ayahs != null) {
@@ -155,7 +157,10 @@ internal fun ShareImageSheet(
     LaunchedEffect(scope, session.paletteId, session.framed) {
         rendering = true
         try {
-            image = renderer.render(scope, pageMarkers, paletteFor(session.paletteId), session.framed)
+            val full = renderer.render(scope, markersFor, paletteFor(session.paletteId), session.framed)
+            val small = withContext(Dispatchers.Default) { full.forPreview() }
+            image = full
+            preview = small
             failed = false
         } catch (e: CancellationException) {
             throw e
@@ -191,7 +196,7 @@ internal fun ShareImageSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Preview(image = image, rendering = rendering, failed = failed)
+                Preview(image = preview, rendering = rendering, failed = failed)
 
                 if (pageMarkers.isNotEmpty()) {
                     ShareLabel("ما في الصورة")
@@ -351,6 +356,16 @@ private fun shareText(ayahs: List<AyahMarker>, reference: String): String? {
     else ayahs.joinToString(" ") { "${it.textUthmani} ﴿${it.ayahNumber.toArabicDigits()}﴾" }
     return "$body\n$reference"
 }
+
+/** This image, or a copy scaled to fit [PREVIEW_MAX] px each way when it is larger. */
+private fun Bitmap.forPreview(): Bitmap {
+    val longest = maxOf(width, height)
+    if (longest <= PREVIEW_MAX) return this
+    val f = PREVIEW_MAX.toFloat() / longest
+    return Bitmap.createScaledBitmap(this, (width * f).toInt().coerceAtLeast(1), (height * f).toInt().coerceAtLeast(1), true)
+}
+
+private const val PREVIEW_MAX = 2048
 
 @Composable
 private fun Preview(image: Bitmap?, rendering: Boolean, failed: Boolean) {

@@ -524,18 +524,19 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
         }
 
         share?.let { session ->
-            val markers = viewModel.markersForPage(session.page)
-            if (session.picking && markers.isNotEmpty()) {
+            val initialRun = session.initialRun(viewModel.markersForPage(session.page))
+            if (session.picking && initialRun.isNotEmpty()) {
                 AyahRangePicker(
-                    model = viewModel.assetModel(session.page),
+                    pageCount = pageCount,
+                    model = viewModel::assetModel,
+                    markersFor = viewModel::markersForPage,
                     recolor = remember(viewModel.palette) { viewModel.palette.pageRecolor() },
                     palette = viewModel.palette,
-                    markers = markers,
                     imageWidth = viewModel.imageWidth,
                     imageHeight = viewModel.imageHeight,
-                    initial = session.initialSpan(markers),
-                    onDone = { span ->
-                        session.span = span
+                    initial = initialRun,
+                    onDone = { run ->
+                        session.run = run
                         session.kind = ShareKind.Span
                         session.picking = false
                     },
@@ -544,7 +545,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
             } else {
                 ShareImageSheet(
                     session = session,
-                    pageMarkers = markers,
+                    markersFor = viewModel::markersForPage,
                     onDismiss = {
                         share = null
                         viewModel.clearSelection()

@@ -25,14 +25,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
-/** What to cut out of a page: the whole of it, or some of its ayahs. */
+/** What to cut out: a whole page, or a run of ayahs — on one page, or running over several. */
 sealed interface ShareScope {
-    val page: Int
 
-    data class Page(override val page: Int) : ShareScope
+    data class Page(val page: Int) : ShareScope
 
-    /** [ayahs] all on [page], in reading order. */
-    data class Ayahs(override val page: Int, val ayahs: List<AyahMarker>) : ShareScope
+    /** [ayahs] in reading order, all of one surah. */
+    data class Ayahs(val ayahs: List<AyahMarker>) : ShareScope {
+        init {
+            require(ayahs.isNotEmpty()) { "no ayahs" }
+        }
+
+        /** The pages the run covers, in order. */
+        val pages: List<Int> get() = ayahs.map { it.page }.distinct()
+    }
 }
 
 /**
@@ -52,51 +58,94 @@ class ShareImageRenderer(context: Context) {
 
     // Decoding a lossless page and labelling its ink are the slow parts. Changing the theme or the
     // frame reuses the last cut instead of redoing both.
-    private var cachedKey: Pair<Int, List<String>?>? = null
+    private var cachedKey: Any? = null
     private var cachedCut: Cut? = null
 
     /** A cut: the text, and the width of the page it came from, which sizes the card. */
     private class Cut(val bitmap: Bitmap, val pageWidth: Int)
 
+    /** [markersFor] gives the ayahs of a page: every one of them decides who owns the ink. */
     suspend fun render(
         scope: ShareScope,
-        pageMarkers: List<AyahMarker>,
+        markersFor: (Int) -> List<AyahMarker>,
         palette: MushafPalette,
         framed: Boolean,
     ): Bitmap = withContext(Dispatchers.Default) {
-        val cut = cut(scope, pageMarkers)
+        val cut = cut(scope, markersFor)
         val text = recolor(cut.bitmap, palette)
-        val card = if (framed) frame(text, cut.pageWidth, scope, pageMarkers, palette)
+        val card = if (framed) frame(text, cut.pageWidth, scope, markersFor, palette)
         else plain(text, cut.pageWidth, palette)
         text.recycle()
         card
     }
 
     /** The page, or the scope's ayahs alone on white, still in the asset's own colors. */
-    private fun cut(scope: ShareScope, pageMarkers: List<AyahMarker>): Cut = synchronized(this) {
-        val key = scope.page to (scope as? ShareScope.Ayahs)?.ayahs?.map { it.verseKey }
+    private fun cut(scope: ShareScope, markersFor: (Int) -> List<AyahMarker>): Cut = synchronized(this) {
+        val key: Any = when (scope) {
+            is ShareScope.Page -> scope.page
+            is ShareScope.Ayahs -> scope.ayahs.map { it.verseKey }
+        }
         cachedCut?.takeIf { cachedKey == key }?.let { return it }
 
-        val page = app.assets.open("pages/${scope.page}.webp").use {
-            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply {
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            })
-        } ?: error("page ${scope.page} did not decode")
-
-        val result = Cut(
-            bitmap = when (scope) {
-                is ShareScope.Page -> page
-                is ShareScope.Ayahs -> excerpt(page, scope.ayahs, pageMarkers).also { page.recycle() }
-            },
-            pageWidth = page.width,
-        )
+        val result = when (scope) {
+            is ShareScope.Page -> decode(scope.page).let { Cut(it, it.width) }
+            is ShareScope.Ayahs -> {
+                val pages = scope.pages
+                var width = 0
+                // One page decoded at a time: a run over three pages never holds three of them.
+                val parts = pages.map { p ->
+                    val page = decode(p)
+                    width = page.width
+                    excerpt(
+                        page = page,
+                        ayahs = scope.ayahs.filter { it.page == p },
+                        pageMarkers = markersFor(p),
+                        // On a later page the run's first line goes on from the line before; it
+                        // keeps its place on the line instead of being centred.
+                        trimOneLine = pages.size == 1,
+                    ).also { page.recycle() }
+                }
+                Cut(stack(parts), width)
+            }
+        }
         // Not recycled: a render still recoloring the previous cut may hold it. The GC frees it.
         cachedCut = result
         cachedKey = key
         result
     }
 
-    private fun excerpt(page: Bitmap, ayahs: List<AyahMarker>, pageMarkers: List<AyahMarker>): Bitmap {
+    private fun decode(page: Int): Bitmap =
+        app.assets.open("pages/$page.webp").use {
+            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            })
+        } ?: error("page $page did not decode")
+
+    /**
+     * Cuts from consecutive pages, one under the next, so the text reads on. No rule between them:
+     * a page break is a fact of the printing, not of the text. The margins each cut keeps above and
+     * below leave a gap a little wider than between two lines, which is all it shows.
+     */
+    private fun stack(parts: List<Bitmap>): Bitmap {
+        if (parts.size == 1) return parts.single()
+        val out = Bitmap.createBitmap(parts.maxOf { it.width }, parts.sumOf { it.height }, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawColor(WHITE)
+        var y = 0f
+        for (part in parts) {
+            canvas.drawBitmap(part, 0f, y, null)
+            y += part.height
+            part.recycle()
+        }
+        return out
+    }
+
+    private fun excerpt(
+        page: Bitmap,
+        ayahs: List<AyahMarker>,
+        pageMarkers: List<AyahMarker>,
+        trimOneLine: Boolean,
+    ): Bitmap {
         val keys = ayahs.map { it.verseKey }.toSet()
         val owners = pageMarkers.withIndex().associate { (i, m) -> m.verseKey to i }
         val rects = pageMarkers.flatMapIndexed { i, m ->
@@ -127,7 +176,7 @@ class ShareImageRenderer(context: Context) {
         // On one line the ayah keeps only its own stretch of it, to be centred in the card — a
         // short ayah left where it sat on the line would hug one edge of a wide empty image.
         // Across lines the cut keeps the full width: the lines are justified edge to edge.
-        val oneLine = chosen.map { it.y }.distinct().size == 1
+        val oneLine = trimOneLine && chosen.map { it.y }.distinct().size == 1
         val left = if (oneLine) (chosen.minOf { it.x } - SIDE_PAD).coerceAtLeast(0) else 0
         val right = if (oneLine) (chosen.maxOf { it.x + it.w } + SIDE_PAD).coerceAtMost(w) else w
         return Bitmap.createBitmap(
@@ -161,7 +210,7 @@ class ShareImageRenderer(context: Context) {
         text: Bitmap,
         pageWidth: Int,
         scope: ShareScope,
-        pageMarkers: List<AyahMarker>,
+        markersFor: (Int) -> List<AyahMarker>,
         palette: MushafPalette,
     ): Bitmap {
         // Sized by the page, not the cut, so a one-line ayah trimmed to its own width sits centred
@@ -177,7 +226,7 @@ class ShareImageRenderer(context: Context) {
         val first = (scope as? ShareScope.Ayahs)?.ayahs?.firstOrNull()
         // A page carries its own printed surah headers; only a cut-out ayah needs a title.
         val title = first?.let { "سورة ${it.surahNameAr}" }
-        val (reference, detail) = labels(scope, pageMarkers)
+        val (reference, detail) = labels(scope, markersFor)
 
         val titlePaint = textPaint(naskh, 44 * u, accent)
         val refPaint = textPaint(plexBold, 30 * u, ink)
@@ -287,26 +336,29 @@ class ShareImageRenderer(context: Context) {
 
         /**
          * The footer's two pieces: a bold reference and the quieter detail beside it.
-         * Ayah: "البقرة ٢٥٥" · "الجزء ٣ • صفحة ٤٢". Page: "صفحة ٤٢" · "البقرة • الجزء ٣".
+         * Ayah: "البقرة ٢٥٥" · "الجزء ٣ • صفحة ٤٢". A run over pages: "البقرة ٢٥٥–٢٥٧" ·
+         * "الجزء ٣ • صفحة ٤٢–٤٣". Page: "صفحة ٤٢" · "البقرة • الجزء ٣".
          */
-        internal fun labels(scope: ShareScope, pageMarkers: List<AyahMarker>): Pair<String, String?> {
-            val page = scope.page.toArabicDigits()
-            return when (scope) {
+        internal fun labels(scope: ShareScope, markersFor: (Int) -> List<AyahMarker>): Pair<String, String?> =
+            when (scope) {
                 is ShareScope.Ayahs -> {
                     val a = scope.ayahs.first()
                     val z = scope.ayahs.last()
-                    val numbers = if (a.verseKey == z.verseKey) a.ayahNumber.toArabicDigits()
-                    else "${a.ayahNumber.toArabicDigits()}–${z.ayahNumber.toArabicDigits()}"
-                    "${a.surahNameAr} $numbers" to "الجزء ${a.juz.toArabicDigits()} • صفحة $page"
+                    "${a.surahNameAr} ${from(a.ayahNumber, z.ayahNumber)}" to
+                        "الجزء ${from(a.juz, z.juz)} • صفحة ${from(a.page, z.page)}"
                 }
                 is ShareScope.Page -> {
-                    val surahs = pageMarkers.map { it.surahNameAr }.distinct().joinToString("، ")
-                    val juz = pageMarkers.firstOrNull()?.juz?.toArabicDigits()
+                    val markers = markersFor(scope.page)
+                    val surahs = markers.map { it.surahNameAr }.distinct().joinToString("، ")
+                    val juz = markers.firstOrNull()?.juz?.toArabicDigits()
                     val detail = listOfNotNull(surahs.ifBlank { null }, juz?.let { "الجزء $it" })
                         .joinToString(" • ").ifBlank { null }
-                    "صفحة $page" to detail
+                    "صفحة ${scope.page.toArabicDigits()}" to detail
                 }
             }
-        }
+
+        /** "٤٢", or "٤٢–٤٣" when the two differ. */
+        private fun from(a: Int, z: Int): String =
+            if (a == z) a.toArabicDigits() else "${a.toArabicDigits()}–${z.toArabicDigits()}"
     }
 }
