@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections import Counter as Counter_
 import sqlite3
 import unicodedata
 from contextlib import closing
@@ -214,3 +215,351 @@ def clean_sections(content: list[tuple], expected_unclosed: int) -> dict[pc.Key,
         pc.check_text(f"surah {key[0]} section {key[1]}", text, notes)
         out[key] = (text, notes)
     return out
+
+
+# ---------------------------------------------------------------------------------------------
+# Tajweed: a note for each ayah on how to recite it.
+#
+# The source keeps the printed book's line breaks inside sentences (a real paragraph is <br>), opens
+# 338 notes with a stray comma or colon, and files a note on several ayahs under each of them. It also
+# lost what the print set as images or numbers: list numbers and footnote marks come out as «()», and
+# three citations lost their ayah numbers. All of that is undone mechanically below; the few places
+# where something had to be put back are listed here, each matching exactly once.
+
+TAJWEED_CORRECTIONS: list[pc.Correction] = [
+    ("20:135", "فالضمتان هكذا (ممم) والفتحتان والكسرتان هكذا (ممم)",
+     "فالضمتان هكذا (ـٌ) والفتحتان والكسرتان هكذا (ـً ـٍ)", "علامتا التنوين صورتان في الطبعة لم تُنقلا"),
+    ("64:18", "المتبقية ممم من", "المتبقية من", "علامة عمل"),
+    ("66:1", "للتنوين ممم في", "للتنوين في", "علامة عمل"),
+    ("72:3", "للساكن بعدها\nممم {صَاحِبَةً", "للساكن بعدها\n{صَاحِبَةً", "علامة عمل"),
+    ("2:40", "الثانية [آية: ] وهذا", "الثانية وهذا", "رقم آية سقط من المصدر"),
+    ("19:1", "{عَيْنَ الْيَقِينِ} [التكاثر: ].", "{عَيْنَ الْيَقِينِ} [التكاثر].", "رقم آية سقط من المصدر"),
+    ("26:176", "موضع سورة [ص ] والبدء", "موضع سورة ص والبدء", "رقم آية سقط من المصدر"),
+]
+
+# A note that is nothing but a working mark or a dash: the ayah has no note.
+_NO_NOTE = {"", "-", "ممم"}
+# The print's own footnotes, under a rule of underscores: references to the author's other books.
+_PRINT_FOOTNOTES = re.compile(r"(?:<br>)?\s*_{5,}.*\Z", re.DOTALL)
+# What became of a list number or a footnote mark: «()».
+_EMPTY_PARENS = re.compile(r"\(\s*\)")
+_MIXED_OPEN = re.compile(r"\(([^(){}\n]+)\}")
+_MIXED_CLOSE = re.compile(r"\{([^(){}\n]+)\)")
+
+
+@dataclass
+class TajweedNote:
+    surah: int
+    from_ayah: int
+    to_ayah: int
+    text: str
+
+
+def read_tajweed(path: Path, expected_sha256: str) -> list[tuple[int, int, str | None]]:
+    with closing(_connect(path)) as db:
+        rows = db.execute(
+            "SELECT surahNo, ayahNo, tajweed FROM ayah_content_tajweed ORDER BY surahNo, ayahNo"
+        ).fetchall()
+    found = digest(rows)
+    if found != expected_sha256:
+        raise ValueError(f"ayah_content_tajweed rows changed: {found}")
+    return rows
+
+
+def clean_tajweed_text(raw: str) -> str:
+    text = raw.replace("&quot;", '"').replace("\r", "")
+    text = _PRINT_FOOTNOTES.sub("", text)
+    # A line break of the print is a space; <br> is where a paragraph really ends.
+    text = re.sub(r"\s*\n\s*", " ", text)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    # «()» opening a line was a list number; inside a Quran quote, the ayah-end sign; else a lost mark.
+    text = re.sub(r"(^|\n)\s*\(\s*\)\s*", r"\1• ", text)
+    text = re.sub(r"(^|\n)\s*\)\s*", r"\1• ", text)  # «1) …» with its number lost
+    text = re.sub(r"\s*\(\s*\)\s*(?=[^{}]*\})", " ", text)
+    text = _EMPTY_PARENS.sub("", text)
+    # A Quran quote opened with one kind of bracket and closed with the other: «(وَمَوْعِظَةُ}».
+    text = _MIXED_OPEN.sub(r"{\1}", text)
+    text = _MIXED_CLOSE.sub(r"{\1}", text)
+    text = pc.tidy(text)
+    return text.lstrip("،:؛ ").strip()
+
+
+def clean_tajweed(
+    rows: list[tuple[int, int, str | None]],
+    corrections: list[pc.Correction] | None = None,
+) -> list[TajweedNote]:
+    """The notes in Quran order, an ayah run sharing one note given as one range; ayahs with no
+    note are left out."""
+    raw = {(s, a): t for s, a, t in rows if t is not None}
+    if len(rows) != len(pc.ALL_AYAHS) or [(s, a) for s, a, _ in rows] != pc.ALL_AYAHS:
+        raise ValueError("ayah_content_tajweed does not hold the 6,236 ayahs once each")
+    fixed = pc.apply_corrections(raw, TAJWEED_CORRECTIONS if corrections is None else corrections)
+    notes: list[TajweedNote] = []
+    for (surah, ayah) in pc.ALL_AYAHS:
+        source = fixed.get((surah, ayah), "").strip()
+        if source in _NO_NOTE:
+            continue
+        text = clean_tajweed_text(source)
+        pc.check_text(f"tajweed {surah}:{ayah}", text, [])
+        last = notes[-1] if notes else None
+        if last and last.surah == surah and last.to_ayah == ayah - 1 and last.text == text:
+            last.to_ayah = ayah
+        else:
+            notes.append(TajweedNote(surah, ayah, ayah, text))
+    return notes
+
+
+def unbalanced(text: str) -> bool:
+    return text.count("{") != text.count("}") or text.count("(") != text.count(")")
+
+
+def table_digest(db: sqlite3.Connection, table: str) -> str:
+    """A table's rows in a stable order, hashed: to show a rebuild left it as it was."""
+    columns = [row[1] for row in db.execute(f"PRAGMA table_info(`{table}`)")]
+    order = ", ".join(f"`{c}`" for c in columns)
+    return digest(db.execute(f"SELECT {order} FROM `{table}` ORDER BY {order}").fetchall())
+
+
+# ---------------------------------------------------------------------------------------------
+# Surah statistics: the counts and curiosities of surah_stats that read well on a surah's card.
+# Left out: the most frequent word (a particle for most surahs, a blank for al-Kawthar), the most
+# frequent letter, and the counts of vowel marks.
+
+STATS_COLUMNS = (
+    "surahNo, beginType, surahNameType, wordCount, charCount, ayahCount, uniqueAyahCount, "
+    "repeatedAyahs, longestWord, charNotOccured"
+)
+# The 28 letters of the alphabet: the source also lists hamza and its seats, which are not.
+ALPHABET = "ابتثجحخدذرزسشصضطظعغفقكلمنهوي"
+# More longest words than this is a list of ties, not a curiosity.
+MAX_LONGEST_WORDS = 2
+
+
+@dataclass
+class SurahStats:
+    surah: int
+    begin_type: str
+    name_topic: str  # empty when the source gives none
+    word_count: int
+    char_count: int
+    repeated_ayahs: list[int]
+    longest_words: list[str]  # empty when there are too many ties to name
+    missing_letters: str  # in alphabet order, no separator
+
+
+def read_stats(path: Path, expected_sha256: str) -> list[tuple]:
+    with closing(_connect(path)) as db:
+        rows = db.execute(f"SELECT {STATS_COLUMNS} FROM surah_stats ORDER BY surahNo").fetchall()
+    found = digest(rows)
+    if found != expected_sha256:
+        raise ValueError(f"surah_stats rows changed: {found}")
+    return rows
+
+
+def _listed(raw: str | None) -> list[str]:
+    raw = (raw or "").strip()
+    return [] if raw in ("", "لا يوجد", "0") else [part.strip() for part in raw.split("/") if part.strip()]
+
+
+def surah_stats(rows: list[tuple]) -> list[SurahStats]:
+    out = []
+    for surah, begin, topic, words, chars, ayahs, unique, repeated, longest, missing in rows:
+        repeated_ayahs = sorted(int(n) for n in _listed(repeated))
+        # Every ayah whose text recurs is listed, the first occurrence too, so the list is one longer
+        # than the repeats for each distinct recurring text.
+        if repeated_ayahs and (ayahs == unique or len(repeated_ayahs) <= ayahs - unique):
+            raise ValueError(f"surah {surah}: {len(repeated_ayahs)} repeated ayahs for {ayahs - unique} repeats")
+        if not repeated_ayahs and ayahs != unique:
+            raise ValueError(f"surah {surah}: repeats with no ayah listed")
+        if any(not 1 <= n <= ayahs for n in repeated_ayahs):
+            raise ValueError(f"surah {surah}: a repeated ayah outside 1..{ayahs}")
+        words_longest = [unicodedata.normalize("NFC", w) for w in _listed(longest)]
+        letters = set(_listed(missing))
+        out.append(SurahStats(
+            surah=surah,
+            begin_type=(begin or "").strip(),
+            name_topic=re.sub(r"\s+-\s+", "، ", (topic or "").strip()),
+            word_count=int(words),
+            char_count=int(chars),
+            repeated_ayahs=repeated_ayahs,
+            longest_words=words_longest if len(words_longest) <= MAX_LONGEST_WORDS else [],
+            missing_letters="".join(c for c in ALPHABET if c in letters),
+        ))
+    if [s.surah for s in out] != list(range(1, SURAHS + 1)):
+        raise ValueError("surah_stats does not hold surahs 1..114 once each")
+    if any(not s.begin_type for s in out):
+        raise ValueError("a surah with no opening type")
+    return out
+
+
+# ---------------------------------------------------------------------------------------------
+# Roots, for searching by root: every word of the Quran from a real root, placed by its position
+# among the words of the app's own Uthmani text, so the search can mark it there.
+#
+# The source gives every word a «root», particles included (من، في، الذي), and gives a word the
+# mushaf writes as one — يَـٰقَوْمِ — both of its parts: «يا/قوم». A part counts as a root when the
+# word's morphology names it as its stem: «من مادة: (قوم)». That leaves out the particles and
+# pronouns, and the opening letters of surahs, and keeps the derived words and the proper names.
+
+AYAH_REGIONS = ROOT / "mushaf_app" / "app" / "src" / "main" / "assets" / "data" / "ayah_regions.json"
+
+# What the app's normalizeArabic drops: tashkeel, Quranic annotation marks, superscript alef, tatweel.
+_APP_DROPPED = re.compile(r"[ً-ٕۖ-ٰۭـ]")
+_DIACRITICS = re.compile(r"[ً-ٰٕـ]")
+_SKELETON_DROP = str.maketrans("", "", "اأإآٱوىيءئؤ/ ")
+# Prefixes a word form may carry that do not make it another word: «ورحمة» is «رحمة».
+FORM_PREFIXES = ("وال", "فال", "بال", "كال", "ولل", "فلل", "لل", "ال", "و", "ف", "ب", "ك", "ل")
+
+
+def _bare(text: str) -> str:
+    return _DIACRITICS.sub("", unicodedata.normalize("NFC", text or "")).strip()
+
+
+def app_words(text_uthmani: str) -> list[str]:
+    """The Uthmani words the app counts: space-separated tokens, a lone waqf sign not being one."""
+    return [token for token in text_uthmani.split(" ") if _APP_DROPPED.sub("", token)]
+
+
+def skeleton(word: str) -> str:
+    return _APP_DROPPED.sub("", unicodedata.normalize("NFC", word)).translate(_SKELETON_DROP)
+
+
+def align_to_app(center: list[str], app: list[str]) -> list[list[int]]:
+    """For each of the source's words, the app's word indices it covers.
+
+    The two agree on the word count in every ayah but one, 15:7, where the mushaf writes لَّوْ مَا as two
+    words and the source as one; that is where a word maps to two."""
+    if len(center) == len(app):
+        return [[i] for i in range(len(app))]
+    out: list[list[int]] = []
+    j = 0
+    for word in center:
+        target = skeleton(word)
+        if j < len(app) and skeleton(app[j]) == target:
+            out.append([j])
+            j += 1
+        elif j + 1 < len(app) and skeleton(app[j]) + skeleton(app[j + 1]) == target:
+            out.append([j, j + 1])
+            j += 2
+        else:
+            raise ValueError(f"cannot place {word!r} among {app}")
+    if j != len(app):
+        raise ValueError(f"words left over: {app[j:]}")
+    return out
+
+
+@dataclass
+class RootWord:
+    surah: int
+    ayah: int
+    app_words: list[int]  # indices among the ayah's Uthmani words, from 0
+    root: str
+    form: str  # the word as the source writes it, without diacritics: «ورحمة»
+
+
+def read_root_rows(path: Path, expected_sha256: str) -> list[tuple]:
+    with closing(_connect(path)) as db:
+        rows = db.execute(
+            """SELECT s.surahNo, s.ayahNo, s.wordNo, s.root, r.word, f.sarf
+               FROM word_statistics s
+               JOIN word_content_rasm r USING(surahNo, ayahNo, wordNo)
+               JOIN word_content_sarf f USING(surahNo, ayahNo, wordNo)
+               ORDER BY s.surahNo, s.ayahNo, s.wordNo"""
+        ).fetchall()
+    found = digest(rows)
+    if found != expected_sha256:
+        raise ValueError(f"word_statistics/word_content_rasm/word_content_sarf rows changed: {found}")
+    return rows
+
+
+def real_roots(rows: list[tuple]) -> set[str]:
+    """The parts the morphology names as a stem in at least half of the words that carry them."""
+    named, seen = Counter_(), Counter_()
+    for _, _, _, root, _, sarf in rows:
+        stem_note = _bare(sarf)
+        for part in _bare(root).split("/"):
+            seen[part] += 1
+            if f"مادة: ({part})" in stem_note:
+                named[part] += 1
+    return {part for part, n in seen.items() if named[part] / n >= 0.5}
+
+
+def root_words(rows: list[tuple], uthmani: dict[pc.Key, str]) -> list[RootWord]:
+    real = real_roots(rows)
+    by_ayah: dict[pc.Key, list[tuple]] = {}
+    for row in rows:
+        by_ayah.setdefault((row[0], row[1]), []).append(row)
+    if sorted(by_ayah) != pc.ALL_AYAHS:
+        raise ValueError("the word tables do not cover the 6,236 ayahs")
+    out: list[RootWord] = []
+    for key in pc.ALL_AYAHS:
+        words = by_ayah[key]  # already in the source's word order
+        placed = align_to_app([w[4] for w in words], app_words(uthmani[key]))
+        for (s, a, _, root, form, _), indices in zip(words, placed):
+            for part in dict.fromkeys(_bare(root).split("/")):
+                if part in real:
+                    out.append(RootWord(s, a, indices, part, _bare(form).replace("/", " ")))
+    return out
+
+
+def base_form(form: str, attested: set[str]) -> str:
+    """[form] without a leading conjunction, preposition or article, when what is left is itself a form
+    of the same root the Quran uses: «ورحمة» -> «رحمة», but «بلد» stays «بلد»."""
+    for prefix in FORM_PREFIXES:
+        rest = form[len(prefix):]
+        if form.startswith(prefix) and len(rest) >= 2 and rest in attested:
+            return base_form(rest, attested)
+        # «للرحمن» is لِ + «الرحمن»: the article's alef is not written after the lam.
+        if prefix in ("لل", "ولل", "فلل") and form.startswith(prefix) and "ال" + rest in attested:
+            return base_form("ال" + rest, attested)
+    return form
+
+
+def read_uthmani(path: Path = AYAH_REGIONS) -> dict[pc.Key, str]:
+    import json
+    records = json.loads(path.read_text(encoding="utf-8"))["records"]
+    return {(r["surah_number"], r["ayah_number"]): r["text_uthmani"] for r in records}
+
+
+@dataclass
+class RootRow:
+    """One root as the app stores it: everything a search by that root shows, in one row."""
+    id: int
+    root: str
+    word_count: int
+    ayah_count: int
+    # Its forms, most frequent first, one per line as «form<TAB>count»: a word's prefixes set aside
+    # (see base_form). The app matches a typed word against these.
+    forms: str
+    # Every word under it in mushaf order, space-separated «ayahKey:word:form», where word is the
+    # index among the ayah's Uthmani words and form the line of [forms] it belongs to, both from 0.
+    occurrences: str
+
+
+def root_rows(words: list[RootWord]) -> list[RootRow]:
+    by_root: dict[str, list[RootWord]] = {}
+    for w in words:
+        by_root.setdefault(w.root, []).append(w)
+    rows = []
+    for rid, root in enumerate(sorted(by_root), start=1):
+        group = by_root[root]
+        attested = {w.form for w in group}
+        base = {form: base_form(form, attested) for form in attested}
+        counts = Counter_(base[w.form] for w in group)
+        ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        line_of = {form: i for i, (form, _) in enumerate(ordered)}
+        # A fused word placed on two indices (15:7) gives two; a word seen twice gives one.
+        places = sorted({
+            (pc.ayah_key(w.surah, w.ayah), index, line_of[base[w.form]]) for w in group for index in w.app_words
+        })
+        if any("\t" in form or "\n" in form for form, _ in ordered):
+            raise ValueError(f"root {root}: a form holding a tab or line break")
+        rows.append(RootRow(
+            id=rid,
+            root=root,
+            word_count=len(group),
+            ayah_count=len({w.surah * 1000 + w.ayah for w in group}),
+            forms="\n".join(f"{form}\t{n}" for form, n in ordered),
+            occurrences=" ".join(f"{key}:{index}:{line}" for key, index, line in places),
+        ))
+    return rows

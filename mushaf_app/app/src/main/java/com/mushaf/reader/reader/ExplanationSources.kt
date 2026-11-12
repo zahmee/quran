@@ -13,6 +13,9 @@ object ExplanationSources {
     const val MUYASSAR = "muyassar"
     const val MEANINGS = "meanings"
 
+    /** The tajweed note on the ayah. */
+    const val TAJWEED = "tajweed"
+
     /** The Mukhtasar's fawaed for the page the ayah is on. */
     const val PAGE_FAWAED = "page_fawaed"
 
@@ -21,7 +24,7 @@ object ExplanationSources {
     private const val PACK_PREFIX = "pack:"
 
     /** The sheet's own sources, in the order the sources menu lists them. */
-    val BUILT_IN = listOf(SAADI, MUKHTASAR, MUYASSAR, MEANINGS, PAGE_FAWAED, SURAH_CARD)
+    val BUILT_IN = listOf(SAADI, MUKHTASAR, MUYASSAR, MEANINGS, TAJWEED, PAGE_FAWAED, SURAH_CARD)
 
     /** The pins before the reader changes them: the explanations of the ayah itself. */
     val DEFAULT_PINNED = listOf(SAADI, MUKHTASAR, MUYASSAR, MEANINGS)

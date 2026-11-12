@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mushaf.reader.data.content.SurahCard
 import com.mushaf.reader.data.content.SurahCardText
+import com.mushaf.reader.data.content.TajweedNote
 import com.mushaf.reader.ui.theme.ReadingType
 import kotlinx.coroutines.launch
 
@@ -81,6 +82,67 @@ private fun formatFaidah(raw: String, accent: Color): AnnotatedString = buildAnn
     }
     append(raw.substring(cursor))
 }
+
+/** What is copied or shared from a tajweed note, headed by the ayahs it is on. */
+internal fun tajweedShareText(surahName: String, note: TajweedNote): String =
+    "أحكام التجويد\nسورة $surahName • ${tajweedAyahs(note)}\n\n" +
+        note.text + "\n\n${CenterAttribution.TAJWEED_CREDIT}"
+
+/** «الآية ٥» or, for a note shared by a run, «الآيات ٥–٧». */
+internal fun tajweedAyahs(note: TajweedNote): String =
+    if (note.fromAyah == note.toAyah) "الآية ${note.fromAyah.toArabicDigits()}"
+    else "الآيات ${note.fromAyah.toArabicDigits()}–${note.toAyah.toArabicDigits()}"
+
+/**
+ * The tajweed note on the ayah: its Quran words drawn like the tafsirs' quotes, one paragraph per line,
+ * and — when the note covers the ayahs around it too — which ones. [loaded] tells an ayah with no note
+ * from one still loading.
+ */
+@Composable
+internal fun TajweedContent(
+    note: TajweedNote?,
+    loaded: Boolean,
+    scale: Float,
+    onOpenSources: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (!loaded) {
+        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
+    val accent = MaterialTheme.colorScheme.primary
+    val body = ReadingType.bodyLarge.scaled(scale)
+    LazyColumn(
+        modifier = modifier.nestedScroll(KeepFlingInSheet),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (note == null) {
+            item { EmptyExplanationMessage("لا ملاحظات تجويد لهذه الآية.") }
+        } else {
+            if (note.fromAyah != note.toAyah) {
+                item {
+                    Text(
+                        text = "ملاحظة واحدة على ${tajweedAyahs(note)}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            val paragraphs = note.text.split('\n').filter { it.isNotBlank() }
+            itemsIndexed(paragraphs) { _, paragraph ->
+                Text(
+                    text = formatSaadiText(paragraph, accent),
+                    style = body,
+                    modifier = if (paragraph.startsWith("•")) Modifier.padding(start = 8.dp) else Modifier,
+                )
+            }
+        }
+        item { SourcesLink(onOpenSources) }
+    }
+}
+
+internal data class TajweedLoad(val note: TajweedNote? = null, val loaded: Boolean = false)
 
 /** What is copied or shared from a page's fawaed. */
 internal fun fawaedShareText(page: Int, fawaed: List<String>): String? =
@@ -178,6 +240,8 @@ internal fun SurahCardContent(
             ) {
                 FactChip(card.revelationPlace, emphasized = true)
                 FactChip(SurahCardText.ayahs(ayahCount))
+                card.wordCount?.let { FactChip(SurahCardText.words(it)) }
+                card.beginType?.let { FactChip(SurahCardText.opening(it)) }
                 FactChip("ترتيبها في النزول ${card.revelationOrder.toArabicDigits()}")
                 FactChip("من ${card.surahClass}")
                 if (card.sajdahAyahs.isNotEmpty()) {

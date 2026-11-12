@@ -199,6 +199,7 @@ import com.mushaf.reader.data.packs.PackDownloads
 import com.mushaf.reader.data.content.TafsirPassage
 import com.mushaf.reader.data.content.SurahCard
 import com.mushaf.reader.data.content.TafsirPassageRow
+import com.mushaf.reader.data.content.TajweedNote
 import com.mushaf.reader.data.content.TafsirRowKind
 import com.mushaf.reader.data.recitation.AyahRef
 import com.mushaf.reader.data.recitation.RepeatPlan
@@ -834,7 +835,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     jumpToPage(result.page)
                     viewModel.flashSearchResult(result.verseKey, result.page)
                 },
-                onBack = { showSearch = false }
+                onBack = { showSearch = false },
+                onRootResults = viewModel::rootResults,
             )
         }
     }
@@ -859,6 +861,7 @@ private enum class ExplanationTab(
     ),
     Muyassar("التفسير الميسر", "التفسير الميسر", ExplanationSources.MUYASSAR, MUYASSAR_CREDIT),
     Meanings("معاني الكلمات", "معاني الكلمات", ExplanationSources.MEANINGS, GHARIB_CREDIT),
+    Tajweed("التجويد", "أحكام التجويد", ExplanationSources.TAJWEED, CenterAttribution.TAJWEED_CREDIT),
     PageFawaed("فوائد الصفحة", "فوائد الصفحة", ExplanationSources.PAGE_FAWAED, CenterAttribution.FAWAED_CREDIT),
     AboutSurah("عن السورة", "عن السورة", ExplanationSources.SURAH_CARD, CenterAttribution.SURAH_CARD_CREDIT),
 
@@ -1075,6 +1078,7 @@ private fun ReaderPager(
                 downloads = viewModel.packDownloads,
                 loadFawaed = viewModel::pageFawaed,
                 loadSurahCard = viewModel::surahCard,
+                loadTajweed = viewModel::tajweed,
                 onDismiss = {
                     explanationRequest = null
                     viewModel.clearExplanation()
@@ -2342,6 +2346,7 @@ private fun AyahExplanationSheet(
     downloads: PackDownloads,
     loadFawaed: suspend (Int) -> List<String>,
     loadSurahCard: suspend (Int) -> SurahCard?,
+    loadTajweed: suspend (surah: Int, ayah: Int) -> TajweedNote?,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -2355,6 +2360,9 @@ private fun AyahExplanationSheet(
     val fawaed by produceState<List<String>?>(initialValue = null, ayahPage) { value = loadFawaed(ayahPage) }
     val surahCard by produceState(initialValue = SurahCardLoad(), ayahSurah) {
         value = SurahCardLoad(card = loadSurahCard(ayahSurah), loaded = true)
+    }
+    val tajweed by produceState(initialValue = TajweedLoad(), request.ayah.verseKey) {
+        value = TajweedLoad(note = loadTajweed(ayahSurah, request.ayah.ayahNumber), loaded = true)
     }
     val bodyLarge = ReadingType.bodyLarge.scaled(scale)
     val bodyMedium = ReadingType.bodyMedium.scaled(scale)
@@ -2427,7 +2435,7 @@ private fun AyahExplanationSheet(
         if (currentPack != null) onLoadPack(request.ayah.verseKey, currentPack.id)
     }
     val shareTitle = if (selectedTab == ExplanationTab.Pack) currentPack?.title.orEmpty() else selectedTab.title
-    val shareText = remember(request.ayah, currentState, selectedTab, packContent, currentPack, fawaed, surahCard) {
+    val shareText = remember(request.ayah, currentState, selectedTab, packContent, currentPack, fawaed, surahCard, tajweed) {
         if (currentState == null || currentState.loading || currentState.errorMessage != null) {
             null
         } else {
@@ -2445,10 +2453,13 @@ private fun AyahExplanationSheet(
                     is PackContent.Text -> pack.row.plainText
                     null -> null
                 }
-                ExplanationTab.PageFawaed, ExplanationTab.AboutSurah -> null
+                ExplanationTab.Tajweed, ExplanationTab.PageFawaed, ExplanationTab.AboutSurah -> null
             }
-            // Page- and surah-wide: their text names the page or surah, not the ayah.
+            // Page- and surah-wide, or a note that may cover several ayahs: their text names its own place.
             when (selectedTab) {
+                ExplanationTab.Tajweed -> return@remember tajweed.note?.let {
+                    tajweedShareText(request.ayah.surahNameAr, it)
+                }
                 ExplanationTab.PageFawaed -> return@remember fawaed?.let { fawaedShareText(ayahPage, it) }
                 ExplanationTab.AboutSurah -> return@remember surahCard.card?.let {
                     surahCardShareText(it, request.ayah.surahNameAr, surahAyahCount)
@@ -2661,6 +2672,16 @@ private fun AyahExplanationSheet(
                             }
                             item { SourcesLink(openSources) }
                         }
+                    }
+
+                    pageTab == ExplanationTab.Tajweed -> {
+                        TajweedContent(
+                            note = tajweed.note,
+                            loaded = tajweed.loaded,
+                            scale = scale,
+                            onOpenSources = openSources,
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     }
 
                     pageTab == ExplanationTab.PageFawaed -> {

@@ -31,9 +31,12 @@ import com.mushaf.reader.data.backup.CloudStage
 import com.mushaf.reader.data.backup.CloudUiState
 import com.mushaf.reader.data.backup.FileBackupRepository
 import com.mushaf.reader.data.content.GharibMeaning
+import com.mushaf.reader.data.RootSearch
 import com.mushaf.reader.data.content.CenterExtrasRepository
+import com.mushaf.reader.data.content.RootIndexRow
 import com.mushaf.reader.data.content.QuranContentRepository
 import com.mushaf.reader.data.content.SurahCard
+import com.mushaf.reader.data.content.TajweedNote
 import com.mushaf.reader.data.content.TafsirPassage
 import com.mushaf.reader.data.content.TafsirPassageRow
 import com.mushaf.reader.data.packs.InstalledPack
@@ -97,9 +100,18 @@ data class SurahSearchResult(val number: Int, val nameAr: String, val firstPage:
 data class SearchResults(
     val surahs: List<SurahSearchResult> = emptyList(),
     val ayahs: List<SearchResult> = emptyList(),
+    /** The roots the typed word belongs to, offered above the other results. See [RootSearch]. */
+    val roots: List<RootSearch.Root> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = surahs.isEmpty() && ayahs.isEmpty()
+    val isEmpty: Boolean get() = surahs.isEmpty() && ayahs.isEmpty() && roots.isEmpty()
 }
+
+/** Every ayah holding a word from [root] — or only from its form [form] — with those words marked. */
+data class RootResults(
+    val root: RootSearch.Root,
+    val form: Int?,
+    val ayahs: List<SearchResult>,
+)
 
 data class AyahExplanationUiState(
     val verseKey: String? = null,
@@ -1044,6 +1056,12 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
             .onFailure { if (it is CancellationException) throw it }
             .getOrDefault(emptyList())
 
+    /** The tajweed note on an ayah; null when it has none or the note cannot be read. */
+    suspend fun tajweed(surah: Int, ayah: Int): TajweedNote? =
+        runCatching { centerExtras.tajweed(surah, ayah) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
+
     /** [surah]'s introduction, or null when it cannot be read. */
     suspend fun surahCard(surah: Int): SurahCard? =
         runCatching { centerExtras.surahCard(surah) }
@@ -1395,9 +1413,38 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
             SearchResults(
                 surahs = results.surahs.map { SurahSearchResult(it.number, it.nameAr, it.firstPage) },
                 ayahs = results.ayahs.map { it.marker.toSearchResult(it.tier, it.highlights) },
+                roots = ensureRootIndex()?.match(query).orEmpty(),
             )
         }
+
+    private var rootIndex: RootSearch.Index? = null
+
+    /** Built from the bundled roots on first use; null when they cannot be read. */
+    private suspend fun ensureRootIndex(): RootSearch.Index? {
+        rootIndex?.let { return it }
+        val rows = runCatching { centerExtras.rootIndex() }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull() ?: return null
+        return RootSearch.Index(rows.map { it.toRoot() }).also { rootIndex = it }
+    }
+
+    /** The ayahs holding words from [root], in mushaf order; [form] narrows them to that form. */
+    suspend fun rootResults(root: RootSearch.Root, form: Int?): RootResults =
+        withContext(Dispatchers.Default) {
+            val index = ensureSearchIndex() ?: return@withContext RootResults(root, form, emptyList())
+            val packed = runCatching { centerExtras.rootOccurrences(root.id) }
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrNull().orEmpty()
+            val words = HashMap<String, MutableSet<Int>>()
+            for (o in RootSearch.parseOccurrences(packed)) {
+                if (form == null || o.form == form) words.getOrPut(o.verseKey) { HashSet() } += o.word
+            }
+            RootResults(root, form, index.hitsAt(words).map { it.marker.toSearchResult(it.tier, it.highlights) })
+        }
 }
+
+private fun RootIndexRow.toRoot() =
+    RootSearch.Root(id, root, wordCount, ayahCount, RootSearch.parseForms(forms))
 
 private fun AyahMarker.toSearchResult(tier: SearchTier, highlights: List<IntRange>) =
     SearchResult(verseKey, surahNameAr, ayahNumber, page, textUthmani, tier, highlights)

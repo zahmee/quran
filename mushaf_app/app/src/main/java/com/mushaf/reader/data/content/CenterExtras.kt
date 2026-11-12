@@ -11,7 +11,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 /*
- * The Tafsir Center's page fawaed and surah introductions: a read-only database of its own, built by
+ * The Tafsir Center's page fawaed, surah introductions and tajweed notes: a read-only database of its own, built by
  * tools/build_center_extras.py. It is apart from quran_content_v4.db so that adding it does not make
  * every install copy that larger file again.
  */
@@ -52,6 +52,56 @@ data class SurahSectionEntity(
     @ColumnInfo(name = "notes") val notes: String,
 )
 
+/** A tajweed note; a run of ayahs the source gives one note shares one row. */
+@Entity(tableName = "ayah_tajweed", primaryKeys = ["surah_number", "from_ayah"])
+data class AyahTajweedEntity(
+    @ColumnInfo(name = "surah_number") val surahNumber: Int,
+    @ColumnInfo(name = "from_ayah") val fromAyah: Int,
+    @ColumnInfo(name = "to_ayah") val toAyah: Int,
+    /** Quran words in braces; one paragraph per line, a list item opening with «•». */
+    @ColumnInfo(name = "text") val text: String,
+)
+
+/** A surah's counts and curiosities, from the Center's statistics. */
+@Entity(tableName = "surah_stats")
+data class SurahStatsEntity(
+    @PrimaryKey @ColumnInfo(name = "surah_number") val surahNumber: Int,
+    /** How the surah opens: «قسم»، «نداء»، «حروف مقطعة»… */
+    @ColumnInfo(name = "begin_type") val beginType: String,
+    /** What the surah's name is drawn from; empty when the source gives nothing. */
+    @ColumnInfo(name = "name_topic") val nameTopic: String,
+    @ColumnInfo(name = "word_count") val wordCount: Int,
+    @ColumnInfo(name = "char_count") val charCount: Int,
+    /** Every ayah whose text recurs in the surah, comma-separated, in order; empty for none. */
+    @ColumnInfo(name = "repeated_ayahs") val repeatedAyahs: String,
+    /** One per line; empty when too many words tie to be worth naming. */
+    @ColumnInfo(name = "longest_words") val longestWords: String,
+    /** Letters of the alphabet that never occur in the surah, run together. */
+    @ColumnInfo(name = "missing_letters") val missingLetters: String,
+)
+
+/** A root of the Quran's words, with everything a search by it shows; see [com.mushaf.reader.data.RootSearch]. */
+@Entity(tableName = "root")
+data class RootEntity(
+    @PrimaryKey @ColumnInfo(name = "id") val id: Int,
+    @ColumnInfo(name = "root") val root: String,
+    @ColumnInfo(name = "word_count") val wordCount: Int,
+    @ColumnInfo(name = "ayah_count") val ayahCount: Int,
+    /** One per line, «form<TAB>count», most frequent first. */
+    @ColumnInfo(name = "forms") val forms: String,
+    /** Space-separated «ayahKey:word:form» in mushaf order, word and form counted from 0. */
+    @ColumnInfo(name = "occurrences") val occurrences: String,
+)
+
+/** A root without its occurrences: what matching a typed word needs. */
+data class RootIndexRow(
+    @ColumnInfo(name = "id") val id: Int,
+    @ColumnInfo(name = "root") val root: String,
+    @ColumnInfo(name = "word_count") val wordCount: Int,
+    @ColumnInfo(name = "ayah_count") val ayahCount: Int,
+    @ColumnInfo(name = "forms") val forms: String,
+)
+
 @Dao
 interface CenterExtrasDao {
     @Query("SELECT text FROM page_fawaed WHERE page = :page ORDER BY position")
@@ -62,6 +112,20 @@ interface CenterExtrasDao {
 
     @Query("SELECT * FROM surah_section WHERE surah_number = :surah ORDER BY position")
     suspend fun surahSections(surah: Int): List<SurahSectionEntity>
+
+    @Query(
+        "SELECT * FROM ayah_tajweed WHERE surah_number = :surah AND from_ayah <= :ayah AND to_ayah >= :ayah LIMIT 1"
+    )
+    suspend fun tajweed(surah: Int, ayah: Int): AyahTajweedEntity?
+
+    @Query("SELECT * FROM surah_stats WHERE surah_number = :surah LIMIT 1")
+    suspend fun surahStats(surah: Int): SurahStatsEntity?
+
+    @Query("SELECT id, root, word_count, ayah_count, forms FROM root ORDER BY id")
+    suspend fun rootIndex(): List<RootIndexRow>
+
+    @Query("SELECT occurrences FROM root WHERE id = :id LIMIT 1")
+    suspend fun rootOccurrences(id: Int): String?
 }
 
 @Database(
@@ -70,8 +134,11 @@ interface CenterExtrasDao {
         PageFaidahEntity::class,
         SurahInfoEntity::class,
         SurahSectionEntity::class,
+        AyahTajweedEntity::class,
+        SurahStatsEntity::class,
+        RootEntity::class,
     ],
-    version = 1,
+    version = 4,
     exportSchema = false,
 )
 abstract class CenterExtrasDatabase : RoomDatabase() {
@@ -80,7 +147,9 @@ abstract class CenterExtrasDatabase : RoomDatabase() {
 
     companion object {
         /** Like quran_content_v4.db: a new asset gets a new name, so installs copy it afresh. */
-        private const val DATABASE_NAME = "center_extras_v1.db"
+        private const val DATABASE_NAME = "center_extras_v4.db"
+        private val RETIRED_DATABASE_NAMES =
+            listOf("center_extras_v1.db", "center_extras_v2.db", "center_extras_v3.db")
 
         @Volatile
         private var instance: CenterExtrasDatabase? = null
@@ -88,7 +157,9 @@ abstract class CenterExtrasDatabase : RoomDatabase() {
         fun get(context: Context): CenterExtrasDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
-                    context.applicationContext,
+                    context.applicationContext.also { app ->
+                        RETIRED_DATABASE_NAMES.forEach { app.deleteDatabase(it) }
+                    },
                     CenterExtrasDatabase::class.java,
                     DATABASE_NAME,
                 )
@@ -114,6 +185,9 @@ data class SurahCard(
     val sajdahAyahs: List<Int>,
     val goal: String,
     val sections: List<SurahCardSection>,
+    /** How the surah opens, e.g. «قسم»; null when the statistics are missing. */
+    val beginType: String? = null,
+    val wordCount: Int? = null,
 ) {
     /** The short facts as they are copied or shared: the long sections stay in the app. */
     fun summary(surahName: String, ayahCount: Int): String = buildString {
@@ -136,6 +210,36 @@ object SurahCardText {
         else -> "${count.arabicDigits()} آية"
     }
 
+    /** «كلمة واحدة»، «كلمتان»، «١٠ كلمات»، «٢٩ كلمة». */
+    fun words(count: Int): String = when {
+        count == 1 -> "كلمة واحدة"
+        count == 2 -> "كلمتان"
+        count % 100 in 3..10 -> "${count.arabicDigits()} كلمات"
+        else -> "${count.arabicDigits()} كلمة"
+    }
+
+    /** «تبدأ بقسم»، «تبدأ بحروف مقطعة». */
+    fun opening(beginType: String): String = "تبدأ ب$beginType"
+
+    /** The «إحصاءات» section's lines, one fact each; facts the source lacks are left out. */
+    fun statsLines(stats: SurahStatsEntity): List<String> = buildList {
+        add("• عدد حروفها: ${stats.charCount.arabicDigits()}، وعدد كلماتها: ${stats.wordCount.arabicDigits()}.")
+        if (stats.nameTopic.isNotBlank()) add("• موضوع اسمها: ${stats.nameTopic}.")
+        val repeated = stats.repeatedAyahs.split(',').mapNotNull { it.trim().toIntOrNull() }
+        if (repeated.isNotEmpty()) {
+            add("• آيات يتكرر نصها فيها: ${repeated.joinToString("، ") { it.arabicDigits() }}.")
+        }
+        val longest = stats.longestWords.lines().filter { it.isNotBlank() }
+        if (longest.isNotEmpty()) {
+            add("• أطول كلماتها: ${longest.joinToString("، ") { "{$it}" }}.")
+        }
+        if (stats.missingLetters.isNotBlank()) {
+            add("• حروف هجاء لم ترد فيها: ${stats.missingLetters.toList().joinToString(" ")}.")
+        }
+    }
+
+    const val STATS_TITLE = "إحصاءات"
+
     /** «الآية ١٨، والآية ٧٧». */
     fun sajdahPlaces(ayahs: List<Int>): String =
         ayahs.joinToString("، و") { "الآية ${it.arabicDigits()}" }
@@ -157,15 +261,42 @@ private val ArabicDigits = charArrayOf('٠', '١', '٢', '٣', '٤', '٥', '٦',
 
 private fun Int.arabicDigits(): String = toString().map { if (it in '0'..'9') ArabicDigits[it - '0'] else it }.joinToString("")
 
+/** How to recite an ayah: a note that may cover the ayahs around it too. */
+data class TajweedNote(val fromAyah: Int, val toAyah: Int, val text: String)
+
 class CenterExtrasRepository(context: Context) {
     private val dao = CenterExtrasDatabase.get(context).dao()
 
     /** The page's fawaed in the Mukhtasar's order; empty for a page outside 1..604. */
     suspend fun fawaedForPage(page: Int): List<String> = dao.fawaedForPage(page)
 
+    /** Every root, without its occurrences, for matching typed words against. */
+    suspend fun rootIndex(): List<RootIndexRow> = dao.rootIndex()
+
+    /** The packed occurrences of root [id]; see [RootEntity.occurrences]. */
+    suspend fun rootOccurrences(id: Int): String? = dao.rootOccurrences(id)
+
+    /** The tajweed note on [ayah] of [surah]; null for the few ayahs the source has none for. */
+    suspend fun tajweed(surah: Int, ayah: Int): TajweedNote? =
+        dao.tajweed(surah, ayah)?.let { TajweedNote(it.fromAyah, it.toAyah, it.text) }
+
     suspend fun surahCard(surah: Int): SurahCard? {
         val info = dao.surahInfo(surah) ?: return null
+        val stats = dao.surahStats(surah)
+        val statsSection = stats?.let {
+            SurahCardSection(
+                title = SurahCardText.STATS_TITLE,
+                row = TafsirPassageRow(
+                    kind = TafsirRowKind.Prose,
+                    fromAyah = 0,
+                    toAyah = 0,
+                    text = SurahCardText.statsLines(it).joinToString("\n"),
+                ),
+            )
+        }
         return SurahCard(
+            beginType = stats?.beginType?.takeIf { it.isNotBlank() },
+            wordCount = stats?.wordCount,
             surah = surah,
             revelationPlace = info.revelationPlace,
             revelationOrder = info.revelationOrder,
@@ -183,7 +314,7 @@ class CenterExtrasRepository(context: Context) {
                         notes = TafsirPassageRow.parseNotes(section.notes),
                     ),
                 )
-            },
+            } + listOfNotNull(statsSection),
         )
     }
 }
