@@ -546,6 +546,15 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 ShareImageSheet(
                     session = session,
                     markersFor = viewModel::markersForPage,
+                    recitation = RecitationAccess(
+                        reciter = recitation.reciter,
+                        prepare = recitation::prepareReciter,
+                        pick = {
+                            recitation.requestReciters()
+                            showReciterPicker = true
+                        },
+                        timing = recitation::timing,
+                    ),
                     onDismiss = {
                         share = null
                         viewModel.clearSelection()

@@ -343,6 +343,10 @@ class RecitationController(
         scope.launch { ensureReciter() }
     }
 
+    /** [reciter]'s timing table for [surah]: from disk once fetched, so offline after the first
+     *  time. For cutting ayahs out of a recording to share them. */
+    suspend fun timing(reciter: Reciter, surah: Int): SurahTiming = repo.timing(reciter.id, surah)
+
     fun selectReciter(choice: Reciter) {
         if (choice.id == reciter?.id) return
         reciter = choice

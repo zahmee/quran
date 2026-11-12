@@ -54,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -61,6 +62,8 @@ import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.share.ShareImageExport
 import com.mushaf.reader.share.ShareImageRenderer
 import com.mushaf.reader.share.ShareScope
+import com.mushaf.reader.share.VideoFrame
+import com.mushaf.reader.ui.components.MushafSegmentedTabs
 import com.mushaf.reader.ui.theme.MushafPalettes
 import com.mushaf.reader.ui.theme.paletteFor
 import kotlinx.coroutines.CancellationException
@@ -68,8 +71,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** What the share image holds. */
+/** What the share holds. */
 internal enum class ShareKind { Ayah, Span, Page }
+
+/**
+ * What is sent: the printed page as an image, the recitation as audio, or the two together as a
+ * video — the share card held still over the recitation.
+ */
+internal enum class ShareFormat(val label: String) { Image("صورة"), Audio("صوت"), Video("فيديو") }
 
 /**
  * One share, from the moment it is opened until it is sent or dismissed.
@@ -89,6 +98,25 @@ internal class ShareSession(val page: Int, val ayah: AyahMarker?, readingPalette
     var run by mutableStateOf<List<AyahMarker>?>(null)
     /** True while [AyahRangePicker] is up in place of the sheet. */
     var picking by mutableStateOf(false)
+    var format by mutableStateOf(ShareFormat.Image)
+    /** Audio from ayah 1: take in the isti'adha and basmala the reciter opens the surah with. */
+    var withOpening by mutableStateOf(true)
+
+    /**
+     * The ayahs the audio holds. One recording is one surah, so "the page" here is the page's
+     * ayahs of one surah: the long-pressed ayah's, else the first on the page.
+     */
+    fun audioAyahs(pageMarkers: List<AyahMarker>): List<AyahMarker> {
+        val r = run
+        return when {
+            kind == ShareKind.Ayah && ayah != null -> listOf(ayah)
+            kind == ShareKind.Span && !r.isNullOrEmpty() -> r
+            else -> {
+                val surah = ayah?.surahNumber ?: pageMarkers.firstOrNull()?.surahNumber
+                pageMarkers.filter { it.surahNumber == surah }
+            }
+        }
+    }
 
     /** Where the picker starts: the run picked before, else the long-pressed ayah, else the
      *  page's first. Empty for a page without ayahs, which offers no picker. */
@@ -106,10 +134,11 @@ internal class ShareSession(val page: Int, val ayah: AyahMarker?, readingPalette
 }
 
 /**
- * Share as an image: an ayah, a run of ayahs, or the whole page, cut from the printed page.
+ * Share an ayah, a run of ayahs, or the whole page — as an image cut from the printed page, or as
+ * audio cut from the reciter's recording.
  *
- * The preview is the very image that will be sent, re-rendered as the options change; the previous
- * one stays up meanwhile so the sheet does not flicker.
+ * The preview is the very file that will be sent, made again as the options change; a previous
+ * image stays up meanwhile so the sheet does not flicker.
  *
  * The ayahs' text can still be sent as text from here — that was the card's share button before
  * this sheet existed.
@@ -119,6 +148,7 @@ internal class ShareSession(val page: Int, val ayah: AyahMarker?, readingPalette
 internal fun ShareImageSheet(
     session: ShareSession,
     markersFor: (Int) -> List<AyahMarker>,
+    recitation: RecitationAccess,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -154,13 +184,40 @@ internal fun ShareImageSheet(
         "natlu-page-$page"
     }
 
-    LaunchedEffect(scope, session.paletteId, session.framed) {
+    val format = session.format
+    val audioAyahs = session.audioAyahs(pageMarkers)
+    // The recitation is cut on the audio and the video tab alike, and a switch between the two
+    // keeps the clip already made.
+    val clip = if (format != ShareFormat.Image && audioAyahs.isNotEmpty()) {
+        rememberAudioClip(audioAyahs, session.withOpening, recitation)
+    } else null
+
+    // What is drawn: the image tab's choice; for the video, the audio's ayahs, always framed — the
+    // frame carries the reference, which a video has nowhere else to show.
+    val drawScope: ShareScope? = when (format) {
+        ShareFormat.Image -> scope
+        ShareFormat.Video -> audioAyahs.takeIf { it.isNotEmpty() }?.let { ShareScope.Ayahs(it) }
+        ShareFormat.Audio -> null
+    }
+    val drawFramed = format == ShareFormat.Video || session.framed
+    val drawKey = listOf(drawScope, session.paletteId, drawFramed, format == ShareFormat.Video)
+    // The picture on show may still be the one before a change; only this one may be sent.
+    var imageKey by remember { mutableStateOf<Any?>(null) }
+    val imageReady = image != null && imageKey == drawKey && !rendering
+
+    LaunchedEffect(drawKey) {
+        val target = drawScope ?: return@LaunchedEffect
         rendering = true
         try {
-            val full = renderer.render(scope, markersFor, paletteFor(session.paletteId), session.framed)
-            val small = withContext(Dispatchers.Default) { full.forPreview() }
-            image = full
+            val palette = paletteFor(session.paletteId)
+            val card = renderer.render(target, markersFor, palette, drawFramed)
+            val shown = if (format == ShareFormat.Video) {
+                withContext(Dispatchers.Default) { VideoFrame.compose(card, palette.paper.toArgb()) }
+            } else card
+            val small = withContext(Dispatchers.Default) { shown.forPreview() }
+            image = shown
             preview = small
+            imageKey = drawKey
             failed = false
         } catch (e: CancellationException) {
             throw e
@@ -186,20 +243,35 @@ internal fun ShareImageSheet(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    text = "مشاركة صورة",
+                    text = "مشاركة",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = if (ayahs != null) "سورة ${spanLabel(ayahs)}" else pageLabel,
+                    text = when {
+                        format != ShareFormat.Image && audioAyahs.isNotEmpty() -> "سورة ${spanLabel(audioAyahs)}"
+                        ayahs != null -> "سورة ${spanLabel(ayahs)}"
+                        else -> pageLabel
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Preview(image = preview, rendering = rendering, failed = failed)
+                if (pageMarkers.isNotEmpty()) {
+                    MushafSegmentedTabs(
+                        labels = ShareFormat.entries.map { it.label },
+                        selectedIndex = format.ordinal,
+                        onSelected = { session.format = ShareFormat.entries[it] },
+                    )
+                }
+
+                if (format != ShareFormat.Audio) {
+                    Preview(image = preview, rendering = rendering, failed = failed)
+                }
+                if (clip != null) AudioClipCard(clip)
 
                 if (pageMarkers.isNotEmpty()) {
-                    ShareLabel("ما في الصورة")
+                    ShareLabel(if (format == ShareFormat.Image) "ما في الصورة" else "ما في المقطع")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (session.ayah != null) {
                             FilterChip(
@@ -217,7 +289,8 @@ internal fun ShareImageSheet(
                         FilterChip(
                             selected = session.kind == ShareKind.Page,
                             onClick = { session.kind = ShareKind.Page },
-                            label = { Text("الصفحة كاملة") },
+                            // A recitation cannot hold a page of two surahs; it holds the page's ayahs.
+                            label = { Text(if (format == ShareFormat.Image) "الصفحة كاملة" else "آيات الصفحة") },
                         )
                     }
                     if (session.kind == ShareKind.Span) {
@@ -229,116 +302,142 @@ internal fun ShareImageSheet(
                     }
                 }
 
-                ShareLabel("المظهر")
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    MushafPalettes.forEach { p ->
-                        FilterChip(
-                            selected = session.paletteId == p.id,
-                            onClick = { session.paletteId = p.id },
-                            label = { Text(p.label) },
-                            leadingIcon = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(14.dp)
-                                        .clip(CircleShape)
-                                        .background(p.paper)
-                                        .border(BorderStroke(1.5.dp, p.ink.copy(alpha = 0.6f)), CircleShape),
-                                )
-                            },
-                        )
+                if (format != ShareFormat.Audio) {
+                    ShareLabel("المظهر")
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        MushafPalettes.forEach { p ->
+                            FilterChip(
+                                selected = session.paletteId == p.id,
+                                onClick = { session.paletteId = p.id },
+                                label = { Text(p.label) },
+                                leadingIcon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .clip(CircleShape)
+                                            .background(p.paper)
+                                            .border(BorderStroke(1.5.dp, p.ink.copy(alpha = 0.6f)), CircleShape),
+                                    )
+                                },
+                            )
+                        }
+                    }
+
+                }
+                if (format == ShareFormat.Image) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("الإطار والمرجع", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "اسم السورة، ورقم الآية والصفحة، واسم التطبيق.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = session.framed, onCheckedChange = { session.framed = it })
                     }
                 }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("الإطار والمرجع", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            text = "اسم السورة، ورقم الآية والصفحة، واسم التطبيق.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = session.framed, onCheckedChange = { session.framed = it })
+                if (clip != null) {
+                    AudioOptions(
+                        state = clip,
+                        access = recitation,
+                        surah = audioAyahs.first().surahNumber,
+                        withOpening = session.withOpening,
+                        onWithOpening = { session.withOpening = it },
+                    )
                 }
             }
 
-            Row(
-                modifier = Modifier.padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    modifier = Modifier.weight(1f),
-                    enabled = image != null && !busy,
-                    onClick = {
-                        val bmp = image ?: return@Button
-                        busy = true
-                        coroutines.launch {
-                            try {
-                                val uri = ShareImageExport.toCache(context, bmp, fileName)
-                                context.startActivity(ShareImageExport.chooser(uri, reference))
-                                onDismiss()
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "تعذّر تجهيز الصورة", Toast.LENGTH_SHORT).show()
-                            } finally {
-                                busy = false
-                            }
-                        }
-                    },
+            if (format == ShareFormat.Audio && clip != null) {
+                AudioActions(state = clip, ayahs = audioAyahs, reciter = recitation.reciter, onDismiss = onDismiss)
+            } else if (format == ShareFormat.Video && clip != null) {
+                VideoActions(
+                    clip = clip,
+                    frame = image.takeIf { imageReady },
+                    frameKey = drawKey,
+                    ayahs = audioAyahs,
+                    reciter = recitation.reciter,
+                    onDismiss = onDismiss,
+                )
+            } else {
+                Row(
+                    modifier = Modifier.padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("مشاركة")
-                }
-                if (ShareImageExport.canSaveToGallery) {
-                    OutlinedButton(
-                        enabled = image != null && !busy,
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        enabled = imageReady && !busy,
                         onClick = {
-                            val bmp = image ?: return@OutlinedButton
+                            val bmp = image ?: return@Button
                             busy = true
                             coroutines.launch {
-                                val saved = try {
-                                    ShareImageExport.saveToGallery(context, bmp, fileName)
+                                try {
+                                    val uri = ShareImageExport.toCache(context, bmp, fileName)
+                                    context.startActivity(ShareImageExport.chooser(uri, reference))
+                                    onDismiss()
                                 } catch (e: CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
-                                    false
+                                    Toast.makeText(context, "تعذّر تجهيز الصورة", Toast.LENGTH_SHORT).show()
                                 } finally {
                                     busy = false
                                 }
-                                Toast.makeText(
-                                    context,
-                                    if (saved) "حُفظت الصورة في معرض الصور" else "تعذّر حفظ الصورة",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
                             }
                         },
                     ) {
-                        Icon(Icons.Outlined.Download, contentDescription = "حفظ في معرض الصور", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("مشاركة")
                     }
-                }
-                val text = ayahs?.let { shareText(it, reference) }
-                if (text != null) {
-                    OutlinedButton(
-                        onClick = {
-                            val send = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, text)
-                            }
-                            context.startActivity(Intent.createChooser(send, null))
-                            onDismiss()
-                        },
-                    ) {
-                        Icon(Icons.Outlined.TextFields, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("نص")
+                    if (ShareImageExport.canSaveToGallery) {
+                        OutlinedButton(
+                            enabled = imageReady && !busy,
+                            onClick = {
+                                val bmp = image ?: return@OutlinedButton
+                                busy = true
+                                coroutines.launch {
+                                    val saved = try {
+                                        ShareImageExport.saveToGallery(context, bmp, fileName)
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        false
+                                    } finally {
+                                        busy = false
+                                    }
+                                    Toast.makeText(
+                                        context,
+                                        if (saved) "حُفظت الصورة في معرض الصور" else "تعذّر حفظ الصورة",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            },
+                        ) {
+                            Icon(Icons.Outlined.Download, contentDescription = "حفظ في معرض الصور", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    val text = ayahs?.let { shareText(it, reference) }
+                    if (text != null) {
+                        OutlinedButton(
+                            onClick = {
+                                val send = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, text)
+                                }
+                                context.startActivity(Intent.createChooser(send, null))
+                                onDismiss()
+                            },
+                        ) {
+                            Icon(Icons.Outlined.TextFields, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("نص")
+                        }
                     }
                 }
             }
