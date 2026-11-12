@@ -101,6 +101,8 @@ internal class ShareSession(val page: Int, val ayah: AyahMarker?, readingPalette
     var format by mutableStateOf(ShareFormat.Image)
     /** Audio from ayah 1: take in the isti'adha and basmala the reciter opens the surah with. */
     var withOpening by mutableStateOf(true)
+    /** Video of several ayahs: light each while it is recited. */
+    var highlight by mutableStateOf(true)
 
     /**
      * The ayahs the audio holds. One recording is one surah, so "the page" here is the page's
@@ -192,15 +194,20 @@ internal fun ShareImageSheet(
         rememberAudioClip(audioAyahs, session.withOpening, recitation)
     } else null
 
-    // What is drawn: the image tab's choice; for the video, the audio's ayahs, always framed — the
-    // frame carries the reference, which a video has nowhere else to show.
+    // What is drawn: the image tab's choice; for the video, its first picture — the first page of
+    // the audio's ayahs, the first of them lit — always framed: the frame carries the reference,
+    // which a video has nowhere else to show.
+    val videoHighlight = session.highlight && audioAyahs.size > 1
+    val firstPage = audioAyahs.firstOrNull()?.page
     val drawScope: ShareScope? = when (format) {
         ShareFormat.Image -> scope
-        ShareFormat.Video -> audioAyahs.takeIf { it.isNotEmpty() }?.let { ShareScope.Ayahs(it) }
+        ShareFormat.Video -> audioAyahs.filter { it.page == firstPage }.takeIf { it.isNotEmpty() }
+            ?.let { ShareScope.Ayahs(it) }
         ShareFormat.Audio -> null
     }
+    val drawHighlight = if (format == ShareFormat.Video && videoHighlight) audioAyahs.firstOrNull() else null
     val drawFramed = format == ShareFormat.Video || session.framed
-    val drawKey = listOf(drawScope, session.paletteId, drawFramed, format == ShareFormat.Video)
+    val drawKey = listOf(drawScope, session.paletteId, drawFramed, format == ShareFormat.Video, drawHighlight?.verseKey)
     // The picture on show may still be the one before a change; only this one may be sent.
     var imageKey by remember { mutableStateOf<Any?>(null) }
     val imageReady = image != null && imageKey == drawKey && !rendering
@@ -210,7 +217,7 @@ internal fun ShareImageSheet(
         rendering = true
         try {
             val palette = paletteFor(session.paletteId)
-            val card = renderer.render(target, markersFor, palette, drawFramed)
+            val card = renderer.render(target, markersFor, palette, drawFramed, drawHighlight)
             val shown = if (format == ShareFormat.Video) {
                 withContext(Dispatchers.Default) { VideoFrame.compose(card, palette.paper.toArgb()) }
             } else card
@@ -267,6 +274,13 @@ internal fun ShareImageSheet(
 
                 if (format != ShareFormat.Audio) {
                     Preview(image = preview, rendering = rendering, failed = failed)
+                }
+                if (format == ShareFormat.Video && audioAyahs.map { it.page }.distinct().size > 1) {
+                    Text(
+                        text = "في الفيديو تظهر كل صفحة وحدها حين تصل التلاوة إليها، وهذه أولاها.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 if (clip != null) AudioClipCard(clip)
 
@@ -343,6 +357,22 @@ internal fun ShareImageSheet(
                         Switch(checked = session.framed, onCheckedChange = { session.framed = it })
                     }
                 }
+                if (format == ShareFormat.Video && audioAyahs.size > 1) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("تظليل الآية الجارية", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "تتظلّل كل آية في الفيديو وهي تُتلى.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = session.highlight, onCheckedChange = { session.highlight = it })
+                    }
+                }
                 if (clip != null) {
                     AudioOptions(
                         state = clip,
@@ -359,9 +389,11 @@ internal fun ShareImageSheet(
             } else if (format == ShareFormat.Video && clip != null) {
                 VideoActions(
                     clip = clip,
-                    frame = image.takeIf { imageReady },
-                    frameKey = drawKey,
                     ayahs = audioAyahs,
+                    renderer = renderer,
+                    markersFor = markersFor,
+                    palette = paletteFor(session.paletteId),
+                    highlight = session.highlight,
                     reciter = recitation.reciter,
                     onDismiss = onDismiss,
                 )

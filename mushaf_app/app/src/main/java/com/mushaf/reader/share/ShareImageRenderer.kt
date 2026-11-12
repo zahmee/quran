@@ -61,18 +61,30 @@ class ShareImageRenderer(context: Context) {
     private var cachedKey: Any? = null
     private var cachedCut: Cut? = null
 
-    /** A cut: the text, and the width of the page it came from, which sizes the card. */
-    private class Cut(val bitmap: Bitmap, val pageWidth: Int)
+    /**
+     * A cut: the text, and the width of the page it came from, which sizes the card. [shift] says
+     * where each page sits in it: a point (x, y) of page p is at (x + dx, y + dy) of the cut.
+     */
+    private class Cut(val bitmap: Bitmap, val pageWidth: Int, val shift: Map<Int, Pair<Int, Int>>)
 
-    /** [markersFor] gives the ayahs of a page: every one of them decides who owns the ink. */
+    /** A page's share of a cut, and where on the page its top-left corner was. */
+    private class Piece(val bitmap: Bitmap, val left: Int, val top: Int)
+
+    /**
+     * [markersFor] gives the ayahs of a page: every one of them decides who owns the ink.
+     * [highlight], when given, is lit the way the reader lights a selected ayah — the video uses it
+     * to show which ayah is being recited.
+     */
     suspend fun render(
         scope: ShareScope,
         markersFor: (Int) -> List<AyahMarker>,
         palette: MushafPalette,
         framed: Boolean,
+        highlight: AyahMarker? = null,
     ): Bitmap = withContext(Dispatchers.Default) {
         val cut = cut(scope, markersFor)
         val text = recolor(cut.bitmap, palette)
+        if (highlight != null) light(text, highlight, cut, palette)
         val card = if (framed) frame(text, cut.pageWidth, scope, markersFor, palette)
         else plain(text, cut.pageWidth, palette)
         text.recycle()
@@ -88,7 +100,7 @@ class ShareImageRenderer(context: Context) {
         cachedCut?.takeIf { cachedKey == key }?.let { return it }
 
         val result = when (scope) {
-            is ShareScope.Page -> decode(scope.page).let { Cut(it, it.width) }
+            is ShareScope.Page -> decode(scope.page).let { Cut(it, it.width, mapOf(scope.page to (0 to 0))) }
             is ShareScope.Ayahs -> {
                 val pages = scope.pages
                 var width = 0
@@ -105,7 +117,11 @@ class ShareImageRenderer(context: Context) {
                         trimOneLine = pages.size == 1,
                     ).also { page.recycle() }
                 }
-                Cut(stack(parts), width)
+                var y = 0
+                val shift = pages.zip(parts).associate { (p, piece) ->
+                    (p to (-piece.left to y - piece.top)).also { y += piece.bitmap.height }
+                }
+                Cut(stack(parts.map { it.bitmap }), width, shift)
             }
         }
         // Not recycled: a render still recoloring the previous cut may hold it. The GC frees it.
@@ -145,7 +161,7 @@ class ShareImageRenderer(context: Context) {
         ayahs: List<AyahMarker>,
         pageMarkers: List<AyahMarker>,
         trimOneLine: Boolean,
-    ): Bitmap {
+    ): Piece {
         val keys = ayahs.map { it.verseKey }.toSet()
         val owners = pageMarkers.withIndex().associate { (i, m) -> m.verseKey to i }
         val rects = pageMarkers.flatMapIndexed { i, m ->
@@ -179,9 +195,26 @@ class ShareImageRenderer(context: Context) {
         val oneLine = trimOneLine && chosen.map { it.y }.distinct().size == 1
         val left = if (oneLine) (chosen.minOf { it.x } - SIDE_PAD).coerceAtLeast(0) else 0
         val right = if (oneLine) (chosen.maxOf { it.x + it.w } + SIDE_PAD).coerceAtMost(w) else w
-        return Bitmap.createBitmap(
+        val bitmap = Bitmap.createBitmap(
             pixels, (top - winTop) * w + left, w, right - left, bottom - top, Bitmap.Config.ARGB_8888,
         )
+        return Piece(bitmap, left, top)
+    }
+
+    /** Lights [ayah]'s rectangles on [text] (the recolored cut), as the reader lights a selection. */
+    private fun light(text: Bitmap, ayah: AyahMarker, cut: Cut, palette: MushafPalette) {
+        val (dx, dy) = cut.shift[ayah.page] ?: return
+        val accent = if (palette.dark) AccentDark else AccentLight
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = accent.copy(alpha = if (palette.dark) 0.28f else 0.18f).toArgb()
+        }
+        val canvas = Canvas(text)
+        ayah.rects.forEach { r ->
+            canvas.drawRoundRect(
+                RectF(r.x + dx, r.y + dy, r.x + r.w + dx, r.y + r.h + dy),
+                HIGHLIGHT_CORNER, HIGHLIGHT_CORNER, paint,
+            )
+        }
     }
 
     /** The same recolor the reader draws the page with, see [com.mushaf.reader.ui.theme.PageRecolor]. */
@@ -324,6 +357,9 @@ class ShareImageRenderer(context: Context) {
 
         /** Paper kept either side of a one-line cut, for marks that overhang the ayah's band. */
         private const val SIDE_PAD = 24
+
+        /** Corner of a lit ayah's band, in page pixels: the reader's 8dp at its usual scale. */
+        private const val HIGHLIGHT_CORNER = 12f
 
         /** Anything darker than this in any channel counts as ink. High on purpose: it takes in the
          *  anti-aliased rim of every letter, which would otherwise be left behind as a halo. */

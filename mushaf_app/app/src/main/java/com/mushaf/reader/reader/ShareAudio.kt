@@ -60,6 +60,7 @@ import com.mushaf.reader.data.recitation.SurahTiming
 import com.mushaf.reader.recitation.RecitationStorage
 import com.mushaf.reader.share.ClipExporter
 import com.mushaf.reader.share.AudioClips
+import com.mushaf.reader.share.ClipRange
 import com.mushaf.reader.share.ShareImageExport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -85,7 +86,14 @@ internal class RecitationAccess(
 internal sealed interface AudioClipStatus {
     data object WaitingForReciter : AudioClipStatus
     data class Preparing(val percent: Int?) : AudioClipStatus
-    data class Ready(val file: File, val name: String, val durationMs: Long) : AudioClipStatus
+    /** [timing] and [range] say where each ayah falls in the clip — the video lights them by it. */
+    data class Ready(
+        val file: File,
+        val name: String,
+        val durationMs: Long,
+        val timing: SurahTiming,
+        val range: ClipRange,
+    ) : AudioClipStatus
     data class Failed(val message: String) : AudioClipStatus
 }
 
@@ -141,7 +149,7 @@ internal fun rememberAudioClip(
             exporter.exportAudio(reciter, first.surahNumber, range, file) {
                 state.status = AudioClipStatus.Preparing(it)
             }
-            state.status = AudioClipStatus.Ready(file, name, range.durationMs)
+            state.status = AudioClipStatus.Ready(file, name, range.durationMs, timing, range)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

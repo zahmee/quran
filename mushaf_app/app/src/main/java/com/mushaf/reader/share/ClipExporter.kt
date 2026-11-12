@@ -86,29 +86,32 @@ class ClipExporter(context: Context) {
     }
 
     /**
-     * Writes [picture] held for [durationMs] over [audio] (a clip [exportAudio] made) to [out] as
-     * an MP4. The audio is carried over as it is, not encoded a second time.
+     * Writes [stills] — pictures, each held for its milliseconds, one after another — over [audio]
+     * (a clip [exportAudio] made) to [out] as an MP4. The audio is carried over as it is, not
+     * encoded a second time.
      */
     suspend fun exportVideo(
-        picture: File,
+        stills: List<Pair<File, Long>>,
         audio: File,
-        durationMs: Long,
         out: File,
         onProgress: (Int) -> Unit,
     ) {
-        val still = EditedMediaItem.Builder(
-            MediaItem.Builder()
-                .setUri(Uri.fromFile(picture))
-                .setImageDurationMs(durationMs)
+        require(stills.isNotEmpty()) { "no pictures" }
+        val pictures = stills.map { (picture, durationMs) ->
+            EditedMediaItem.Builder(
+                MediaItem.Builder()
+                    .setUri(Uri.fromFile(picture))
+                    .setImageDurationMs(durationMs)
+                    .build()
+            )
+                .setFrameRate(VIDEO_FPS)
                 .build()
-        )
-            .setFrameRate(VIDEO_FPS)
-            .build()
+        }
         val sound = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(audio)))
             .setRemoveVideo(true)
             .build()
         val composition = Composition.Builder(
-            EditedMediaItemSequence.withVideoFrom(listOf(still)),
+            EditedMediaItemSequence.withVideoFrom(pictures),
             EditedMediaItemSequence.withAudioFrom(listOf(sound)),
         )
             .setTransmuxAudio(true)
