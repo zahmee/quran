@@ -20,7 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Devices
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
@@ -38,6 +40,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mushaf.reader.data.sync.CloudFeature
+import com.mushaf.reader.data.sync.CloudProblem
 import com.mushaf.reader.data.sync.DevicePlace
 import com.mushaf.reader.data.sync.ElsewherePlace
 import com.mushaf.reader.data.sync.KhatmaRecord
@@ -389,4 +393,114 @@ internal fun arabicCount(n: Int, one: String, two: String, few: String): String 
     n == 2 -> two
     n in 3..10 -> "${n.toArabicDigits()} $few"
     else -> "${n.toArabicDigits()} $one"
+}
+
+// ── Cloud faults ─────────────────────────────────────────────────────────────
+
+private fun CloudProblem.title(): String = when (feature to kind) {
+    CloudFeature.SYNC to CloudProblem.Kind.Refused -> "تعذّرت مزامنة القراءة"
+    CloudFeature.SYNC to CloudProblem.Kind.Stalled -> "علامات لم تصل إلى جهازك الآخر"
+    CloudFeature.BACKUP to CloudProblem.Kind.Refused -> "تعذّر النسخ السحابي"
+    else -> "لم يكتمل النسخ التلقائي"
+}
+
+private fun CloudProblem.body(): String = when (kind) {
+    CloudProblem.Kind.Refused -> "${message ?: "رفض الخادم العملية."} بدأت المشكلة ${relativeTime(since)}."
+    CloudProblem.Kind.Stalled -> if (feature == CloudFeature.SYNC) {
+        "${markCount(waiting)} لم تُرسل بعد، أقدمها ${relativeTime(since)}. تحقّق من اتصالك بالإنترنت."
+    } else {
+        "آخر نسخة ناجحة ${relativeTime(since)}. تحقّق من اتصالك بالإنترنت، أو انسخ الآن."
+    }
+}
+
+private fun markCount(n: Int): String = when {
+    n == 1 -> "علامة واحدة"
+    n == 2 -> "علامتان"
+    n in 3..10 -> "${n.toArabicDigits()} علامات"
+    else -> "${n.toArabicDigits()} علامة"
+}
+
+/**
+ * The reader's alert for a broken or stuck cloud feature. Unlike the sync offer it is about
+ * something wrong, so it stays until fixed; "Later" hides it only until the app is next opened.
+ */
+@Composable
+fun CloudProblemBanner(
+    problems: List<CloudProblem>,
+    hidden: Boolean,
+    onRetry: (CloudProblem) -> Unit,
+    onDetails: () -> Unit,
+    onLater: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val last = remember { mutableStateOf<List<CloudProblem>>(emptyList()) }
+    if (problems.isNotEmpty()) last.value = problems
+    AnimatedVisibility(
+        visible = problems.isNotEmpty() && !hidden,
+        enter = slideInVertically { it } + fadeIn(),
+        exit = slideOutVertically { it } + fadeOut(),
+        modifier = modifier,
+    ) {
+        val shown = last.value
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.55f)),
+            tonalElevation = 3.dp,
+            shadowElevation = 6.dp,
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                shown.forEachIndexed { index, problem ->
+                    if (index > 0) MushafSoftDivider(verticalPadding = 8.dp)
+                    ProblemLines(problem)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onLater) { Text("لاحقاً") }
+                    TextButton(onClick = onDetails) { Text("التفاصيل") }
+                    FilledTonalButton(onClick = { shown.forEach(onRetry) }) { Text("أعد المحاولة") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProblemLines(problem: CloudProblem) {
+    Row(verticalAlignment = Alignment.Top) {
+        Icon(
+            imageVector = if (problem.kind == CloudProblem.Kind.Refused) Icons.Outlined.ErrorOutline else Icons.Outlined.CloudOff,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(20.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(problem.title(), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                problem.body(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** The same faults at the top of the backup screen, each with its own "try again". */
+@Composable
+fun CloudProblemsPanel(problems: List<CloudProblem>, busy: Boolean, onRetry: (CloudProblem) -> Unit) {
+    MushafPanel(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)) {
+        problems.forEachIndexed { index, problem ->
+            if (index > 0) MushafSoftDivider()
+            ProblemLines(problem)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                OutlinedButton(onClick = { onRetry(problem) }, enabled = !busy) { Text("أعد المحاولة") }
+            }
+        }
+    }
 }

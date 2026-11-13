@@ -134,6 +134,18 @@ fun BackupScreen(
                     }
                 }
 
+                // Above both tabs: whatever is broken comes before everything that works.
+                val problems = viewModel.cloudProblems
+                if (problems.isNotEmpty()) {
+                    item {
+                        CloudProblemsPanel(
+                            problems = problems,
+                            busy = cloud.busy || viewModel.syncUiState.loading,
+                            onRetry = viewModel::retryCloudProblem,
+                        )
+                    }
+                }
+
                 if (historyTab) {
                     readingHistoryItems(
                         signedIn = cloud.username != null,

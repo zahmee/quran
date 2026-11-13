@@ -503,6 +503,14 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
             // The bar reads the update state itself, so a download's progress ticks redraw the
             // bar alone instead of invalidating this whole scope on every percent.
             Column(modifier = Modifier.align(Alignment.BottomCenter)) {
+                // A broken or stuck cloud feature: said plainly, never left to fail in silence.
+                CloudProblemBanner(
+                    problems = viewModel.cloudProblems,
+                    hidden = viewModel.cloudProblemsHidden,
+                    onRetry = viewModel::retryCloudProblem,
+                    onDetails = { showBackup = true },
+                    onLater = viewModel::hideCloudProblems,
+                )
                 // A newer place on another device. Shown only while reading, like the update bar.
                 SyncPlaceBanner(
                     place = viewModel.syncUiState.elsewhere,

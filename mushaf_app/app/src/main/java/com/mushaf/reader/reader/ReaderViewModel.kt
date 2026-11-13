@@ -30,6 +30,11 @@ import com.mushaf.reader.data.backup.CloudBackupWorker
 import com.mushaf.reader.data.backup.CloudStage
 import com.mushaf.reader.data.backup.CloudUiState
 import com.mushaf.reader.data.backup.FileBackupRepository
+import com.mushaf.reader.data.backup.CloudOfflineException
+import com.mushaf.reader.data.sync.CloudFeature
+import com.mushaf.reader.data.sync.CloudHealth
+import com.mushaf.reader.data.sync.CloudHealthStore
+import com.mushaf.reader.data.sync.CloudProblem
 import com.mushaf.reader.data.sync.CloudSyncRepository
 import com.mushaf.reader.data.sync.CloudSyncStore
 import com.mushaf.reader.data.sync.CloudSyncWorker
@@ -139,6 +144,9 @@ data class PackContentUiState(
     val content: PackContent? = null,
 )
 
+/** A cloud fault without words of its own from the server. */
+private const val GENERIC_CLOUD_ERROR = "تعذر إكمال العملية. أعد المحاولة بعد قليل."
+
 class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     private val pageRepo = PageRepository(app)
@@ -151,6 +159,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     private val cloudRepo = CloudBackupRepository(app)
     private val syncRepo = CloudSyncRepository(app)
     private val syncStore = CloudSyncStore(app)
+    private val healthStore = CloudHealthStore(app)
 
     private val recitationRepo = RecitationRepository(app)
 
@@ -510,7 +519,10 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { bookmarks = withContext(Dispatchers.IO) { store.bookmarks() } }
         viewModelScope.launch { bookmarks2 = withContext(Dispatchers.IO) { store.bookmarks2() } }
         viewModelScope.launch { khatmas = withContext(Dispatchers.IO) { statsRepo.allKhatmas() } }
-        if (cloudRepo.isAvailable) viewModelScope.launch { loadCloudAccount() }
+        if (cloudRepo.isAvailable) viewModelScope.launch {
+            loadCloudAccount()
+            refreshCloudProblems()
+        }
         // Anchor the current khatma cycle on first run of the feature so its duration is meaningful.
         if (initialSettings.khatmaStartedAt <= 0L) {
             viewModelScope.launch { store.setKhatmaStartedAt(khatmaStartedAt) }
@@ -863,6 +875,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         // The first backup right away: an account with nothing in it protects nothing.
         checkpointCurrentSessionForBackup()
         cloudRepo.upload(auto = false)
+        healthStore.recordSuccess(CloudFeature.BACKUP)
         loadCloudAccount()
         cloudUiState = cloudUiState.copy(backups = cloudRepo.list(), listLoaded = true)
         syncReading(userAsked = false)
@@ -886,13 +899,24 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
             CloudBackupWorker.schedule(getApplication(), enabled = false)
             cloudRepo.signOut()
             forgetSyncAccount()
+            forgetCloudProblems()
             cloudUiState = CloudUiState(available = cloudRepo.isAvailable)
         }
     }
 
     fun cloudBackupNow() = runCloud(CloudStage.Uploading) {
         checkpointCurrentSessionForBackup()
-        cloudRepo.upload(auto = false)
+        try {
+            cloudRepo.upload(auto = false)
+            healthStore.recordSuccess(CloudFeature.BACKUP)
+        } catch (offline: CloudOfflineException) {
+            throw offline
+        } catch (refused: BackupException) {
+            healthStore.recordRefused(CloudFeature.BACKUP, refused.message ?: GENERIC_CLOUD_ERROR)
+            throw refused
+        } finally {
+            refreshCloudProblems()
+        }
         loadCloudAccount()
         cloudUiState = cloudUiState.copy(backups = cloudRepo.list(), listLoaded = true)
         "حُفظت نسخة جديدة في حسابك."
@@ -924,6 +948,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         cloudRepo.deleteAccount(password)
         CloudBackupWorker.schedule(getApplication(), enabled = false)
         forgetSyncAccount()
+        forgetCloudProblems()
         cloudUiState = CloudUiState(available = cloudRepo.isAvailable)
         "حُذف حسابك وجميع نسخه من الخادم. بياناتك على هذا الجهاز باقية كما هي."
     }
@@ -939,8 +964,12 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The app came to the front: see whether another device has read further since. */
     fun onAppForeground() {
-        if (!syncRepo.isSignedIn) return
-        viewModelScope.launch { syncReading(userAsked = false) }
+        // Hidden with "Later" only until the reader next comes back: a fault is not forgotten.
+        cloudProblemsHidden = false
+        viewModelScope.launch {
+            if (syncRepo.isSignedIn) syncReading(userAsked = false)
+            refreshCloudProblems()
+        }
     }
 
     /**
@@ -986,6 +1015,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
                 dismissedKey = local.dismissedKey,
             )
             if (result.khatmasAdded > 0) khatmas = statsRepo.allKhatmas()
+            healthStore.recordSuccess(CloudFeature.SYNC)
             syncUiState = syncUiState.copy(
                 loading = false,
                 elsewhere = elsewhere,
@@ -994,6 +1024,11 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
+            // Offline passes by itself; anything else is a fault the reader must hear about,
+            // whether or not they asked for this sync.
+            if (error !is CloudOfflineException) {
+                healthStore.recordRefused(CloudFeature.SYNC, (error as? BackupException)?.message ?: GENERIC_CLOUD_ERROR)
+            }
             syncUiState = syncUiState.copy(
                 loading = false,
                 lastSyncAt = syncStore.state().lastSyncAt,
@@ -1004,6 +1039,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
                 },
             )
         }
+        refreshCloudProblems()
     }
 
     private suspend fun loadSyncHistory() {
@@ -1045,6 +1081,52 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         syncStore.recordBookmark(verseKey, page, System.currentTimeMillis())
         if (syncRepo.isSignedIn) CloudSyncWorker.enqueue(getApplication())
     }
+
+    // ── Cloud faults the reader must hear about ────────────────────────────────
+
+    /** What is broken or stuck in cloud backup and reading sync, newest knowledge first. */
+    var cloudProblems by mutableStateOf<List<CloudProblem>>(emptyList())
+        private set
+
+    /** "Later" on the reader's alert: hidden until the app next comes to the front. */
+    var cloudProblemsHidden by mutableStateOf(false)
+        private set
+
+    fun hideCloudProblems() { cloudProblemsHidden = true }
+
+    /** "Try again" from an alert: the same operation the reader would start by hand. */
+    fun retryCloudProblem(problem: CloudProblem) {
+        when (problem.feature) {
+            CloudFeature.SYNC -> syncNow()
+            CloudFeature.BACKUP -> cloudBackupNow()
+        }
+    }
+
+    private suspend fun refreshCloudProblems() {
+        if (!cloudRepo.isAvailable) return
+        val health = healthStore.state()
+        val prefs = store.cloudPrefs()
+        cloudProblems = CloudHealth.problems(
+            CloudHealth.Input(
+                signedIn = cloudRepo.isSignedIn && prefs.username != null,
+                syncRefusedAt = health.syncRefusedAt,
+                syncRefusedMessage = health.syncRefusedMessage,
+                backupRefusedAt = health.backupRefusedAt,
+                backupRefusedMessage = health.backupRefusedMessage,
+                outbox = syncStore.state().outbox.map { it.at },
+                autoBackup = prefs.autoBackup,
+                backupLastOkAt = health.backupLastOkAt,
+                lastUploadAt = prefs.lastUploadAt,
+            ),
+            now = System.currentTimeMillis(),
+        )
+    }
+
+    private suspend fun forgetCloudProblems() {
+        healthStore.clear()
+        cloudProblems = emptyList()
+    }
+
 
     private suspend fun forgetSyncAccount() {
         CloudSyncWorker.cancel(getApplication())

@@ -25,19 +25,25 @@ class CloudSyncWorker(context: Context, params: WorkerParameters) : CoroutineWor
     override suspend fun doWork(): Result {
         val sync = CloudSyncRepository(applicationContext)
         if (!sync.isSignedIn) return Result.success()
+        val health = CloudHealthStore(applicationContext)
         return try {
             sync.push()
+            health.recordSuccess(CloudFeature.SYNC)
             Result.success()
         } catch (_: CloudOfflineException) {
+            // Normal and passing; a stall long enough to matter is reported from the outbox's age.
             Result.retry()
-        } catch (_: BackupException) {
-            // A refusal (signed out elsewhere, rules) will not fix itself; the next change retries.
+        } catch (refused: BackupException) {
+            // A refusal (rules, a lost sign-in) will not fix itself: leave word for the reader, who
+            // is told on the next look at the app. The next change tries again.
+            health.recordRefused(CloudFeature.SYNC, refused.message ?: REFUSED)
             Result.failure()
         }
     }
 
     companion object {
         private const val WORK_NAME = "cloud-reading-sync"
+        private const val REFUSED = "رفض الخادم العملية."
 
         fun enqueue(context: Context) {
             val request = OneTimeWorkRequestBuilder<CloudSyncWorker>()

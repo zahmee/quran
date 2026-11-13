@@ -10,6 +10,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.mushaf.reader.data.ReadingStore
+import com.mushaf.reader.data.sync.CloudFeature
+import com.mushaf.reader.data.sync.CloudHealthStore
 import java.util.concurrent.TimeUnit
 
 /**
@@ -23,13 +25,19 @@ class CloudBackupWorker(context: Context, params: WorkerParameters) : CoroutineW
         if (!cloud.isSignedIn || !ReadingStore(applicationContext).cloudPrefs().autoBackup) {
             return Result.success()
         }
+        val health = CloudHealthStore(applicationContext)
         return try {
             cloud.upload(auto = true)
+            // A day with nothing new uploads nothing, and that is a success too.
+            health.recordSuccess(CloudFeature.BACKUP)
             Result.success()
         } catch (_: CloudOfflineException) {
+            // Normal and passing; three days without a run is reported from the last success.
             Result.retry()
-        } catch (_: BackupException) {
-            // A refusal will not fix itself by retrying; tomorrow's run tries again.
+        } catch (refused: BackupException) {
+            // A refusal will not fix itself by retrying: leave word for the reader, then let
+            // tomorrow's run try again.
+            health.recordRefused(CloudFeature.BACKUP, refused.message ?: "رفض الخادم العملية.")
             Result.failure()
         }
     }
