@@ -276,12 +276,16 @@ if (-not $ExcludeSecrets) {
     $requiredCandidates += @(
         'mushaf_app\release.jks',
         'mushaf_app\keystore.properties',
-        'mushaf_app\play-service-account.json'
+        'mushaf_app\play-service-account.json',
+        'mushaf_app\app\google-services.json'
     )
 }
 
 foreach ($relativeCandidate in $requiredCandidates) {
     $candidatePath = Join-Path -Path $sourcePath -ChildPath $relativeCandidate
+    if (-not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) {
+        Write-Warning ("ملف مهم غير موجود في هذا الجهاز، فلن يكون في الأرشيف: {0}" -f $relativeCandidate)
+    }
     if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
         $reason = Get-ExclusionReason -RelativePath $relativeCandidate
         if ($null -eq $reason) {

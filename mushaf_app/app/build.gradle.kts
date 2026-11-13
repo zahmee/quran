@@ -214,3 +214,26 @@ tasks.register("copyReleaseApk") {
 tasks.matching { it.name == "assembleRelease" }.configureEach {
     finalizedBy("copyReleaseApk")
 }
+
+// ── Guard: never ship a release without cloud backup ─────────────────────────────
+// Without google-services.json the build quietly hides cloud backup (see the top of this
+// file). That is right for a fresh clone running debug builds and tests, and wrong for anything
+// headed to Play: 0.17.0 went out from a machine that lacked the file, and readers lost the
+// cloud section with no warning. So packaging a release refuses to start without it.
+// A deliberate cloud-less release can still be made with -PallowReleaseWithoutCloudBackup.
+val allowReleaseWithoutCloudBackup = providers.gradleProperty("allowReleaseWithoutCloudBackup").isPresent
+gradle.taskGraph.whenReady {
+    // The packaging tasks themselves, not the assemble/bundle lifecycle tasks: Play Publisher's
+    // publishReleaseBundle reaches packageReleaseBundle without ever running bundleRelease.
+    val packagesRelease = allTasks.any { task ->
+        task.project == project && task.name in setOf("packageRelease", "packageReleaseBundle")
+    }
+    if (packagesRelease && !googleServicesFile.exists() && !allowReleaseWithoutCloudBackup) {
+        throw GradleException(
+            "Missing ${googleServicesFile.path}: this release would ship with cloud backup hidden.\n" +
+                "Copy google-services.json from the other machine, or download it from the Firebase " +
+                "console (Project settings > Android app com.mushaf.reader).\n" +
+                "To build without cloud backup on purpose, pass -PallowReleaseWithoutCloudBackup."
+        )
+    }
+}
