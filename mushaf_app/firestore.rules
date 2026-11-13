@@ -5,6 +5,7 @@ rules_version = '2';
 //   users/{uid}/backups/{id}    — one backup's metadata (listed without downloading payloads)
 //   users/{uid}/payloads/{id}   — that backup's gzip JSON, the same bytes as the backup file
 // Backups are written once and never edited, so there is no update rule below them.
+// Reading sync (devices, marks, khatmas) is described above its rules below.
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{uid} {
@@ -43,6 +44,61 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['data'])
           && request.resource.data.data is bytes
           && request.resource.data.data.size() <= 900000;
+      }
+
+      // Reading sync — where each device stands, so another can offer to continue from there.
+      // Times are epoch millis already corrected to the server's clock by the app.
+
+      // One document per device, overwritten as the reader moves on.
+      match /devices/{deviceId} {
+        allow read, delete: if isOwner();
+        allow create, update: if isOwner()
+          && deviceId.size() <= 64
+          && request.resource.data.keys().hasOnly(
+               ['deviceName', 'seenAt', 'page', 'pageAt', 'bookmarkKey', 'bookmarkPage', 'bookmarkAt'])
+          && request.resource.data.deviceName is string
+          && request.resource.data.deviceName.size() <= 80
+          && request.resource.data.seenAt is timestamp
+          && (!('page' in request.resource.data) || request.resource.data.page is int)
+          && (!('pageAt' in request.resource.data) || request.resource.data.pageAt is int)
+          && (!('bookmarkKey' in request.resource.data)
+              || request.resource.data.bookmarkKey == null
+              || (request.resource.data.bookmarkKey is string && request.resource.data.bookmarkKey.size() <= 16))
+          && (!('bookmarkPage' in request.resource.data)
+              || request.resource.data.bookmarkPage == null || request.resource.data.bookmarkPage is int)
+          && (!('bookmarkAt' in request.resource.data) || request.resource.data.bookmarkAt is int);
+      }
+
+      // Every bookmark set, kept for a week. A retried upload rewrites the same id.
+      match /marks/{markId} {
+        allow read, delete: if isOwner();
+        allow create, update: if isOwner()
+          && request.resource.data.keys().hasOnly(['verseKey', 'page', 'at', 'deviceId', 'deviceName'])
+          && request.resource.data.verseKey is string
+          && request.resource.data.verseKey.size() <= 16
+          && request.resource.data.page is int
+          && request.resource.data.at is int
+          && request.resource.data.deviceId is string
+          && request.resource.data.deviceId.size() <= 64
+          && request.resource.data.deviceName is string
+          && request.resource.data.deviceName.size() <= 80;
+      }
+
+      // Completed khatmas, permanent. The id is derived from the khatma, so both devices
+      // writing the same one land on one document.
+      match /khatmas/{khatmaId} {
+        allow read, delete: if isOwner();
+        allow create, update: if isOwner()
+          && request.resource.data.keys().hasOnly(
+               ['completedAt', 'startedAt', 'durationDays', 'pagesRead', 'deviceId', 'deviceName'])
+          && request.resource.data.completedAt is int
+          && request.resource.data.startedAt is int
+          && request.resource.data.durationDays is int
+          && request.resource.data.pagesRead is int
+          && request.resource.data.deviceId is string
+          && request.resource.data.deviceId.size() <= 64
+          && request.resource.data.deviceName is string
+          && request.resource.data.deviceName.size() <= 80;
       }
     }
   }

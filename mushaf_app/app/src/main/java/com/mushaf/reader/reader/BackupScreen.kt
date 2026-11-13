@@ -61,8 +61,10 @@ import androidx.compose.ui.unit.dp
 import com.mushaf.reader.data.backup.BackupStage
 import com.mushaf.reader.data.backup.BackupUiState
 import com.mushaf.reader.data.backup.CloudUiState
+import com.mushaf.reader.data.sync.PlacePoint
 import com.mushaf.reader.ui.components.MushafIconBadge
 import com.mushaf.reader.ui.components.MushafPanel
+import com.mushaf.reader.ui.components.MushafSegmentedTabs
 import com.mushaf.reader.ui.components.MushafSoftDivider
 import com.mushaf.reader.ui.components.MushafTopBar
 import java.text.SimpleDateFormat
@@ -76,6 +78,7 @@ private const val BACKUP_MIME_TYPE = "application/gzip"
 fun BackupScreen(
     viewModel: ReaderViewModel,
     onBack: () -> Unit,
+    onOpenPlace: (PlacePoint) -> Unit,
 ) {
     val state = viewModel.backupUiState
     val cloud = viewModel.cloudUiState
@@ -86,6 +89,11 @@ fun BackupScreen(
     var pendingCloudRestore by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingCloudDelete by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmDeleteAccount by rememberSaveable { mutableStateOf(false) }
+    // 0: backups, 1: the reading history shared between the reader's devices.
+    var tab by rememberSaveable { mutableStateOf(0) }
+    val historyTab = cloud.available && tab == 1
+
+    LaunchedEffect(historyTab, cloud.username) { if (historyTab) viewModel.refreshSyncHistory() }
 
     // Another device may have uploaded since this screen was last open.
     LaunchedEffect(cloud.username) { viewModel.refreshCloudBackups() }
@@ -116,6 +124,29 @@ fun BackupScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                if (cloud.available) {
+                    item {
+                        MushafSegmentedTabs(
+                            labels = listOf("النسخ", "السجل"),
+                            selectedIndex = tab,
+                            onSelected = { tab = it },
+                        )
+                    }
+                }
+
+                if (historyTab) {
+                    readingHistoryItems(
+                        signedIn = cloud.username != null,
+                        state = viewModel.syncUiState,
+                        describeVerse = viewModel::describeVerse,
+                        surahOfPage = viewModel::surahOfPage,
+                        onSyncNow = viewModel::syncNow,
+                        onGo = onOpenPlace,
+                    )
+                    item { Spacer(Modifier.height(12.dp)) }
+                    return@LazyColumn
+                }
+
                 item { BackupHero(state = state, cloud = cloud) }
 
                 if (cloud.available) {
@@ -525,9 +556,10 @@ private fun PrivacyPanel(cloudAvailable: Boolean) {
                 Text("خصوصية واضحة", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text(
                     text = if (cloudAvailable) {
-                        "لا يتصل التطبيق بالإنترنت إلا لأمرين تبدؤهما أنت: النسخ السحابي بعد أن تنشئ حساباً " +
-                            "أو تسجّل الدخول، والاستماع للتلاوة حين تشغّلها أو تنزّلها. لا نطلب بريداً ولا رقم " +
-                            "جوال؛ يُحفظ في حسابك الاسم الذي اخترته ونسخك، ويمكنك حذفها كلها من هنا. "
+                        "لا يتصل التطبيق بالإنترنت إلا لأمرين تبدؤهما أنت: النسخ السحابي ومزامنة القراءة بين " +
+                            "أجهزتك بعد أن تنشئ حساباً أو تسجّل الدخول، والاستماع للتلاوة حين تشغّلها أو تنزّلها. " +
+                            "لا نطلب بريداً ولا رقم جوال؛ يُحفظ في حسابك الاسم الذي اخترته ونسخك، ومكان وقوفك " +
+                            "وعلاماتك وختماتك مع اسم الجهاز، ويمكنك حذفها كلها من هنا. "
                     } else {
                         "لا يتصل التطبيق بأي خادم إلا لجلب التلاوة حين تشغّلها أو تنزّلها. "
                     } + "الملف يبقى ملكك وحدك في الموقع الذي تختاره. تشمل النسخة موضع القراءة " +

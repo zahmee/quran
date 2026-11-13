@@ -104,6 +104,14 @@ class CloudBackupRepository(context: Context) {
         user.reauthenticate(EmailAuthProvider.getCredential(email, password)).await()
         val userDoc = userDoc(user)
         erase(userDoc, userDoc.collection(BACKUPS).get(Source.SERVER).await().documents.map { it.id })
+        // Reading sync lives under the same account and goes with it.
+        for (name in SYNC_COLLECTIONS) {
+            userDoc.collection(name).get(Source.SERVER).await().documents.chunked(400).forEach { chunk ->
+                val batch = firestore.batch()
+                chunk.forEach { batch.delete(it.reference) }
+                batch.commit().await()
+            }
+        }
         userDoc.delete().await()
         user.delete().await()
         store.setCloudAccount(null)
@@ -251,10 +259,10 @@ class CloudBackupRepository(context: Context) {
             .joinToString("") { "%02x".format(it) }
     }
 
-    private fun requireUser(): FirebaseUser =
+    internal fun requireUser(): FirebaseUser =
         auth.currentUser ?: throw BackupException("انتهت جلسة الدخول؛ سجّل الدخول من جديد.")
 
-    private fun userDoc(user: FirebaseUser): DocumentReference =
+    internal fun userDoc(user: FirebaseUser): DocumentReference =
         firestore.collection(USERS).document(user.uid)
 
     /**
@@ -262,7 +270,7 @@ class CloudBackupRepository(context: Context) {
      * reader can act on. The limit matters for writes: with no connection Firestore keeps them
      * pending instead of failing, and the screen would wait forever.
      */
-    private suspend fun <T> remote(block: suspend () -> T): T {
+    internal suspend fun <T> remote(block: suspend () -> T): T {
         if (!isAvailable) throw BackupException("النسخ السحابي غير متاح في هذه النسخة من التطبيق.")
         // Fail at once rather than after the time limit when the device is plainly offline.
         if (!hasConnection()) throw CloudOfflineException()
@@ -332,10 +340,14 @@ class CloudBackupRepository(context: Context) {
         else -> BackupException(GENERIC_ERROR, error)
     }
 
-    private companion object {
+    internal companion object {
         const val USERS = "users"
         const val BACKUPS = "backups"
         const val PAYLOADS = "payloads"
+        const val DEVICES = "devices"
+        const val MARKS = "marks"
+        const val KHATMAS = "khatmas"
+        val SYNC_COLLECTIONS = listOf(DEVICES, MARKS, KHATMAS)
         const val TIMEOUT_MS = 30_000L
         /** Firestore caps a document near 1 MiB; years of heavy reading still compress far below. */
         const val MAX_PAYLOAD_BYTES = 900_000
@@ -359,7 +371,7 @@ class CloudBackupRepository(context: Context) {
     }
 }
 
-private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { continuation ->
+internal suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { continuation ->
     addOnCompleteListener { task ->
         val error = task.exception
         when {

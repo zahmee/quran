@@ -167,6 +167,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LifecycleStartEffect
 import com.mushaf.reader.update.AppUpdateUi
 import com.mushaf.reader.update.UpdateBanner
 import com.mushaf.reader.ui.theme.BookmarkGoldColor
@@ -253,6 +254,12 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     LifecycleResumeEffect(viewModel, canRead) {
         viewModel.setReaderVisible(canRead)
         onPauseOrDispose { viewModel.setReaderVisible(false) }
+    }
+    // Reading sync: look for a newer place on another device when the app comes to the front,
+    // and report this one's when it leaves.
+    LifecycleStartEffect(viewModel) {
+        viewModel.onAppForeground()
+        onStopOrDispose { viewModel.onAppBackground() }
     }
 
     val jumpToPage: (Int) -> Unit = { page ->
@@ -495,11 +502,16 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
             // opening the index or the stats screen hides it instead of stacking on top of them.
             // The bar reads the update state itself, so a download's progress ticks redraw the
             // bar alone instead of invalidating this whole scope on every percent.
-            if (updates != null) {
-                UpdateBanner(
-                    updates = updates,
-                    modifier = Modifier.align(Alignment.BottomCenter),
+            Column(modifier = Modifier.align(Alignment.BottomCenter)) {
+                // A newer place on another device. Shown only while reading, like the update bar.
+                SyncPlaceBanner(
+                    place = viewModel.syncUiState.elsewhere,
+                    describeVerse = viewModel::describeVerse,
+                    surahOfPage = viewModel::surahOfPage,
+                    onGo = viewModel::goToSyncedPlace,
+                    onDismiss = viewModel::dismissElsewhere,
                 )
+                if (updates != null) UpdateBanner(updates = updates)
             }
         }
 
@@ -804,6 +816,13 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
             BackupScreen(
                 viewModel = viewModel,
                 onBack = { showBackup = false },
+                onOpenPlace = { point ->
+                    // Back to the page itself, through every screen stacked above it.
+                    showBackup = false
+                    showSettings = false
+                    showAbout = false
+                    viewModel.goToSyncedPlace(point)
+                },
             )
         }
 

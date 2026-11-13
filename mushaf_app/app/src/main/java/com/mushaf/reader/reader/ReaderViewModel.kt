@@ -30,6 +30,12 @@ import com.mushaf.reader.data.backup.CloudBackupWorker
 import com.mushaf.reader.data.backup.CloudStage
 import com.mushaf.reader.data.backup.CloudUiState
 import com.mushaf.reader.data.backup.FileBackupRepository
+import com.mushaf.reader.data.sync.CloudSyncRepository
+import com.mushaf.reader.data.sync.CloudSyncStore
+import com.mushaf.reader.data.sync.CloudSyncWorker
+import com.mushaf.reader.data.sync.PlacePoint
+import com.mushaf.reader.data.sync.ReadingSync
+import com.mushaf.reader.data.sync.SyncUiState
 import com.mushaf.reader.data.content.GharibMeaning
 import com.mushaf.reader.data.RootSearch
 import com.mushaf.reader.data.content.CenterExtrasRepository
@@ -143,6 +149,8 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     private val statsRepo = StatsRepository(app)
     private val backupRepo = FileBackupRepository(app)
     private val cloudRepo = CloudBackupRepository(app)
+    private val syncRepo = CloudSyncRepository(app)
+    private val syncStore = CloudSyncStore(app)
 
     private val recitationRepo = RecitationRepository(app)
 
@@ -857,6 +865,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         cloudRepo.upload(auto = false)
         loadCloudAccount()
         cloudUiState = cloudUiState.copy(backups = cloudRepo.list(), listLoaded = true)
+        syncReading(userAsked = false)
         "أُنشئ حسابك «$username» وحُفظت أول نسخة. احفظ كلمة المرور جيداً."
     }
 
@@ -866,6 +875,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         loadCloudAccount()
         val backups = cloudRepo.list()
         cloudUiState = cloudUiState.copy(backups = backups, listLoaded = true)
+        syncReading(userAsked = false)
         if (backups.isEmpty()) "مرحباً $username. لا توجد نسخ في حسابك بعد."
         else "مرحباً $username. اختر نسخة لاستعادتها على هذا الجهاز."
     }
@@ -875,6 +885,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             CloudBackupWorker.schedule(getApplication(), enabled = false)
             cloudRepo.signOut()
+            forgetSyncAccount()
             cloudUiState = CloudUiState(available = cloudRepo.isAvailable)
         }
     }
@@ -912,12 +923,133 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     fun cloudDeleteAccount(password: String) = runCloud(CloudStage.Deleting) {
         cloudRepo.deleteAccount(password)
         CloudBackupWorker.schedule(getApplication(), enabled = false)
+        forgetSyncAccount()
         cloudUiState = CloudUiState(available = cloudRepo.isAvailable)
         "حُذف حسابك وجميع نسخه من الخادم. بياناتك على هذا الجهاز باقية كما هي."
     }
 
     fun clearCloudFeedback() {
         cloudUiState = cloudUiState.copy(message = null, error = null)
+    }
+
+    // ── Reading sync between the reader's devices ──────────────────────────────
+
+    var syncUiState by mutableStateOf(SyncUiState())
+        private set
+
+    /** The app came to the front: see whether another device has read further since. */
+    fun onAppForeground() {
+        if (!syncRepo.isSignedIn) return
+        viewModelScope.launch { syncReading(userAsked = false) }
+    }
+
+    /**
+     * The app went to the background: report this page as where the reader stopped. Its time
+     * stays the moment the reader turned to it — stamping "now" here would make merely glancing
+     * at the app look like reading, and hide the newer place another device has to offer.
+     * The upload is left to [CloudSyncWorker] because the process may not live long enough.
+     */
+    fun onAppBackground() {
+        if (!syncRepo.isSignedIn) return
+        CloudSyncWorker.enqueue(getApplication())
+    }
+
+    /** "Sync now" in the history tab, which also reloads the history. */
+    fun syncNow() {
+        if (syncUiState.loading) return
+        viewModelScope.launch {
+            syncReading(userAsked = true)
+            if (syncUiState.error == null) loadSyncHistory()
+        }
+    }
+
+    /** Called when the history tab opens. */
+    fun refreshSyncHistory() {
+        if (!syncRepo.isSignedIn || syncUiState.loading) return
+        viewModelScope.launch {
+            syncReading(userAsked = false)
+            loadSyncHistory()
+        }
+    }
+
+    private suspend fun syncReading(userAsked: Boolean) {
+        syncUiState = syncUiState.copy(loading = true, error = null)
+        try {
+            val result = syncRepo.sync()
+            val local = syncStore.state()
+            val elsewhere = ReadingSync.elsewhere(
+                thisDeviceId = result.thisDeviceId,
+                localLatestAt = local.latestAt,
+                currentPage = lastPage,
+                localBookmarkKey = bookmarks.firstOrNull(),
+                devices = result.devices,
+                dismissedKey = local.dismissedKey,
+            )
+            if (result.khatmasAdded > 0) khatmas = statsRepo.allKhatmas()
+            syncUiState = syncUiState.copy(
+                loading = false,
+                elsewhere = elsewhere,
+                lastSyncAt = result.syncedAt,
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            syncUiState = syncUiState.copy(
+                loading = false,
+                lastSyncAt = syncStore.state().lastSyncAt,
+                error = if (userAsked) {
+                    (error as? BackupException)?.message ?: "تعذرت المزامنة. أعد المحاولة بعد قليل."
+                } else {
+                    null
+                },
+            )
+        }
+    }
+
+    private suspend fun loadSyncHistory() {
+        try {
+            syncUiState = syncUiState.copy(history = syncRepo.history())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // The tab keeps what it showed last; the sync line already says whether it is online.
+        }
+    }
+
+    /** Goes to [point] on this device — a page turn, never a bookmark. */
+    fun goToSyncedPlace(point: PlacePoint) {
+        restorePageRequest = point.page
+        point.verseKey?.let { flashSearchResult(it, point.page) }
+        dismissElsewhere()
+    }
+
+    /** "Not now": this offer stays away until that device moves on. */
+    fun dismissElsewhere() {
+        val key = syncUiState.elsewhere?.key ?: return
+        syncUiState = syncUiState.copy(elsewhere = null)
+        viewModelScope.launch { syncStore.setDismissed(key) }
+    }
+
+    /** "البقرة ٢٥٥" for a verse key, or null before the ayah index has loaded. */
+    fun describeVerse(verseKey: String): String? {
+        val page = ayahData.keyToPage[verseKey] ?: return null
+        val marker = ayahData.byPage[page]?.firstOrNull { it.verseKey == verseKey } ?: return null
+        return "${marker.surahNameAr} ${marker.ayahNumber.toArabicDigits()}"
+    }
+
+    /** The surah a page opens with, for "ص ٤٢ · البقرة". */
+    fun surahOfPage(page: Int): String? = ayahData.byPage[page]?.firstOrNull()?.surahNameAr
+
+    private suspend fun recordBookmarkForSync(verseKey: String?) {
+        val page = verseKey?.let { ayahData.keyToPage[it] }
+        syncStore.recordBookmark(verseKey, page, System.currentTimeMillis())
+        if (syncRepo.isSignedIn) CloudSyncWorker.enqueue(getApplication())
+    }
+
+    private suspend fun forgetSyncAccount() {
+        CloudSyncWorker.cancel(getApplication())
+        syncStore.forgetAccount()
+        syncUiState = SyncUiState()
     }
 
     /** Runs one cloud operation behind the busy state; [block] returns the success message. */
@@ -1110,7 +1242,10 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleBookmark(ayah: AyahMarker) {
         val next = if (bookmarks.contains(ayah.verseKey)) emptySet() else setOf(ayah.verseKey)
         bookmarks = next
-        viewModelScope.launch { store.setBookmarks(next) }
+        viewModelScope.launch {
+            store.setBookmarks(next)
+            recordBookmarkForSync(next.firstOrNull())
+        }
     }
 
     private fun bookmarkPage(): Int? = bookmarks.firstOrNull()?.let { ayahData.keyToPage[it] }
@@ -1137,6 +1272,12 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
      *  (→ "read" if long enough), marks the new page visited, and persists the reading position. */
     fun onPageVisible(page: Int) {
         readingSession.changePage(page)
+        // Only a real move counts as reading here: reopening the app on its saved page is not news
+        // for the other device, and must not hide a newer place found there.
+        if (page != lastPage) {
+            val now = System.currentTimeMillis()
+            viewModelScope.launch { syncStore.setPageAt(now) }
+        }
         saveLastPage(page)
     }
 
@@ -1261,6 +1402,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             statsRepo.saveKhatma(now, started, days, pageCount)
             khatmas = statsRepo.allKhatmas()
+            if (syncRepo.isSignedIn) CloudSyncWorker.enqueue(getApplication())
             resetKhatmaProgressInternal(now)
         }
     }
