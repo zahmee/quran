@@ -145,6 +145,9 @@ play {
     // DRAFT: the build lands in Play as a draft and reaches no tester until it is
     // rolled out by hand. Switch to COMPLETED once a release should go out directly.
     releaseStatus.set(ReleaseStatus.DRAFT)
+    // Name every release after its version. Left unset, an upload that updates an existing draft
+    // keeps that draft's old name: 0.18.1 reached production listed as "0.16.0".
+    releaseName.set(android.defaultConfig.versionName)
 }
 
 dependencies {
