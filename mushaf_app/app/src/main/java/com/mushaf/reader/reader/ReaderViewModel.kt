@@ -314,9 +314,15 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     val palette: MushafPalette get() = paletteFor(themeId)
 
     /** When on, the page fills the screen (width-fill + scroll on wide screens, height-stretch
-     *  on tall screens); when off, the whole page is fitted and centered. */
-    var fillScreen by mutableStateOf(initialSettings.fillScreen)
+     *  on tall screens); when off, the whole page is fitted and centered. Kept once for a
+     *  narrow screen and once for a wide one, so unfolding a phone brings back the choice
+     *  made unfolded, and folding it the choice made folded. */
+    var fillScreenNarrow by mutableStateOf(initialSettings.fillScreen)
         private set
+    var fillScreenWide by mutableStateOf(initialSettings.fillScreenWide)
+        private set
+
+    fun fillScreen(wide: Boolean): Boolean = if (wide) fillScreenWide else fillScreenNarrow
 
     /** When on, pages turn vertically (swipe up/down) instead of horizontally. */
     var verticalPaging by mutableStateOf(initialSettings.verticalPaging)
@@ -535,9 +541,11 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setThemeId(value) }
     }
 
-    fun toggleFillScreen() {
-        fillScreen = !fillScreen
-        viewModelScope.launch { store.setFillScreen(fillScreen) }
+    /** Flips the choice for the kind of screen being read on, and leaves the other alone. */
+    fun toggleFillScreen(wide: Boolean) {
+        val value = !fillScreen(wide)
+        if (wide) fillScreenWide = value else fillScreenNarrow = value
+        viewModelScope.launch { store.setFillScreen(wide, value) }
     }
 
     fun updateVerticalPaging(value: Boolean) {
@@ -1164,7 +1172,8 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun applyRestoredSnapshot(snapshot: BackupSnapshot) {
         val value = snapshot.reading.settings
         themeId = value.themeId
-        fillScreen = value.fillScreen
+        fillScreenNarrow = value.fillScreen
+        fillScreenWide = value.fillScreenWide
         verticalPaging = value.verticalPaging
         keepScreenOn = value.keepScreenOn
         edgeMargin = value.edgeMargin

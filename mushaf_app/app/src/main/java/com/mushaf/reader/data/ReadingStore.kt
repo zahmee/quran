@@ -69,6 +69,13 @@ class ReadingStore(private val context: Context) {
          *  A reader who prefers the whole page framed turns it off once. */
         const val DEFAULT_FILL_SCREEN = true
 
+        /** From this width up a screen is "wide" and keeps its own fill choice: Android's own
+         *  line between compact and medium windows. A folded phone is below it, the same phone
+         *  unfolded is above it, and so are a tablet and a phone turned on its side. */
+        const val WIDE_SCREEN_DP = 600
+
+        fun isWideScreen(widthDp: Int): Boolean = widthDp >= WIDE_SCREEN_DP
+
         /** Header buttons are drawn at the larger size by default — they are touched mid-read, at
          *  arm's length, often one-handed. */
         const val DEFAULT_BIG_BUTTONS = true
@@ -136,7 +143,12 @@ class ReadingStore(private val context: Context) {
     private val keyThemeId = stringPreferencesKey("theme_id")
     // Superseded by keyThemeId; still read once so installs from before the palettes keep their look.
     private val keyDarkTheme = booleanPreferencesKey("dark_theme")
+    // The narrow screen's value (a phone, a folded phone). It kept the original key, so
+    // every install from before the split already has its value here.
     private val keyFillScreen = booleanPreferencesKey("fill_screen")
+    // The wide screen's value (an unfolded phone, a tablet, a phone on its side). Absent
+    // until the reader first changes it there; until then it follows the narrow value.
+    private val keyFillScreenWide = booleanPreferencesKey("fill_screen_wide")
     private val keyVisitedPages = stringSetPreferencesKey("visited_pages")
     private val keyReadPages = stringSetPreferencesKey("read_pages")
     private val keyHiddenButtons = stringSetPreferencesKey("hidden_header_buttons")
@@ -236,6 +248,8 @@ class ReadingStore(private val context: Context) {
         val lastPage: Int,
         val themeId: String,
         val fillScreen: Boolean,
+        /** [fillScreen] for a wide screen; see [ReadingStore.isWideScreen]. */
+        val fillScreenWide: Boolean = fillScreen,
         val visitedPages: Set<Int>,
         val readPages: Set<Int>,
         val hiddenButtons: Set<String>,
@@ -328,6 +342,7 @@ class ReadingStore(private val context: Context) {
             themeId = prefs[keyThemeId]
                 ?: if (prefs[keyDarkTheme] == true) DARK_THEME_ID else DEFAULT_THEME_ID,
             fillScreen = prefs[keyFillScreen] ?: DEFAULT_FILL_SCREEN,
+            fillScreenWide = prefs[keyFillScreenWide] ?: prefs[keyFillScreen] ?: DEFAULT_FILL_SCREEN,
             // A page counted as read was necessarily opened. Builds before the rule was enforced
             // at the point of writing could leave a read page with no visited entry, so the union
             // is taken on the way out: the khatma map, and any backup made from it, stay
@@ -389,6 +404,7 @@ class ReadingStore(private val context: Context) {
             prefs[keyBookmarks2] = state.bookmarks2
             prefs[keyThemeId] = value.themeId
             prefs[keyFillScreen] = value.fillScreen
+            prefs[keyFillScreenWide] = value.fillScreenWide
             prefs[keyVisitedPages] = value.visitedPages.mapTo(HashSet()) { it.toString() }
             prefs[keyReadPages] = value.readPages.mapTo(HashSet()) { it.toString() }
             prefs[keyHiddenButtons] = value.hiddenButtons
@@ -629,8 +645,8 @@ class ReadingStore(private val context: Context) {
         context.dataStore.edit { it[keyThemeId] = value }
     }
 
-    suspend fun setFillScreen(value: Boolean) {
-        context.dataStore.edit { it[keyFillScreen] = value }
+    suspend fun setFillScreen(wide: Boolean, value: Boolean) {
+        context.dataStore.edit { it[if (wide) keyFillScreenWide else keyFillScreen] = value }
     }
 
     suspend fun setHiddenButtons(values: Set<String>) {
