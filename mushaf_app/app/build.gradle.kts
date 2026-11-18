@@ -163,7 +163,11 @@ val syncTestTracks = tasks.register<Exec>("syncTestTracks") {
     environment("PYTHONIOENCODING", "utf-8")
     commandLine("python", rootProject.file("tools/sync_test_tracks.py").absolutePath)
 }
-tasks.matching { it.name == "publishReleaseBundle" || it.name == "promoteReleaseArtifact" }
+// It hangs off the plugin's commit task, not off the publish tasks: those only fill an open edit,
+// and the commit comes after them. Finalizing the publish task ran the script in between, and
+// the edit it opens made Play delete the pending one ("This Edit has been deleted", 0.19.0).
+// The commit task exists only when something is published, so that is still when it runs.
+rootProject.tasks.matching { it.name.startsWith("commitEditFor") }
     .configureEach { finalizedBy(syncTestTracks) }
 
 dependencies {
