@@ -411,7 +411,7 @@ internal fun ShareImageSheet(
                             coroutines.launch {
                                 try {
                                     val uri = ShareImageExport.toCache(context, bmp, fileName)
-                                    context.startActivity(ShareImageExport.chooser(uri, reference))
+                                    context.startActivity(ShareImageExport.chooser(uri, ShareImageExport.withAppLink(reference)))
                                     onDismiss()
                                 } catch (e: CancellationException) {
                                     throw e

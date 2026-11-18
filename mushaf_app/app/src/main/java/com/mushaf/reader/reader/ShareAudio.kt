@@ -365,7 +365,11 @@ internal fun AudioActions(
                 try {
                     val uri = ShareImageExport.uriFor(context, clip.file)
                     context.startActivity(
-                        ShareImageExport.chooser(uri, caption(ayahs, reciter), ShareImageExport.AUDIO_MIME)
+                        ShareImageExport.chooser(
+                            uri,
+                            ShareImageExport.withAppLink(caption(ayahs, reciter)),
+                            ShareImageExport.AUDIO_MIME,
+                        )
                     )
                     onDismiss()
                 } catch (e: Exception) {
