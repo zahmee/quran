@@ -28,8 +28,15 @@ cd mushaf_app && ./gradlew :app:assembleDebug --offline
 ```
 
 ```bash
-emulator -avd Quran_API_36 -no-snapshot-load -no-boot-anim
+emulator -avd FoldDevice -no-boot-anim
 ```
+
+**`FoldDevice` is the default emulator**: a Pixel Fold, API 35, Google Play image,
+opening unfolded at 2208x1840. Its Gboard already has English + العربية, and the
+state is saved in its quick-boot snapshot (`default_boot`) and its user data, so a
+normal start comes back with that keyboard. Do not pass `-no-snapshot-load` or
+`-wipe-data` unless you mean to lose that. (`Quran_API_36` no longer exists;
+`QuranTest054` is a plain phone if a phone shape is needed.)
 
 Run that in the background, then block until it is really up — `wait-for-device`
 returns long before the launcher exists:
@@ -49,10 +56,23 @@ adb install -r mushaf_app/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.mushaf.reader/.MainActivity
 ```
 
-## 2. Coordinates
+## 2. Helpers and coordinates
 
-Valid for **`Quran_API_36`, 1080x2400, API 36**. On any other device re-derive them
-rather than guessing:
+On `FoldDevice`, skip fixed coordinates: source the helpers and tap by label.
+
+```bash
+SCR="<scratchpad, Windows-style with forward slashes>"; . .claude/skills/run-app/emu.sh
+tap "المزيد"; tap "البحث"     # open search
+type_ar "المقربين"            # type Arabic with the on-screen keys
+texts                         # read what is on screen
+shot s1                       # screenshot of the inner display to $SCR/s1.png
+```
+
+FoldDevice has **two displays**. A bare `screencap` writes a warning into the PNG;
+`shot` names the inner display.
+
+The table below is for the old phone-shaped `Quran_API_36` (1080x2400). On any other
+device, re-derive coordinates rather than guessing:
 
 ```bash
 adb shell uiautomator dump /sdcard/ui.xml && adb shell cat /sdcard/ui.xml > "$SCRATCH/ui.xml"
@@ -72,6 +92,16 @@ is `{"fill", "hide"}`, so a fresh install shows only those two plus settings.
 
 ## 3. Typing Arabic — the part that matters
 
+**On `FoldDevice`, use `type_ar` first.** It taps Gboard's Arabic keys one by one,
+so there is no clipboard involved and none of the `????????` failures. Checked
+2026-11-18: `نور` and `المقربين` typed correctly and searched. Its limits:
+- it only fits the unfolded screen in its split-keyboard layout;
+- Gboard must be on العربية (the space bar reads «العربية»; tap the globe key or
+  long-press space to switch);
+- it stops at أ إ آ ئ, which need a long press. Type those with the clipboard
+  route below.
+
+The clipboard route below is the fallback, and the only route on a phone AVD.
 Three obvious routes are all dead ends on this image:
 
 - `adb shell input text "عربي"` → `NullPointerException` from `KeyCharacterMap`. ASCII only.
