@@ -181,6 +181,7 @@ import com.mushaf.reader.ui.theme.StatusRedColor
 import com.mushaf.reader.ui.theme.pageRecolor
 import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.QuranPagePosition
+import com.mushaf.reader.data.ReadingStore
 import com.mushaf.reader.data.SurahAyahCounts
 import com.mushaf.reader.data.ExplanationTextScale
 import com.mushaf.reader.data.content.MukhtasarText
@@ -232,6 +233,9 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     var showBackup by remember { mutableStateOf(false) }
     var showTafsirLibrary by remember { mutableStateOf(false) }
     var headerVisible by remember { mutableStateOf(true) }
+    // Unfolding or folding a phone changes this, and with it which fill choice is in force.
+    val wideScreen = ReadingStore.isWideScreen(LocalConfiguration.current.screenWidthDp)
+    val fillScreen = viewModel.fillScreen(wideScreen)
     var showReciterPicker by remember { mutableStateOf(false) }
     // The ayah the memorisation sheet starts from, while it is open.
     var repeatFrom by remember { mutableStateOf<AyahRef?>(null) }
@@ -332,7 +336,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                         paletteId = viewModel.themeId,
                         hasBookmark = viewModel.bookmarks.isNotEmpty(),
                         hasBookmark2 = viewModel.bookmarks2.isNotEmpty(),
-                        fillScreen = viewModel.fillScreen,
+                        fillScreen = fillScreen,
                         bigButtons = viewModel.bigButtons,
                         showClock = viewModel.showClock,
                         showSessionTimer = viewModel.showSessionTimer,
@@ -358,7 +362,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                             showIndex = true
                         },
                         onOpenSearch = { showSearch = true },
-                        onToggleFillScreen = { viewModel.toggleFillScreen() },
+                        onToggleFillScreen = { viewModel.toggleFillScreen(wideScreen) },
                         onHideHeader = { headerVisible = false },
                         onListen = {
                             viewModel.markersForPage(currentPage).firstOrNull()?.let {
@@ -411,7 +415,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     viewModel = viewModel,
                     pagerState = pagerState,
                     selected = selected,
-                    fillScreen = viewModel.fillScreen,
+                    fillScreen = fillScreen,
                     verticalPaging = viewModel.verticalPaging,
                     readerVisible = canRead,
                     updates = updates,

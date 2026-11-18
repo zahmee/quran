@@ -94,6 +94,8 @@ internal class ShareSession(val page: Int, val ayah: AyahMarker?, readingPalette
     var kind by mutableStateOf(if (ayah != null) ShareKind.Ayah else ShareKind.Page)
     var paletteId by mutableStateOf(readingPaletteId)
     var framed by mutableStateOf(true)
+    /** A run of ayahs: set the surah's printed header above it, as the mushaf does. */
+    var withHeader by mutableStateOf(true)
     /** The chosen run once one has been picked — on this page or running over the next ones. */
     var run by mutableStateOf<List<AyahMarker>?>(null)
     /** True while [AyahRangePicker] is up in place of the sheet. */
@@ -207,7 +209,11 @@ internal fun ShareImageSheet(
     }
     val drawHighlight = if (format == ShareFormat.Video && videoHighlight) audioAyahs.firstOrNull() else null
     val drawFramed = format == ShareFormat.Video || session.framed
-    val drawKey = listOf(drawScope, session.paletteId, drawFramed, format == ShareFormat.Video, drawHighlight?.verseKey)
+    // The video keeps its header, as it keeps its frame: it is what says which surah is recited.
+    val drawHeader = format == ShareFormat.Video || session.withHeader
+    val drawKey = listOf(
+        drawScope, session.paletteId, drawFramed, drawHeader, format == ShareFormat.Video, drawHighlight?.verseKey,
+    )
     // The picture on show may still be the one before a change; only this one may be sent.
     var imageKey by remember { mutableStateOf<Any?>(null) }
     val imageReady = image != null && imageKey == drawKey && !rendering
@@ -217,7 +223,7 @@ internal fun ShareImageSheet(
         rendering = true
         try {
             val palette = paletteFor(session.paletteId)
-            val card = renderer.render(target, markersFor, palette, drawFramed, drawHighlight)
+            val card = renderer.render(target, markersFor, palette, drawFramed, drawHighlight, drawHeader)
             val shown = if (format == ShareFormat.Video) {
                 withContext(Dispatchers.Default) { VideoFrame.compose(card, palette.paper.toArgb()) }
             } else card
@@ -341,6 +347,22 @@ internal fun ShareImageSheet(
                     }
 
                 }
+                if (format == ShareFormat.Image && drawScope is ShareScope.Ayahs) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("ترويسة السورة", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "إطار اسم السورة كما في المصحف، فوق الآيات.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = session.withHeader, onCheckedChange = { session.withHeader = it })
+                    }
+                }
                 if (format == ShareFormat.Image) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -411,7 +433,7 @@ internal fun ShareImageSheet(
                             coroutines.launch {
                                 try {
                                     val uri = ShareImageExport.toCache(context, bmp, fileName)
-                                    context.startActivity(ShareImageExport.chooser(uri, reference))
+                                    context.startActivity(ShareImageExport.chooser(uri, ShareImageExport.withAppLink(reference)))
                                     onDismiss()
                                 } catch (e: CancellationException) {
                                     throw e

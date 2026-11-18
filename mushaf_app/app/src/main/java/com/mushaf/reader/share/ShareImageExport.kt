@@ -46,6 +46,12 @@ object ShareImageExport {
     /** The content:// URI of a file made by [sharedFile]. */
     fun uriFor(context: Context, file: File): Uri = FileProvider.getUriForFile(context, authority(context), file)
 
+    /** The app's Play listing. Fixed to the release id, so a debug build still links the real app. */
+    const val STORE_LINK = "https://play.google.com/store/apps/details?id=com.mushaf.reader"
+
+    /** [caption] followed by a line inviting the reader to the app. */
+    fun withAppLink(caption: String): String = "$caption\n\nتطبيق نتلو: $STORE_LINK"
+
     /** The system share sheet for [uri], with [caption] for the apps that take one (WhatsApp does). */
     fun chooser(uri: Uri, caption: String, mimeType: String = "image/png"): Intent {
         val send = Intent(Intent.ACTION_SEND).apply {

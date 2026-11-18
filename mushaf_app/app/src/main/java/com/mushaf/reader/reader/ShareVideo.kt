@@ -134,7 +134,7 @@ internal fun VideoActions(
                         context.startActivity(
                             ShareImageExport.chooser(
                                 ShareImageExport.uriFor(context, file),
-                                caption(ayahs, reciter),
+                                ShareImageExport.withAppLink(caption(ayahs, reciter)),
                                 ShareImageExport.VIDEO_MIME,
                             )
                         )

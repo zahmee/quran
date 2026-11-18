@@ -290,6 +290,38 @@ class BackupJsonCodecTest {
     }
 
     @Test
+    fun `the narrow and wide fill choices survive a round trip apart`() {
+        val decoded = BackupJsonCodec.decode(
+            BackupJsonCodec.encode(
+                snapshot(settings = settings().copy(fillScreen = true, fillScreenWide = false))
+            ),
+            pageCount,
+        ).reading.settings
+        assertTrue(decoded.fillScreen)
+        assertFalse(decoded.fillScreenWide)
+    }
+
+    @Test
+    fun `a backup from before the wide fill choice uses its one value on every screen`() {
+        val data = mutate { settings ->
+            settings.put("fillScreen", true)
+            settings.remove("fillScreenWide")
+        }
+        val decoded = BackupJsonCodec.decode(data, pageCount).reading.settings
+        assertTrue(decoded.fillScreen)
+        assertTrue(decoded.fillScreenWide)
+    }
+
+    @Test
+    fun `a folded phone is narrow and the same phone unfolded is wide`() {
+        // Pixel Fold: about 411dp wide folded, 841dp unfolded.
+        assertFalse(ReadingStore.isWideScreen(411))
+        assertTrue(ReadingStore.isWideScreen(841))
+        assertFalse(ReadingStore.isWideScreen(ReadingStore.WIDE_SCREEN_DP - 1))
+        assertTrue(ReadingStore.isWideScreen(ReadingStore.WIDE_SCREEN_DP))
+    }
+
+    @Test
     fun `the curved-edge margin survives a round trip`() {
         val decoded = BackupJsonCodec.decode(
             BackupJsonCodec.encode(

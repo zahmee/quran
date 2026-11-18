@@ -89,6 +89,7 @@ object BackupJsonCodec {
         .put("lastPage", value.lastPage)
         .put("themeId", value.themeId)
         .put("fillScreen", value.fillScreen)
+        .put("fillScreenWide", value.fillScreenWide)
         .put("visitedPages", intArray(value.visitedPages))
         .put("readPages", intArray(value.readPages))
         .put("hiddenButtons", stringArray(value.hiddenButtons))
@@ -151,6 +152,11 @@ object BackupJsonCodec {
                 else ReadingStore.DEFAULT_THEME_ID,
             ),
             fillScreen = settingsJson.optBoolean("fillScreen", false),
+            // Backups from before the split carry one value, which was used on every screen.
+            fillScreenWide = settingsJson.optBoolean(
+                "fillScreenWide",
+                settingsJson.optBoolean("fillScreen", false),
+            ),
             visitedPages = visitedPages,
             readPages = readPages,
             hiddenButtons = stringSet(settingsJson.getJSONArray("hiddenButtons"), 100),

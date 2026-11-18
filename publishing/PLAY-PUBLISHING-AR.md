@@ -49,6 +49,14 @@ mushaf_app/play-service-account.json
 | `./gradlew :app:bundleRelease` | يبني AAB موقّعًا فقط، بلا رفع |
 | `./gradlew :app:publishReleaseBundle` | يبني AAB ويرفعه إلى المسار المضبوط |
 | `./gradlew :app:promoteReleaseArtifact --from-track internal --promote-track production` | يرقّي إصدارًا مرفوعًا من مسار إلى آخر |
+| `python tools/sync_test_tracks.py` | ينسخ إصدار الإنتاج إلى مسارات الاختبار المتأخرة عنه (`--dry-run` للعرض فقط) |
+
+**مسارات الاختبار تتبع الإنتاج تلقائيًا:** بعد كل `publishReleaseBundle` أو
+`promoteReleaseArtifact` تعمل مهمة `syncTestTracks`، فتنسخ إصدار الإنتاج (الحزمة نفسها
+وملاحظاتها، بلا رفع جديد) إلى كل مسار اختبار فيه إصدار أقدم. لا تلمس مسارًا فارغًا، ولا
+مسارًا فيه رقم إصدار مساوٍ أو أحدث، فالرفع الافتراضي إلى الداخلي كمسودة لا يتأثر.
+لتخطّيها مرة واحدة أضف `-PskipTestTrackSync`. وهي تكلّم الـAPI مباشرة لأن Gradle على
+ويندوز يحوّل اسم المسار العربي «الاختبار المغلق» إلى علامات استفهام فيرد Play بـ 404.
 
 يقبل `check_play_tracks.py` خيارين: `--notes` ليطبع ملاحظات كل إصدار كاملة،
 و`--json` ليطبع رد الـAPI خامًا. يفتح معاملة تحرير مؤقتة ويحذفها بعد القراءة،

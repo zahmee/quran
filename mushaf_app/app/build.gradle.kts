@@ -150,6 +150,22 @@ play {
     releaseName.set(android.defaultConfig.versionName)
 }
 
+// After every upload or promotion, copy the production release onto the testing tracks that are
+// behind it (internal, "الاختبار المغلق"). Play never does this itself: those tracks sat on
+// 0.6.9 while production reached 0.18.1. The script leaves alone any track already at or past
+// production's version code, so an upload to internal as a draft (the default above) is a no-op.
+// Skip it for one run with -PskipTestTrackSync.
+val syncTestTracks = tasks.register<Exec>("syncTestTracks") {
+    description = "Copies the production release onto testing tracks that are behind it"
+    group = "publishing"
+    onlyIf { playCredentialsFile.exists() && !providers.gradleProperty("skipTestTrackSync").isPresent }
+    workingDir = rootDir
+    environment("PYTHONIOENCODING", "utf-8")
+    commandLine("python", rootProject.file("tools/sync_test_tracks.py").absolutePath)
+}
+tasks.matching { it.name == "publishReleaseBundle" || it.name == "promoteReleaseArtifact" }
+    .configureEach { finalizedBy(syncTestTracks) }
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
