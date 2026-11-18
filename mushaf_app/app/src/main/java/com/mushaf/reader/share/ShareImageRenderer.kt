@@ -3,11 +3,14 @@ package com.mushaf.reader.share
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapRegionDecoder
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.PorterDuff
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.os.Build
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidColorFilter
 import androidx.compose.ui.graphics.lerp
@@ -46,8 +49,9 @@ sealed interface ShareScope {
  * the mushaf's own script and every mark of it.
  *
  * An ayah is cut out of the page by [InkOwnership], recolored the way the reader recolors the page
- * for the chosen theme, and — when [framed] — set in a double hairline frame with the surah name
- * above and the reference and the app's name below.
+ * for the chosen theme, and — when [framed] — set in a double hairline frame with the reference and
+ * the app's name below. Above it goes the surah's printed header ([SurahHeaders]), or, when the
+ * header is turned off, the surah's name in type inside the frame.
  *
  * Layout runs in "card units": the card is 1080 units wide, and a unit is sized so the page's text
  * lands on the image pixel for pixel. The page assets are the sharpest source there is; scaling
@@ -73,7 +77,8 @@ class ShareImageRenderer(context: Context) {
     /**
      * [markersFor] gives the ayahs of a page: every one of them decides who owns the ink.
      * [highlight], when given, is lit the way the reader lights a selected ayah — the video uses it
-     * to show which ayah is being recited.
+     * to show which ayah is being recited. [withHeader] sets the surah's printed header above a run
+     * of ayahs; a whole page carries its own.
      */
     suspend fun render(
         scope: ShareScope,
@@ -81,15 +86,54 @@ class ShareImageRenderer(context: Context) {
         palette: MushafPalette,
         framed: Boolean,
         highlight: AyahMarker? = null,
+        withHeader: Boolean = true,
     ): Bitmap = withContext(Dispatchers.Default) {
         val cut = cut(scope, markersFor)
         val text = recolor(cut.bitmap, palette)
         if (highlight != null) light(text, highlight, cut, palette)
-        val card = if (framed) frame(text, cut.pageWidth, scope, markersFor, palette)
-        else plain(text, cut.pageWidth, palette)
+        val surah = (scope as? ShareScope.Ayahs)?.ayahs?.first()?.surahNumber
+        val header = if (withHeader && surah != null) header(surah)?.let { recolor(it, palette) } else null
+        val card = if (framed) frame(text, header, cut.pageWidth, scope, markersFor, palette)
+        else plain(text, header, cut.pageWidth, palette)
         text.recycle()
+        header?.recycle()
         card
     }
+
+    // One header decoded is kept: a video draws the same one on every still.
+    private var cachedHeaderSurah = 0
+    private var cachedHeader: Bitmap? = null
+
+    /** [surah]'s printed header in the asset's own colors, or null if it cannot be read. Cached,
+     *  so never recycled by the caller. */
+    private fun header(surah: Int): Bitmap? = synchronized(this) {
+        if (cachedHeaderSurah == surah) cachedHeader?.let { return it }
+        val bitmap = runCatching {
+            when (val source = SurahHeaders.source(surah)) {
+                is SurahHeaders.Asset ->
+                    app.assets.open(source.path).use { BitmapFactory.decodeStream(it, null, argb()) }
+                // Only the band is decoded, not the page around it.
+                is SurahHeaders.OnPage -> app.assets.open("pages/${source.page}.webp").use { input ->
+                    val decoder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        BitmapRegionDecoder.newInstance(input)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        BitmapRegionDecoder.newInstance(input, false)
+                    }
+                    try {
+                        decoder?.decodeRegion(Rect(source.left, source.top, source.right, source.bottom), argb())
+                    } finally {
+                        decoder?.recycle()
+                    }
+                }
+            }
+        }.getOrNull()
+        cachedHeader = bitmap
+        cachedHeaderSurah = surah
+        bitmap
+    }
+
+    private fun argb() = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
 
     /** The page, or the scope's ayahs alone on white, still in the asset's own colors. */
     private fun cut(scope: ShareScope, markersFor: (Int) -> List<AyahMarker>): Cut = synchronized(this) {
@@ -131,11 +175,8 @@ class ShareImageRenderer(context: Context) {
     }
 
     private fun decode(page: Int): Bitmap =
-        app.assets.open("pages/$page.webp").use {
-            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply {
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            })
-        } ?: error("page $page did not decode")
+        app.assets.open("pages/$page.webp").use { BitmapFactory.decodeStream(it, null, argb()) }
+            ?: error("page $page did not decode")
 
     /**
      * Cuts from consecutive pages, one under the next, so the text reads on. No rule between them:
@@ -229,18 +270,24 @@ class ShareImageRenderer(context: Context) {
         return out
     }
 
-    private fun plain(text: Bitmap, pageWidth: Int, palette: MushafPalette): Bitmap {
+    private fun plain(text: Bitmap, header: Bitmap?, pageWidth: Int, palette: MushafPalette): Bitmap {
         val pad = (pageWidth * PLAIN_PAD).roundToInt()
-        val out = Bitmap.createBitmap(text.width + 2 * pad, text.height + 2 * pad, Bitmap.Config.ARGB_8888)
+        // A one-line ayah is trimmed to its own width; the header keeps the text block's, so the
+        // image is as wide as the wider of the two.
+        val width = maxOf(text.width, header?.width ?: 0) + 2 * pad
+        val headerBlock = header?.let { it.height + HEADER_GAP } ?: 0
+        val out = Bitmap.createBitmap(width, headerBlock + text.height + 2 * pad, Bitmap.Config.ARGB_8888)
         Canvas(out).apply {
             drawColor(palette.paper.toArgb())
-            drawBitmap(text, pad.toFloat(), pad.toFloat(), null)
+            header?.let { drawBitmap(it, (width - it.width) / 2f, pad.toFloat(), null) }
+            drawBitmap(text, (width - text.width) / 2f, (pad + headerBlock).toFloat(), null)
         }
         return out
     }
 
     private fun frame(
         text: Bitmap,
+        header: Bitmap?,
         pageWidth: Int,
         scope: ShareScope,
         markersFor: (Int) -> List<AyahMarker>,
@@ -257,8 +304,9 @@ class ShareImageRenderer(context: Context) {
         val plex = ResourcesCompat.getFont(app, R.font.ibm_plex_sans_arabic_medium) ?: Typeface.DEFAULT
 
         val first = (scope as? ShareScope.Ayahs)?.ayahs?.firstOrNull()
-        // A page carries its own printed surah headers; only a cut-out ayah needs a title.
-        val title = first?.let { "سورة ${it.surahNameAr}" }
+        // A page carries its own printed surah headers; only a cut-out ayah needs a title, and
+        // its printed header is that title when there is one.
+        val title = first?.takeIf { header == null }?.let { "سورة ${it.surahNameAr}" }
         val (reference, detail) = labels(scope, markersFor)
 
         val titlePaint = textPaint(naskh, 44 * u, accent)
@@ -269,7 +317,11 @@ class ShareImageRenderer(context: Context) {
         val inset = 26 * u
         val padX = 52 * u
         val padTop = (if (title != null) 44 else 34) * u
-        val titleBlock = if (title != null) 70 * u + 26 * u else 0f
+        val titleBlock = when {
+            header != null -> header.height + HEADER_GAP.toFloat()
+            title != null -> 70 * u + 26 * u
+            else -> 0f
+        }
         val footBlock = 26 * u + 22 * u + 50 * u
         val padBottom = 34 * u
         val width = (CARD_UNITS * u).roundToInt()
@@ -289,7 +341,11 @@ class ShareImageRenderer(context: Context) {
         val right = width - inset - padX
         var y = inset + padTop
 
-        if (title != null) {
+        if (header != null) {
+            // At the page's own scale, like the text under it.
+            c.drawBitmap(header, (width - header.width) / 2f, y, Paint(Paint.FILTER_BITMAP_FLAG))
+            y += titleBlock
+        } else if (title != null) {
             val baseline = y + 50 * u
             val cx = width / 2f
             titlePaint.textAlign = Paint.Align.CENTER
@@ -364,6 +420,10 @@ class ShareImageRenderer(context: Context) {
         /** Anything darker than this in any channel counts as ink. High on purpose: it takes in the
          *  anti-aliased rim of every letter, which would otherwise be left behind as a halo. */
         private const val INK_BELOW = 246
+
+        /** Paper between a surah header and the text under it, in page pixels: about the space
+         *  the mushaf leaves between a header and the basmala. */
+        private const val HEADER_GAP = 18
 
         /** Unframed images: paper around the text, as a fraction of the text's width. */
         private const val PLAIN_PAD = 0.045f
