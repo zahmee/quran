@@ -1,0 +1,8 @@
+# HyperFrames: render output, local caches and preview state
+*/renders/
+*/.hyperframes/
+*/.thumbnails/
+*/.waveform-cache/
+node_modules/
+# Raw screen recordings from the emulator (large); see README.md to capture them again
+*/assets/app/*.mp4

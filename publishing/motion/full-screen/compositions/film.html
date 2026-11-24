@@ -1,0 +1,167 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "Alexandria";
+      src: url("assets/fonts/Alexandria.ttf");
+      font-weight: 100 900;
+    }
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: #f6f0e4;
+      color: #173126;
+      font-family: "Alexandria";
+      direction: rtl;
+    }
+    .fs-ground { position: absolute; inset: 0; background: radial-gradient(120% 70% at 50% 40%, #fbf7ee 0%, #f6f0e4 55%, #ece3d0 100%); }
+
+    .fs-band { position: absolute; left: 140px; right: 150px; top: 250px; height: 300px; text-align: center; }
+    .fs-band h1 { font-size: 112px; font-weight: 800; line-height: 1.18; }
+    .fs-band h2 { font-size: 84px; font-weight: 800; line-height: 1.2; }
+    .fs-band p { font-size: 44px; font-weight: 500; color: #6d7a6f; margin-bottom: 18px; }
+    .fs-band .w { display: inline-block; }
+    .acc { color: #2f7a52; }
+    .red { color: #c8322f; }
+
+    #fs-cam { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; transform-origin: 0 0; }
+    #fs-phone { position: absolute; left: 226px; top: 506px; width: 628px; height: 1361px; border-radius: 60px; background: #0e241b; box-shadow: 0 40px 90px rgba(20, 52, 40, .28); }
+    #fs-screen { position: absolute; left: 14px; top: 14px; width: 600px; height: 1333px; border-radius: 46px; overflow: hidden; background: #fffdf7; }
+    #fs-screen video { position: absolute; left: 0; top: 0; width: 600px; height: 1333px; object-fit: cover; }
+
+    /* touch: a soft gold fingertip, in screen pixels so it scales with the camera */
+    #fs-touch { position: absolute; z-index: 3; left: 0; top: 0; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; background: rgba(179, 148, 88, .55); border: 2px solid #b39458; opacity: 0; }
+    #fs-ring { position: absolute; z-index: 2; left: 0px; top: 62px; width: 48px; height: 60px; border: 3px solid #b39458; border-radius: 14px; opacity: 0; }
+
+    #fs-veil { position: absolute; left: 0; top: 0; width: 1080px; height: 640px; background: linear-gradient(#f6f0e4 0, #f6f0e4 540px, rgba(246, 240, 228, 0) 600px); }
+
+    #fs-end { position: absolute; inset: 0; }
+    .fs-end-in { position: absolute; left: 140px; right: 150px; top: 700px; text-align: center; }
+    .fs-end-in h1 { font-size: 100px; font-weight: 800; line-height: 1.35; }
+    .fs-end-in p { margin-top: 44px; font-size: 46px; font-weight: 500; color: #6d7a6f; }
+    .fs-rule { width: 220px; height: 3px; margin: 40px auto 0; background: #b39458; }
+  </style>
+
+  <div id="root" data-composition-id="film" data-width="1080" data-height="1920">
+    <div class="fs-ground"></div>
+
+    <div id="fs-cam" data-layout-allow-overflow>
+      <div id="fs-phone">
+        <div id="fs-screen">
+          <video id="fs-vid" class="clip" src="assets/app/hide-header.mp4" data-start="0" data-duration="9.3" data-media-start="0" data-track-index="3" muted playsinline></video>
+          <div id="fs-ring"></div>
+          <div id="fs-touch"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="fs-veil"></div>
+
+    <div id="fs-t-hook" class="fs-band clip" data-start="0" data-duration="1.25" data-track-index="5">
+      <h1><span class="w">اقرأ</span> <span class="w acc">بلا مشتتات</span></h1>
+    </div>
+    <div id="fs-t-tap" class="fs-band clip" data-start="1.25" data-duration="1.05" data-track-index="5">
+      <p>في رأس الصفحة</p>
+      <h2><span class="w">المس</span> <span class="w">زر</span> <span class="w acc">التوسيع</span></h2>
+    </div>
+    <div id="fs-t-page" class="fs-band clip" data-start="2.35" data-duration="0.9" data-track-index="5">
+      <p>اختفى الرأس</p>
+      <h2><span class="w">الصفحة</span> <span class="w acc">كلها لك</span></h2>
+    </div>
+    <div id="fs-t-chip" class="fs-band clip" data-start="3.3" data-duration="0.95" data-track-index="5">
+      <p>وفي الزاوية</p>
+      <h2><span class="w">زر</span> <span class="w">برقم</span> <span class="w red">الصفحة</span></h2>
+    </div>
+    <div id="fs-t-drag" class="fs-band clip" data-start="4.3" data-duration="1.9" data-track-index="5">
+      <p>يضايقك مكانه؟</p>
+      <h2><span class="w">اسحبه</span> <span class="w acc">حيث تريد</span></h2>
+    </div>
+    <div id="fs-t-back" class="fs-band clip" data-start="6.3" data-duration="2.85" data-track-index="5">
+      <p>تحتاج الأزرار؟</p>
+      <h2><span class="w">المسه</span> <span class="w acc">ليعود الرأس</span></h2>
+    </div>
+
+    <div id="fs-end" class="clip" data-start="9.2" data-duration="2.4" data-track-index="6">
+      <div class="fs-end-in">
+        <h1><span class="w">توسيع</span><br /><span class="w acc">مساحة القراءة</span></h1>
+        <div class="fs-rule" id="fs-rule"></div>
+        <p id="fs-end-sub">زر التوسيع في رأس الصفحة · نتلو</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const tl = gsap.timeline({ paused: true });
+
+      // The 1080x2400 recording is drawn 600 px wide at (240, 520) on the canvas.
+      const S = 600 / 1080, SX = 240, SY = 520;
+      const cam = (k, sx, sy, tx, ty) => ({ scale: k, x: tx - k * (SX + sx * S), y: ty - k * (SY + sy * S) });
+      const WHOLE = { scale: 0.92, x: 43, y: 150 };   // whole phone, top at ~615 px, clear of the title band
+
+      const HIDE_BTN = [158, 53];     // «توسيع مساحة القراءة» in the header (source px)
+      const CHIP_TOP = [42, 160];     // floating header button, where it appears
+      const CHIP_LOW = [42, 1075];    // ... where the drag leaves it
+
+      const words = (sel, at) => tl.fromTo(`${sel} .w`, { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.16, stagger: 0.08, ease: "power4.out" }, at);
+      const lineIn = (sel, at) => tl.fromTo(`${sel} p`, { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, ease: "power4.out" }, at);
+      const out = (sel, at) => tl.to(sel, { opacity: 0, filter: "blur(8px)", duration: 0.16, ease: "power3.in" }, at);
+      // fingertip in screen pixels
+      const at = (sx, sy) => ({ x: sx * S, y: sy * S });
+      const tap = (sx, sy, t) => {
+        tl.set("#fs-touch", { ...at(sx, sy) }, t - 0.3);
+        tl.fromTo("#fs-touch", { opacity: 0, scale: 1.5 }, { opacity: 1, scale: 1, duration: 0.2, ease: "power2.out", immediateRender: false }, t - 0.3);
+        tl.to("#fs-touch", { scale: 0.8, duration: 0.1, ease: "power2.in" }, t - 0.08);
+        tl.to("#fs-touch", { opacity: 0, scale: 1.1, duration: 0.25, ease: "power2.out" }, t + 0.1);
+      };
+
+      tl.set("#fs-cam", WHOLE, 0);
+      tl.set("#fs-touch", { opacity: 0 }, 0);
+      tl.set("#fs-ring", { opacity: 0 }, 0);
+
+      // ---- HOOK (frame 0: the line and the real app)
+      out("#fs-t-hook", 1.1);
+
+      // ---- TAP «توسيع»: push into the header button
+      tl.to("#fs-cam", { ...cam(2.6, HIDE_BTN[0], HIDE_BTN[1], 430, 780), duration: 0.7, ease: "power2.inOut" }, 0.95);
+      lineIn("#fs-t-tap", 1.25); words("#fs-t-tap", 1.3);
+      tap(HIDE_BTN[0], HIDE_BTN[1], 1.92);
+      out("#fs-t-tap", 2.15);
+
+      // ---- header gone: pull back to the whole page
+      tl.to("#fs-cam", { ...WHOLE, duration: 0.75, ease: "power2.inOut" }, 2.15);
+      lineIn("#fs-t-page", 2.35); words("#fs-t-page", 2.4);
+      out("#fs-t-page", 3.1);
+
+      // ---- the floating button
+      tl.to("#fs-cam", { ...cam(2.3, CHIP_TOP[0], CHIP_TOP[1], 330, 820), duration: 0.7, ease: "power2.inOut" }, 3.05);
+      tl.fromTo("#fs-ring", { opacity: 0, scale: 1.4 }, { opacity: 1, scale: 1, duration: 0.4, ease: "expo.out", immediateRender: false }, 3.5);
+      tl.to("#fs-ring", { opacity: 0, duration: 0.15, ease: "power3.in" }, 4.05);
+      lineIn("#fs-t-chip", 3.3); words("#fs-t-chip", 3.35);
+      out("#fs-t-chip", 4.1);
+
+      // ---- drag it down: the camera rides with it (source drag 4.18 → 5.35 s)
+      tl.set("#fs-touch", { ...at(CHIP_TOP[0], CHIP_TOP[1] + 20) }, 3.95);
+      tl.fromTo("#fs-touch", { opacity: 0, scale: 1.5 }, { opacity: 1, scale: 0.85, duration: 0.2, ease: "power2.out", immediateRender: false }, 3.95);
+      tl.to("#fs-touch", { ...at(CHIP_LOW[0], CHIP_LOW[1] + 20), duration: 1.2, ease: "power1.inOut" }, 4.18);
+      tl.to("#fs-touch", { opacity: 0, duration: 0.2, ease: "power2.out" }, 5.45);
+      tl.to("#fs-cam", { ...cam(2.3, CHIP_LOW[0], CHIP_LOW[1], 330, 1000), duration: 1.3, ease: "power2.inOut" }, 4.15);
+      lineIn("#fs-t-drag", 4.3); words("#fs-t-drag", 4.35);
+      out("#fs-t-drag", 6.05);
+
+      // ---- tap it: the header comes back (source 7.77 s)
+      lineIn("#fs-t-back", 6.3); words("#fs-t-back", 6.35);
+      tap(CHIP_LOW[0], CHIP_LOW[1] + 15, 7.7);
+      tl.to("#fs-cam", { ...WHOLE, duration: 0.8, ease: "power2.inOut" }, 7.95);
+      out("#fs-t-back", 9.0);
+      tl.to("#fs-phone", { opacity: 0, filter: "blur(12px)", duration: 0.22, ease: "power3.in" }, 9.0);
+
+      // ---- END
+      words("#fs-end", 9.25);
+      tl.fromTo("#fs-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "expo.out" }, 9.55);
+      tl.fromTo("#fs-end-sub", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, ease: "power4.out" }, 9.7);
+
+      window.__timelines["film"] = tl;
+    })();
+  </script>
+</template>

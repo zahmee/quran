@@ -1,0 +1,218 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "Alexandria";
+      src: url("assets/fonts/Alexandria.ttf");
+      font-weight: 100 900;
+    }
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: #f6f0e4;
+      color: #173126;
+      font-family: "Alexandria";
+      direction: rtl;
+    }
+    .ps-ground { position: absolute; inset: 0; background: radial-gradient(120% 70% at 50% 40%, #fbf7ee 0%, #f6f0e4 55%, #ece3d0 100%); }
+
+    /* ---------- titles (top band, 170–480) ---------- */
+    .ps-band { position: absolute; left: 140px; right: 150px; top: 250px; height: 300px; text-align: center; }
+    .ps-band h1 { font-size: 112px; font-weight: 800; line-height: 1.18; letter-spacing: 0; }
+    .ps-band h2 { font-size: 86px; font-weight: 800; line-height: 1.2; }
+    .ps-band p { font-size: 44px; font-weight: 500; color: #6d7a6f; margin-bottom: 18px; }
+    .ps-band .w { display: inline-block; }
+    .acc { color: #2f7a52; }
+    .gold { color: #b39458; }
+    .num { font-weight: 900; }
+
+    /* ---------- drawn paper mushaf ---------- */
+    #ps-book { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+    .ps-book-in { position: absolute; left: 270px; top: 700px; width: 540px; height: 380px; transform-origin: 50% 50%; }
+    .leaf { position: absolute; top: 0; width: 270px; height: 380px; border: 5px solid #8b958c; background: #fffdf7; display: grid; place-items: center; }
+    .leaf.r { right: 0; border-radius: 6px 26px 26px 6px; border-left-width: 2.5px; }
+    .leaf.l { left: 0; border-radius: 26px 6px 6px 26px; border-right-width: 2.5px; }
+    .leaf .tint { position: absolute; inset: 0; background: #234f3d; opacity: 0; border-radius: inherit; }
+    .leaf b { position: relative; font-size: 124px; font-weight: 900; color: #173126; }
+    .leaf i { position: absolute; top: 34px; bottom: 34px; width: 3px; background: #c9cfc8; }
+    .leaf.r i { left: 18px; } .leaf.l i { right: 18px; }
+    .ps-cap { position: absolute; top: 1120px; width: 270px; text-align: center; font-size: 56px; font-weight: 700; }
+    .ps-cap.r { right: 270px; } .ps-cap.l { left: 270px; }
+    .ps-cap small { display: block; font-size: 40px; font-weight: 500; color: #6d7a6f; }
+
+    /* ---------- phone ---------- */
+    #ps-cam { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; transform-origin: 0 0; }
+    #ps-phone { position: absolute; left: 226px; top: 506px; width: 628px; height: 1361px; border-radius: 60px; background: #0e241b; box-shadow: 0 40px 90px rgba(20, 52, 40, .28); }
+    #ps-screen { position: absolute; left: 14px; top: 14px; width: 600px; height: 1333px; border-radius: 46px; overflow: hidden; background: #fffdf7; }
+    #ps-screen video, #ps-screen img { position: absolute; left: 0; top: 0; width: 600px; height: 1333px; object-fit: cover; }
+    .ps-media { width: 100%; height: 100%; }
+
+    #ps-veil { position: absolute; left: 0; top: 0; width: 1080px; height: 640px; background: linear-gradient(#f6f0e4 0, #f6f0e4 540px, rgba(246, 240, 228, 0) 600px); pointer-events: none; }
+    #ps-hl { position: absolute; z-index: 2; left: 18px; top: 934px; width: 564px; height: 132px; border: 4px solid #b39458; border-radius: 20px; box-shadow: 0 0 0 9999px rgba(23, 49, 38, .18); }
+
+    .ps-mk { position: absolute; z-index: 2; top: 622px; width: 44px; height: 88px; border: 3px solid #b39458; border-radius: 22px; opacity: 0; }
+    #ps-mk-r { left: 572px; } #ps-mk-l { left: -16px; }
+
+    /* end card */
+    #ps-end { position: absolute; inset: 0; }
+    .ps-end-in { position: absolute; left: 140px; right: 150px; top: 640px; text-align: center; }
+    .ps-end-in h1 { font-size: 112px; font-weight: 800; line-height: 1.35; }
+    .ps-end-in p { margin-top: 44px; font-size: 46px; font-weight: 500; color: #6d7a6f; }
+    .ps-rule { width: 220px; height: 3px; margin: 40px auto 0; background: #b39458; transform-origin: 50% 50%; }
+  </style>
+
+  <div id="root" data-composition-id="film" data-width="1080" data-height="1920">
+    <div class="ps-ground"></div>
+
+    <!-- drawn paper mushaf (hook) -->
+    <div id="ps-book" class="clip" data-start="0" data-duration="3.6" data-track-index="2" data-layout-allow-overlap>
+      <div class="ps-book-in" id="ps-book-in">
+        <div class="leaf r" id="ps-leaf-r"><span class="tint" id="ps-tint-r"></span><i></i><b>٢٩٣</b></div>
+        <div class="leaf l" id="ps-leaf-l"><span class="tint" id="ps-tint-l"></span><i></i><b>٢٩٤</b></div>
+      </div>
+      <div class="ps-cap r" id="ps-cap-r">فردية<small>يمين</small></div>
+      <div class="ps-cap l" id="ps-cap-l">زوجية<small>يسار</small></div>
+    </div>
+
+    <!-- the real app, inside a phone, behind a camera -->
+    <div id="ps-cam" data-layout-allow-overflow>
+      <div id="ps-phone">
+        <div id="ps-screen">
+          <video id="ps-vid-head" class="clip" src="assets/app/turn-header.mp4" data-start="2.7" data-duration="6.8" data-media-start="0.6" data-track-index="3" muted playsinline></video>
+          <video id="ps-vid-full" class="clip" src="assets/app/turn-full.mp4" data-start="9.4" data-duration="2.9" data-media-start="1.3" data-track-index="3" muted playsinline></video>
+          <div id="ps-hl"></div>
+          <div id="ps-mk-r" class="ps-mk"></div>
+          <div id="ps-mk-l" class="ps-mk"></div>
+          <img id="ps-img-set" class="clip" src="assets/app/settings-indicator.png" data-start="12.2" data-duration="1.3" data-track-index="3" alt="" />
+        </div>
+      </div>
+    </div>
+
+    <!-- paper veil: keeps the title band readable when the camera fills the frame -->
+    <div id="ps-veil"></div>
+
+    <!-- titles -->
+    <div id="ps-t-hook" class="ps-band clip" data-start="0" data-duration="2.75" data-track-index="5">
+      <h1><span class="w">صفحة</span> <span class="w acc">يمين</span><br /><span class="w">أم</span> <span class="w acc">يسار؟</span></h1>
+    </div>
+    <div id="ps-t-293" class="ps-band clip" data-start="3.2" data-duration="1.2" data-track-index="5">
+      <p>في رأس الصفحة</p>
+      <h2><span class="w num">٢٩٣</span> <span class="w">فردية</span> <span class="w gold">←</span> <span class="w acc">يمين</span></h2>
+    </div>
+    <div id="ps-t-294" class="ps-band clip" data-start="4.75" data-duration="3.3" data-track-index="5">
+      <p>قلّبتَ الصفحة</p>
+      <h2><span class="w num">٢٩٤</span> <span class="w">زوجية</span> <span class="w gold">←</span> <span class="w acc">يسار</span></h2>
+    </div>
+    <div id="ps-t-295" class="ps-band clip" data-start="8.45" data-duration="0.95" data-track-index="5">
+      <p>وهكذا دائمًا</p>
+      <h2><span class="w num">٢٩٥</span> <span class="w">فردية</span> <span class="w gold">←</span> <span class="w acc">يمين</span></h2>
+    </div>
+    <div id="ps-t-full-r" class="ps-band clip" data-start="9.4" data-duration="1.25" data-track-index="5">
+      <p>وفي ملء الشاشة إشارة على الحافة</p>
+      <h2><span class="w num">٢٩٣</span> <span class="w gold">←</span> <span class="w acc">اليمين</span></h2>
+    </div>
+    <div id="ps-t-full-l" class="ps-band clip" data-start="10.7" data-duration="1.5" data-track-index="5">
+      <p>وفي ملء الشاشة إشارة على الحافة</p>
+      <h2><span class="w num">٢٩٤</span> <span class="w gold">←</span> <span class="w acc">اليسار</span></h2>
+    </div>
+    <div id="ps-t-set" class="ps-band clip" data-start="12.2" data-duration="1.15" data-track-index="5">
+      <p>شغّلها من</p>
+      <h2 style="font-size: 74px"><span class="w">الإعدادات</span> <span class="w gold">←</span> <span class="w acc">الواجهة</span></h2>
+    </div>
+
+    <!-- end -->
+    <div id="ps-end" class="clip" data-start="13.3" data-duration="1.7" data-track-index="6">
+      <div class="ps-end-in">
+        <h1><span class="w">الفردية</span> <span class="w acc">يمين</span><br /><span class="w">الزوجية</span> <span class="w acc">يسار</span></h1>
+        <div class="ps-rule" id="ps-rule"></div>
+        <p id="ps-end-sub">كما في المصحف الورقي · نتلو</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const tl = gsap.timeline({ paused: true });
+
+      // Phone screen geometry: the 1080x2400 recording drawn 600 px wide at (240, 520).
+      const S = 600 / 1080, SX = 240, SY = 520;
+      const pt = (sx, sy) => [SX + sx * S, SY + sy * S];
+      // Camera: scale k about origin 0,0, placing source point (sx, sy) at canvas point (tx, ty).
+      const cam = (k, sx, sy, tx, ty) => { const [px, py] = pt(sx, sy); return { scale: k, x: tx - k * px, y: ty - k * py }; };
+
+      const BADGE = [540, 169];          // page badge in the header (source px)
+      const EDGE_R = [1068, 1200];       // full-screen side marker, right edge
+      const EDGE_L = [12, 1200];         // full-screen side marker, left edge
+      const SET_ROW = [540, 1780];       // «إشارة اتجاه الصفحة» row in settings
+
+      const words = (sel, at) => tl.fromTo(`${sel} .w`, { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.16, stagger: 0.08, ease: "power4.out" }, at);
+      const lineIn = (sel, at) => tl.fromTo(`${sel} p`, { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, ease: "power4.out" }, at);
+      const out = (sel, at) => tl.to(sel, { opacity: 0, filter: "blur(8px)", duration: 0.18, ease: "power3.in" }, at);
+
+      tl.set("#ps-screen", { filter: "blur(0px)" }, 0);
+      tl.set("#ps-hl", { opacity: 0 }, 0);
+      tl.set(".ps-mk", { opacity: 0 }, 0);
+
+      // ---- HOOK: question on frame 0, the paper mushaf draws in under it
+      tl.set("#ps-t-hook .w", { opacity: 1, filter: "blur(0px)" }, 0);
+      tl.fromTo("#ps-leaf-r", { opacity: 0, x: 40 }, { opacity: 1, x: 0, duration: 0.6, ease: "expo.out" }, 0.15);
+      tl.fromTo("#ps-leaf-l", { opacity: 0, x: 40 }, { opacity: 1, x: 0, duration: 0.6, ease: "expo.out" }, 0.3);
+      // right leaf lights, then the left
+      tl.fromTo("#ps-tint-r", { opacity: 0 }, { opacity: 0.16, duration: 0.3, ease: "power2.out" }, 0.75);
+      tl.fromTo("#ps-cap-r", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, ease: "power4.out" }, 0.8);
+      tl.to("#ps-tint-r", { opacity: 0, duration: 0.3, ease: "power2.inOut" }, 1.55);
+      tl.fromTo("#ps-tint-l", { opacity: 0 }, { opacity: 0.16, duration: 0.3, ease: "power2.out" }, 1.55);
+      tl.fromTo("#ps-cap-l", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, ease: "power4.out" }, 1.6);
+      tl.to("#ps-tint-l", { opacity: 0, duration: 0.25, ease: "power2.inOut" }, 2.35);
+      tl.fromTo("#ps-tint-r", { opacity: 0 }, { opacity: 0.16, duration: 0.25, ease: "power2.out", immediateRender: false }, 2.35);
+      out("#ps-t-hook", 2.5);
+      tl.to(["#ps-cap-r", "#ps-cap-l"], { opacity: 0, filter: "blur(8px)", duration: 0.18, ease: "power3.in" }, 2.5);
+
+      // ---- MATCH: the drawn mushaf shrinks into the app's page badge
+      const START = cam(2.4, BADGE[0], BADGE[1], 540, 820);
+      tl.set("#ps-cam", START, 0);
+      tl.set("#ps-phone", { opacity: 0 }, 0);
+      tl.fromTo("#ps-book-in", { scale: 1, x: 0, y: 0 }, { scale: 0.46, x: 0, y: 820 - 890, duration: 0.7, ease: "power2.inOut" }, 2.65);
+      tl.to("#ps-phone", { opacity: 1, duration: 0.35, ease: "power2.out" }, 2.95);
+      tl.to("#ps-book-in", { opacity: 0, duration: 0.25, ease: "power2.in" }, 3.25);
+
+      // ---- HEADER: the app turns 293 → 294 → 295
+      lineIn("#ps-t-293", 3.2); words("#ps-t-293", 3.25); out("#ps-t-293", 4.2);
+      lineIn("#ps-t-294", 4.75); words("#ps-t-294", 4.8);
+      // pull back for context while 294 sits, then push in again before the next turn
+      tl.to("#ps-cam", { ...cam(1.18, 540, 1200, 540, 1383), duration: 0.8, ease: "power2.inOut" }, 5.9);
+      tl.to("#ps-cam", { ...START, duration: 0.7, ease: "power2.inOut" }, 7.1);
+      out("#ps-t-294", 7.85);
+      lineIn("#ps-t-295", 8.45); words("#ps-t-295", 8.5);
+      out("#ps-t-295", 9.2);
+
+      // ---- FULL SCREEN: the edge marker, right then left
+      tl.set("#ps-cam", cam(2.1, EDGE_R[0], EDGE_R[1], 870, 1060), 9.4);
+      tl.fromTo("#ps-screen", { filter: "blur(10px)" }, { filter: "blur(0px)", duration: 0.2, ease: "power2.out", immediateRender: false }, 9.4);
+      tl.fromTo("#ps-mk-r", { opacity: 0, scale: 1.4 }, { opacity: 1, scale: 1, duration: 0.4, ease: "expo.out", immediateRender: false }, 9.6);
+      tl.to("#ps-mk-r", { opacity: 0, duration: 0.15, ease: "power3.in" }, 10.15);
+      tl.fromTo("#ps-mk-l", { opacity: 0, scale: 1.4 }, { opacity: 1, scale: 1, duration: 0.4, ease: "expo.out", immediateRender: false }, 11.05);
+      lineIn("#ps-t-full-r", 9.45); words("#ps-t-full-r", 9.5);
+      out("#ps-t-full-r", 10.45);
+      tl.to("#ps-cam", { ...cam(2.1, EDGE_L[0], EDGE_L[1], 210, 1060), duration: 0.85, ease: "power2.inOut" }, 10.2);
+      tl.set("#ps-t-full-l p", { opacity: 1 }, 10.7);
+      words("#ps-t-full-l", 10.75);
+      out("#ps-t-full-l", 12.0);
+
+      // ---- SETTINGS: where to switch it on
+      tl.set("#ps-cam", cam(1.75, SET_ROW[0], SET_ROW[1], 540, 1080), 12.2);
+      tl.fromTo("#ps-screen", { filter: "blur(10px)" }, { filter: "blur(0px)", duration: 0.2, ease: "power2.out", immediateRender: false }, 12.2);
+      tl.fromTo("#ps-hl", { opacity: 0, scale: 1.06 }, { opacity: 1, scale: 1, duration: 0.35, ease: "expo.out", immediateRender: false }, 12.45);
+      lineIn("#ps-t-set", 12.25); words("#ps-t-set", 12.3);
+      out("#ps-t-set", 13.15);
+      tl.to("#ps-phone", { opacity: 0, filter: "blur(12px)", duration: 0.22, ease: "power3.in" }, 13.1);
+
+      // ---- END
+      words("#ps-end", 13.35);
+      tl.fromTo("#ps-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "expo.out" }, 13.7);
+      tl.fromTo("#ps-end-sub", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, ease: "power4.out" }, 13.85);
+
+      window.__timelines["film"] = tl;
+    })();
+  </script>
+</template>
