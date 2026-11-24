@@ -27,6 +27,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.ui.theme.AyahSelectionColor
+import com.mushaf.reader.ui.theme.NoteColor
 import com.mushaf.reader.ui.theme.MushafPalette
 import com.mushaf.reader.ui.theme.PageRecolor
 import kotlin.math.min
@@ -74,11 +76,19 @@ fun MushafPage(
     selectedAyah: AyahMarker?,
     /** Each bookmarked verse key and the colour of the bookmark on it. */
     bookmarkColors: Map<String, Color>,
+    /** The ayahs that carry a note, and how strongly their mark shows. */
+    noteMarks: NoteMarks = NoteMarks(),
     onLongPressAyah: (AyahMarker, Offset, Rect) -> Unit,
     fillScreen: Boolean = false,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit = { _, _, _ -> },
 ) {
     val highlight = selectedAyah?.takeIf { markers.contains(it) }
+    val noted = remember(markers, noteMarks) {
+        PageNoteMarks(
+            markers = if (noteMarks.keys.isEmpty()) emptyList() else markers.filter { it.verseKey in noteMarks.keys },
+            alpha = noteMarks.alpha,
+        )
+    }
     val bookmarked = remember(markers, bookmarkColors) {
         if (bookmarkColors.isEmpty()) emptyList()
         else markers.mapNotNull { m -> bookmarkColors[m.verseKey]?.let { m to it } }
@@ -102,17 +112,17 @@ fun MushafPage(
         when {
             !fillScreen -> WholePage(
                 model, recolor, markers, fitScale, wPx, hPx, imgW, imgH,
-                bookmarked, highlight, onLongPressAyah, pageOverlay
+                bookmarked, noted, highlight, onLongPressAyah, pageOverlay
             )
 
             widthConstrained -> StretchedPage(
                 model, recolor, markers, fitScale, wPx, hPx, imgW, imgH,
-                bookmarked, highlight, onLongPressAyah, pageOverlay
+                bookmarked, noted, highlight, onLongPressAyah, pageOverlay
             )
 
             else -> FilledWidthPage(
                 model, recolor, palette, markers, wPx, hPx, imgW, imgH,
-                bookmarked, highlight, onLongPressAyah, pageOverlay
+                bookmarked, noted, highlight, onLongPressAyah, pageOverlay
             )
         }
     }
@@ -130,6 +140,7 @@ private fun WholePage(
     imgW: Float,
     imgH: Float,
     bookmarked: List<Pair<AyahMarker, Color>>,
+    noted: PageNoteMarks,
     highlight: AyahMarker?,
     onLongPressAyah: (AyahMarker, Offset, Rect) -> Unit,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
@@ -167,6 +178,7 @@ private fun WholePage(
             recolor = recolor,
             baseScale = fitScale,
             bookmarked = bookmarked,
+            noted = noted,
             highlight = highlight,
             pageOverlay = pageOverlay,
             viewportTop = { 0f },
@@ -187,6 +199,7 @@ private fun StretchedPage(
     imgW: Float,
     imgH: Float,
     bookmarked: List<Pair<AyahMarker, Color>>,
+    noted: PageNoteMarks,
     highlight: AyahMarker?,
     onLongPressAyah: (AyahMarker, Offset, Rect) -> Unit,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
@@ -230,6 +243,7 @@ private fun StretchedPage(
             recolor = recolor,
             baseScale = fitScale,
             bookmarked = bookmarked,
+            noted = noted,
             highlight = highlight,
             pageOverlay = pageOverlay,
             viewportTop = { 0f },
@@ -256,6 +270,7 @@ private fun FilledWidthPage(
     imgW: Float,
     imgH: Float,
     bookmarked: List<Pair<AyahMarker, Color>>,
+    noted: PageNoteMarks,
     highlight: AyahMarker?,
     onLongPressAyah: (AyahMarker, Offset, Rect) -> Unit,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
@@ -297,6 +312,7 @@ private fun FilledWidthPage(
                 recolor = recolor,
                 baseScale = scale,
                 bookmarked = bookmarked,
+                noted = noted,
                 highlight = highlight,
                 pageOverlay = pageOverlay,
                 viewportTop = { scrollState.value.toFloat() },
@@ -394,6 +410,7 @@ private fun PageContent(
     recolor: PageRecolor,
     baseScale: Float,
     bookmarked: List<Pair<AyahMarker, Color>>,
+    noted: PageNoteMarks,
     highlight: AyahMarker?,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
     viewportTop: () -> Float,
@@ -415,6 +432,27 @@ private fun PageContent(
                         Modifier.drawWithContent {
                             drawContent()
                             drawRect(recolor.multiply, blendMode = BlendMode.Multiply)
+                        }
+                    } else Modifier
+                )
+                .then(
+                    // Inside the image's own draw, so the mark blends with the printed page
+                    // beneath it (see [drawNoteMark]) instead of sitting on top of the letters.
+                    if (noted.markers.isNotEmpty()) {
+                        Modifier.drawWithContent {
+                            drawContent()
+                            val darkPage = recolor.filter != null
+                            noted.markers.forEach { m ->
+                                val line = m.rects.firstOrNull { it.contains(m.centerX, m.centerY) }?.h
+                                    ?: m.rects.lastOrNull()?.h ?: return@forEach
+                                val reach = line * 0.42f
+                                drawNoteMark(
+                                    center = Offset((m.centerX + reach) * baseScale, (m.centerY - reach) * baseScale),
+                                    radius = line * 0.12f * baseScale,
+                                    alpha = noted.alpha,
+                                    darkPage = darkPage,
+                                )
+                            }
                         }
                     } else Modifier
                 )
@@ -461,5 +499,28 @@ private fun AyahMarker.screenBounds(sx: Float, sy: Float, dx: Float, dy: Float):
         top = rects.minOf { it.y } * sy + dy,
         right = rects.maxOf { it.x + it.w } * sx + dx,
         bottom = rects.maxOf { it.y + it.h } * sy + dy,
+    )
+}
+
+/** Which ayahs show the note mark, and at what strength (0..1). Empty keys hide every mark. */
+data class NoteMarks(val keys: Set<String> = emptySet(), val alpha: Float = 0.45f)
+
+/** The note marks of one page: its noted ayahs and the strength to draw them at. */
+internal data class PageNoteMarks(val markers: List<AyahMarker>, val alpha: Float)
+
+/**
+ * The note mark: a small dot beside the end-of-ayah sign, on the side of the ayah's own words.
+ *
+ * It is blended into the page, never painted over it. On light paper it multiplies: the paper
+ * under it takes the note colour while every letter and haraka stays as dark as printed. A dark
+ * page screens instead, so light letters stay light and the dark paper lifts toward the colour.
+ * Either way the reader sees through it to the text. [alpha] is how far the blend goes.
+ */
+internal fun DrawScope.drawNoteMark(center: Offset, radius: Float, alpha: Float, darkPage: Boolean) {
+    drawCircle(
+        color = NoteColor.copy(alpha = alpha.coerceIn(0f, 1f)),
+        radius = radius,
+        center = center,
+        blendMode = if (darkPage) BlendMode.Screen else BlendMode.Multiply,
     )
 }

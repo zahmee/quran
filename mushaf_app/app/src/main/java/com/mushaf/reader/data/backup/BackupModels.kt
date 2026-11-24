@@ -1,6 +1,7 @@
 package com.mushaf.reader.data.backup
 
 import com.mushaf.reader.data.ReadingStore
+import com.mushaf.reader.data.notes.NoteEntity
 import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.SessionEntity
 
@@ -16,6 +17,8 @@ data class BackupSnapshot(
     val reading: ReadingStore.BackupState,
     val sessions: List<SessionEntity>,
     val khatmas: List<KhatmaEntity>,
+    /** The reader's notes. Backups written before notes existed carry none. */
+    val notes: List<NoteEntity> = emptyList(),
 )
 
 /** The backup file the user saved to, or picked from, a location of their own choosing. */

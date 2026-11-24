@@ -1,6 +1,7 @@
 package com.mushaf.reader.data.backup
 
 import com.mushaf.reader.data.ReadingStore
+import com.mushaf.reader.data.notes.NoteEntity
 import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.SessionEntity
 import org.junit.Assert.assertEquals
@@ -90,6 +91,34 @@ class BackupMergeTest {
         )
         assertEquals(listOf("الحفظ", "الورد", "الليل", ""), merged.reading.bookmarkNames)
     }
+
+    // ── Notes: both sides, the later edit wins ──────────────────────────────────
+
+    @Test
+    fun `notes from both sides are kept, the later edit winning on the same place`() {
+        val merged = BackupMerge.merge(
+            local = snapshot(
+                notes = listOf(
+                    note(2, 255, "كتبتها هنا بعد النسخة", updatedAt = 500),
+                    note(18, 0, "على الكهف", updatedAt = 100),
+                ),
+            ),
+            incoming = snapshot(
+                notes = listOf(
+                    note(2, 255, "النسخة القديمة", updatedAt = 300),
+                    note(1, 1, "من الجهاز الآخر", updatedAt = 200),
+                ),
+            ),
+            takeDisplaySettings = false,
+        )
+        assertEquals(
+            listOf("1:1" to "من الجهاز الآخر", "2:255" to "كتبتها هنا بعد النسخة", "18:0" to "على الكهف"),
+            merged.notes.map { "${it.surah}:${it.ayah}" to it.text },
+        )
+    }
+
+    private fun note(surah: Int, ayah: Int, text: String, updatedAt: Long) =
+        NoteEntity(surah, ayah, text, createdAt = 1, updatedAt = updatedAt)
 
     // ── Display settings only on request ────────────────────────────────────────
 
@@ -219,6 +248,7 @@ class BackupMergeTest {
         names: List<String> = List(4) { "" },
         sessions: List<SessionEntity> = emptyList(),
         khatmas: List<KhatmaEntity> = emptyList(),
+        notes: List<NoteEntity> = emptyList(),
     ) = BackupSnapshot(
         backupId = "backup",
         createdAt = 1_700_000_000_000,
@@ -232,6 +262,7 @@ class BackupMergeTest {
         ),
         sessions = sessions,
         khatmas = khatmas,
+        notes = notes,
     )
 
     private fun settings(

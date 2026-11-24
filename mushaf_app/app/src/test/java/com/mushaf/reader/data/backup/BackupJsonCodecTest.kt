@@ -1,6 +1,7 @@
 package com.mushaf.reader.data.backup
 
 import com.mushaf.reader.data.ReadingStore
+import com.mushaf.reader.data.notes.NoteEntity
 import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.SessionEntity
 import org.json.JSONArray
@@ -244,6 +245,80 @@ class BackupJsonCodecTest {
     }
 
     @Test
+    fun `notes survive the round trip`() {
+        val notes = listOf(
+            NoteEntity(2, NoteEntity.SURAH_NOTE, "سورة الأحكام", createdAt = 10, updatedAt = 20),
+            NoteEntity(2, 255, "آية الكرسي\nسطر ثان", createdAt = 30, updatedAt = 40),
+        )
+        val decoded = BackupJsonCodec.decode(BackupJsonCodec.encode(snapshot(notes = notes)), pageCount)
+
+        assertEquals(notes, decoded.notes)
+    }
+
+    @Test
+    fun `a backup from before notes restores with none`() {
+        val data = mutateRoot { it.remove("notes") }
+
+        assertTrue(BackupJsonCodec.decode(data, pageCount).notes.isEmpty())
+    }
+
+    @Test
+    fun `a note on an ayah the surah does not have is rejected`() {
+        val data = mutateRoot {
+            it.put("notes", JSONArray().put(noteJson(surah = 1, ayah = 8)))
+        }
+        val error = assertThrows(BackupException::class.java) { BackupJsonCodec.decode(data, pageCount) }
+        assertTrue(error.message!!.contains("ملاحظة"))
+    }
+
+    @Test
+    fun `two notes on the same place are rejected`() {
+        val data = mutateRoot {
+            it.put("notes", JSONArray().put(noteJson(2, 255)).put(noteJson(2, 255)))
+        }
+        val error = assertThrows(BackupException::class.java) { BackupJsonCodec.decode(data, pageCount) }
+        assertTrue(error.message!!.contains("الموضع نفسه"))
+    }
+
+    @Test
+    fun `a blank note is rejected`() {
+        val data = mutateRoot {
+            it.put("notes", JSONArray().put(noteJson(2, 255, text = "   ")))
+        }
+        assertThrows(BackupException::class.java) { BackupJsonCodec.decode(data, pageCount) }
+    }
+
+    private fun noteJson(surah: Int, ayah: Int, text: String = "ملاحظة"): JSONObject = JSONObject()
+        .put("surah", surah)
+        .put("ayah", ayah)
+        .put("text", text)
+        .put("createdAt", 1L)
+        .put("updatedAt", 2L)
+
+    @Test
+    fun `a backup from before the note mark settings shows the mark as a new install does`() {
+        val data = mutate {
+            it.remove("showNoteMarks")
+            it.remove("noteMarkOpacity")
+        }
+        val settings = BackupJsonCodec.decode(data, pageCount).reading.settings
+
+        assertEquals(ReadingStore.DEFAULT_SHOW_NOTE_MARKS, settings.showNoteMarks)
+        assertEquals(ReadingStore.DEFAULT_NOTE_MARK_OPACITY, settings.noteMarkOpacity)
+    }
+
+    @Test
+    fun `note mark settings survive the round trip and an odd strength is brought into range`() {
+        val hidden = snapshot(settings = settings().copy(showNoteMarks = false, noteMarkOpacity = 80))
+        val decoded = BackupJsonCodec.decode(BackupJsonCodec.encode(hidden), pageCount).reading.settings
+        assertEquals(false, decoded.showNoteMarks)
+        assertEquals(80, decoded.noteMarkOpacity)
+
+        val odd = mutate { it.put("noteMarkOpacity", 400) }
+        assertEquals(100, BackupJsonCodec.decode(odd, pageCount).reading.settings.noteMarkOpacity)
+    }
+
+    @Test
     fun `a malformed fourth bookmark is rejected`() {
         val data = mutateRoot {
             it.getJSONObject("reading").put("bookmarks4", JSONArray(listOf("not-a-verse")))
@@ -484,6 +559,7 @@ class BackupJsonCodecTest {
         settings: ReadingStore.Settings = settings(),
         bookmarks: List<Set<String>> = listOf(setOf("2:255"), setOf("36:1"), setOf("18:10"), setOf("112:1")),
         names: List<String> = List(4) { "" },
+        notes: List<NoteEntity> = emptyList(),
         sessions: List<SessionEntity> = listOf(
             SessionEntity(
                 id = 1,
@@ -512,6 +588,7 @@ class BackupJsonCodecTest {
         reading = ReadingStore.BackupState(settings, bookmarks, names),
         sessions = sessions,
         khatmas = khatmas,
+        notes = notes,
     )
 
     private fun settings(

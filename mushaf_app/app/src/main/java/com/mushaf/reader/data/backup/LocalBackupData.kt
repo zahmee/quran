@@ -44,18 +44,22 @@ class LocalBackupData(context: Context) {
         reading = store.backupState(),
         sessions = database.sessionDao().allSessions(),
         khatmas = database.khatmaDao().all(),
+        notes = database.noteDao().all(),
     )
 
     private suspend fun replaceLocalData(snapshot: BackupSnapshot) {
         val previousReading = store.backupState()
         val previousSessions = database.sessionDao().allSessions()
         val previousKhatmas = database.khatmaDao().all()
+        val previousNotes = database.noteDao().all()
         try {
             database.withTransaction {
                 database.sessionDao().deleteAll()
                 database.khatmaDao().deleteAll()
+                database.noteDao().deleteAll()
                 if (snapshot.sessions.isNotEmpty()) database.sessionDao().insertAll(snapshot.sessions)
                 if (snapshot.khatmas.isNotEmpty()) database.khatmaDao().insertAll(snapshot.khatmas)
+                if (snapshot.notes.isNotEmpty()) database.noteDao().insertAll(snapshot.notes)
             }
             store.restoreBackupState(snapshot.reading)
         } catch (error: Exception) {
@@ -64,8 +68,10 @@ class LocalBackupData(context: Context) {
                 database.withTransaction {
                     database.sessionDao().deleteAll()
                     database.khatmaDao().deleteAll()
+                    database.noteDao().deleteAll()
                     if (previousSessions.isNotEmpty()) database.sessionDao().insertAll(previousSessions)
                     if (previousKhatmas.isNotEmpty()) database.khatmaDao().insertAll(previousKhatmas)
+                    if (previousNotes.isNotEmpty()) database.noteDao().insertAll(previousNotes)
                 }
                 store.restoreBackupState(previousReading)
             } catch (_: Exception) {

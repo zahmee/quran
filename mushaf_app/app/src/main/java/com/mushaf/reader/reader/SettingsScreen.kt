@@ -19,6 +19,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.Slider
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.style.TextAlign
+import kotlin.math.roundToInt
+import com.mushaf.reader.ui.theme.ReadingType
+import androidx.compose.material.icons.automirrored.outlined.StickyNote2
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
@@ -152,6 +164,10 @@ fun SettingsScreen(
     onPageSideIndicatorOpacityChange: (Int) -> Unit,
     edgeMargin: String,
     onEdgeMarginChange: (String) -> Unit,
+    showNoteMarks: Boolean,
+    onShowNoteMarksChange: (Boolean) -> Unit,
+    noteMarkOpacity: Int,
+    onNoteMarkOpacityChange: (Int) -> Unit,
     onBackup: () -> Unit,
     onAbout: () -> Unit,
     onTafsirLibrary: () -> Unit,
@@ -212,6 +228,26 @@ fun SettingsScreen(
                         checked = keepScreenOn,
                         onCheckedChange = onKeepScreenOnChange
                     )
+                }
+
+                SettingsPanel(
+                    title = "علامة الملاحظات",
+                    body = "نقطة صغيرة بجانب رقم كل آية كتبتَ عليها ملاحظة.",
+                    icon = Icons.AutoMirrored.Outlined.StickyNote2
+                ) {
+                    ToggleSettingRow(
+                        icon = Icons.AutoMirrored.Outlined.StickyNote2,
+                        title = "إظهار علامة الملاحظات على الآيات",
+                        body = "تُمزج العلامة بالصفحة فلا تحجب الحروف ولا التشكيل تحتها.",
+                        checked = showNoteMarks,
+                        onCheckedChange = onShowNoteMarksChange
+                    )
+                    if (showNoteMarks) {
+                        NoteMarkStrengthRow(
+                            percent = noteMarkOpacity,
+                            onPercentChange = onNoteMarkOpacityChange
+                        )
+                    }
                 }
 
                 SettingsPanel(
@@ -1553,4 +1589,65 @@ private fun SoftDivider() {
 @Composable
 private fun Panel(content: @Composable ColumnScope.() -> Unit) {
     MushafPanel(content = content)
+}
+
+/**
+ * How strongly the note mark shows, with the mark itself drawn live on a line of the mushaf's
+ * text at that strength — over a word on purpose, so the reader sees that the letters and their
+ * harakat stay readable underneath. The setting is written when the slider is let go.
+ */
+@Composable
+private fun NoteMarkStrengthRow(percent: Int, onPercentChange: (Int) -> Unit) {
+    val range = ReadingStore.NOTE_MARK_OPACITY_RANGE
+    var live by remember(percent) { mutableFloatStateOf(percent.toFloat()) }
+    val paper = MaterialTheme.colorScheme.surface
+    val darkPage = paper.luminance() < 0.5f
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "قوة العلامة",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = "${live.roundToInt().toArabicDigits()}٪",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Slider(
+            value = live,
+            onValueChange = { live = it },
+            onValueChangeFinished = { onPercentChange(live.roundToInt()) },
+            valueRange = range.first.toFloat()..range.last.toFloat(),
+            steps = (range.last - range.first) / 5 - 1,
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(paper)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+                .drawWithContent {
+                    drawContent()
+                    drawNoteMark(
+                        center = Offset(size.width * 0.34f, size.height * 0.42f),
+                        radius = size.height * 0.26f,
+                        alpha = live / 100f,
+                        darkPage = darkPage,
+                    )
+                }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "إِنَّ ٱللَّهَ كَانَ عَلَيْكُمْ رَقِيبًا",
+                style = ReadingType.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
 }

@@ -3,6 +3,8 @@ package com.mushaf.reader.reader
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.filled.StickyNote2
+import androidx.compose.material.icons.automirrored.outlined.StickyNote2
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Fullscreen
@@ -58,6 +60,10 @@ internal val HeaderActions = listOf(
     HeaderAction(
         "bookmark", "العلامات المرجعية", "اختيار إحدى العلامات الأربع والانتقال إليها.",
         Icons.Outlined.BookmarkBorder, Icons.Filled.Bookmark,
+    ),
+    HeaderAction(
+        "notes", "ملاحظاتي", "ما كتبته على الآيات والسور، في مكان واحد.",
+        Icons.AutoMirrored.Outlined.StickyNote2, Icons.AutoMirrored.Filled.StickyNote2,
     ),
     HeaderAction(
         "stats", "إحصائيات القراءة", "متابعة القراءة والختمة والجلسات.",

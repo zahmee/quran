@@ -59,6 +59,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.runtime.key
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.material.icons.automirrored.filled.StickyNote2
+import androidx.compose.material.icons.automirrored.outlined.StickyNote2
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import com.mushaf.reader.data.notes.NoteEntity
+import com.mushaf.reader.ui.theme.NoteColor
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.MenuBook
@@ -231,6 +239,9 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     var showSettings by remember { mutableStateOf(false) }
     var showBackup by remember { mutableStateOf(false) }
     var showBookmarkManager by remember { mutableStateOf(false) }
+    var showNotes by remember { mutableStateOf(false) }
+    // The place a note is being written on, from the ayah card or the notes list.
+    var noteTarget by remember { mutableStateOf<NoteTarget?>(null) }
     // What every bookmark menu (header bar, More menu, ayah card) reads and does.
     val bookmarkMenu = remember(viewModel) {
         BookmarkMenu(
@@ -266,7 +277,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
 
     // Screens are overlays in this activity, so its lifecycle alone cannot time reading.
     // Focus also excludes system pickers, update dialogs and other windows covering the reader.
-    val canRead = !showStatsScreen && !showKhatmaMap && !showIndex && !showSearch &&
+    val canRead = !showStatsScreen && !showKhatmaMap && !showIndex && !showSearch && !showNotes &&
+        noteTarget == null &&
         !showAbout && !showSettings && !showBackup && !showGoTo && selected == null && share == null &&
         fawaedPage == null &&
         !viewModel.backupUiState.busy && LocalWindowInfo.current.isWindowFocused
@@ -290,20 +302,23 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     BackHandler(enabled = showKhatmaMap) { showKhatmaMap = false }
     BackHandler(enabled = showIndex) { showIndex = false }
     BackHandler(enabled = showSearch) { showSearch = false }
+    BackHandler(enabled = showNotes) { showNotes = false }
     BackHandler(enabled = showSettings) { showSettings = false }
     // The backup screen opens above Settings, so Back returns to the Settings app tab.
     BackHandler(enabled = showBackup) { showBackup = false }
     // Registered after index/settings so Back from About returns to the screen it was opened from.
     BackHandler(enabled = showAbout) { showAbout = false }
     // When the header is hidden, Back brings it back instead of leaving the app.
-    BackHandler(enabled = !showStatsScreen && !showIndex && !showSearch && !showAbout &&
+    BackHandler(enabled = !showStatsScreen && !showIndex && !showSearch && !showNotes && !showAbout &&
         !showSettings && !showBackup && !headerVisible
     ) {
         headerVisible = true
     }
 
     LaunchedEffect(pagerState.currentPage) {
-        viewModel.clearSelection()
+        // A selection made on another page is let go; one already on this page — the ayah the
+        // explanation sheet just stepped to — is the reason the page turned, and stays.
+        if (viewModel.selectedAyah?.page != pagerState.currentPage + 1) viewModel.clearSelection()
         viewModel.onPageVisible(pagerState.currentPage + 1)
     }
 
@@ -387,6 +402,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                         onSharePage = { share = ShareSession(currentPage, ayah = null, viewModel.themeId) },
                         onPageFawaed = { fawaedPage = currentPage },
                         onPaletteChange = { viewModel.updateThemeId(it) },
+                        onOpenNotes = { showNotes = true },
                         onStats = {
                             viewModel.openStats()
                             showStatsScreen = true
@@ -425,6 +441,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     readerVisible = canRead,
                     updates = updates,
                     bookmarkMenu = bookmarkMenu,
+                    onEditNote = { noteTarget = it },
                     onOpenRepeat = { repeatFrom = it },
                     onShareAyah = { share = ShareSession(it.page, it, viewModel.themeId) },
                 )
@@ -780,6 +797,10 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 onPageSideIndicatorOpacityChange = { viewModel.updatePageSideIndicatorOpacity(it) },
                 edgeMargin = viewModel.edgeMargin,
                 onEdgeMarginChange = { viewModel.updateEdgeMargin(it) },
+                showNoteMarks = viewModel.showNoteMarks,
+                onShowNoteMarksChange = { viewModel.updateShowNoteMarks(it) },
+                noteMarkOpacity = viewModel.noteMarkOpacity,
+                onNoteMarkOpacityChange = { viewModel.updateNoteMarkOpacity(it) },
                 onBackup = { showBackup = true },
                 onAbout = { showAbout = true },
                 onTafsirLibrary = { showTafsirLibrary = true },
@@ -887,6 +908,50 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 onRootResults = viewModel::rootResults,
             )
         }
+
+        if (showNotes) {
+            NotesScreen(
+                notes = viewModel.notes,
+                surahName = viewModel::surahNameAr,
+                onOpen = { note ->
+                    viewModel.notePage(note)?.let { page ->
+                        showNotes = false
+                        jumpToPage(page)
+                        note.verseKey?.let { viewModel.flashSearchResult(it, page) }
+                    }
+                },
+                onEdit = { note ->
+                    val name = viewModel.surahNameAr(note.surah)
+                    noteTarget = NoteTarget(
+                        surah = note.surah,
+                        ayah = note.ayah,
+                        title = "ملاحظة على ${notePlaceTitle(note.surah, note.ayah, name)}",
+                        quote = note.verseKey?.let(viewModel::ayahText),
+                    )
+                },
+                onBack = { showNotes = false },
+            )
+        }
+
+        noteTarget?.let { target ->
+            NoteEditorDialog(
+                target = target,
+                existing = viewModel.noteAt(target.surah, target.ayah),
+                onSave = { text -> viewModel.saveNote(target.surah, target.ayah, text) },
+                onDelete = { viewModel.deleteNote(target.surah, target.ayah) },
+                onDismiss = { noteTarget = null },
+            )
+        }
+
+        // A note that failed to save or delete is said out loud, never dropped quietly.
+        val noteError = viewModel.noteError
+        val noteContext = LocalContext.current
+        LaunchedEffect(noteError) {
+            if (noteError != null) {
+                Toast.makeText(noteContext, noteError, Toast.LENGTH_LONG).show()
+                viewModel.clearNoteError()
+            }
+        }
     }
 }
 
@@ -928,6 +993,8 @@ private data class ExplanationRequest(
     val ayah: AyahMarker,
     /** An [ExplanationSources] id. */
     val initialSource: String,
+    /** True once the reader has stepped to this ayah from another inside the sheet. */
+    val stepped: Boolean = false,
 )
 
 @Composable
@@ -941,6 +1008,7 @@ private fun ReaderPager(
     readerVisible: Boolean,
     updates: AppUpdateUi?,
     bookmarkMenu: BookmarkMenu,
+    onEditNote: (NoteTarget) -> Unit,
     onOpenRepeat: (AyahRef) -> Unit,
     onShareAyah: (AyahMarker) -> Unit,
 ) {
@@ -948,6 +1016,8 @@ private fun ReaderPager(
     var ayahBounds by remember { mutableStateOf(Rect.Zero) }
     var longPressAyah by remember { mutableStateOf<AyahMarker?>(null) }
     var explanationRequest by remember { mutableStateOf<ExplanationRequest?>(null) }
+    // Turns the page behind the explanation sheet when it steps to an ayah on another page.
+    val pageScope = rememberCoroutineScope()
 
     LaunchedEffect(selected) {
         if (selected == null) {
@@ -1005,6 +1075,10 @@ private fun ReaderPager(
                 imageHeight = viewModel.imageHeight,
                 selectedAyah = selected,
                 bookmarkColors = bookmarkColors,
+                noteMarks = NoteMarks(
+                    keys = if (viewModel.showNoteMarks) viewModel.notedVerseKeys else emptySet(),
+                    alpha = viewModel.noteMarkOpacity / 100f,
+                ),
                 onLongPressAyah = { m, _, bounds ->
                     viewModel.selectAyah(m)
                     ayahBounds = bounds
@@ -1084,6 +1158,24 @@ private fun ReaderPager(
                 bookmarkMenu = bookmarkMenu,
                 onBookmark = { slot -> viewModel.toggleBookmark(slot, ayah) },
                 showBookmark = viewModel.isButtonVisible("bookmark"),
+                hasAyahNote = viewModel.noteAt(ayah.surahNumber, ayah.ayahNumber) != null,
+                hasSurahNote = viewModel.noteAt(ayah.surahNumber, NoteEntity.SURAH_NOTE) != null,
+                onNote = { onSurah ->
+                    longPressAyah = null
+                    viewModel.clearSelection()
+                    onEditNote(
+                        if (onSurah) NoteTarget(
+                            surah = ayah.surahNumber,
+                            ayah = NoteEntity.SURAH_NOTE,
+                            title = "ملاحظة على سورة ${ayah.surahNameAr}",
+                        ) else NoteTarget(
+                            surah = ayah.surahNumber,
+                            ayah = ayah.ayahNumber,
+                            title = "ملاحظة على الآية ${ayah.ayahNumber.toArabicDigits()} من سورة ${ayah.surahNameAr}",
+                            quote = ayah.textUthmani,
+                        )
+                    )
+                },
                 onExplain = {
                     longPressAyah = null
                     viewModel.loadExplanation(ayah)
@@ -1133,13 +1225,82 @@ private fun ReaderPager(
                 loadFawaed = viewModel::pageFawaed,
                 loadSurahCard = viewModel::surahCard,
                 loadTajweed = viewModel::tajweed,
+                previousAyah = viewModel.neighbourAyah(request.ayah, -1),
+                nextAyah = viewModel.neighbourAyah(request.ayah, +1),
+                onGoToAyah = { target, source ->
+                    viewModel.loadExplanation(target)
+                    explanationRequest = ExplanationRequest(target, source, stepped = true)
+                    // The mushaf behind follows, so closing the sheet lands on the page of the
+                    // last ayah read.
+                    viewModel.selectAyah(target)
+                    if (target.page != pagerState.currentPage + 1) {
+                        pageScope.launch { pagerState.scrollToPage(target.page - 1) }
+                    }
+                },
                 onDismiss = {
                     explanationRequest = null
                     viewModel.clearExplanation()
                     viewModel.clearSelection()
+                    // After stepping through ayahs, the one the reader stopped at may not be the one
+                    // they opened: it lights up briefly, as a search result does, to show where they are.
+                    if (request.stepped) viewModel.flashSearchResult(request.ayah.verseKey, request.ayah.page)
                 },
             )
         }
+    }
+}
+
+/**
+ * Stepping to the ayah before or after the one being explained, without leaving the sheet. Each
+ * side names where it goes: "الآية ١٢" within the surah, the surah's name too when it crosses
+ * into another. At the mushaf's two ends that side is simply empty.
+ */
+@Composable
+private fun AyahStepBar(
+    current: AyahMarker,
+    previous: AyahMarker?,
+    next: AyahMarker?,
+    onGo: (AyahMarker) -> Unit,
+) {
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        previous?.let { AyahStepButton(it, current, forward = false, onGo = onGo) }
+        Spacer(Modifier.weight(1f))
+        next?.let { AyahStepButton(it, current, forward = true, onGo = onGo) }
+    }
+}
+
+@Composable
+private fun AyahStepButton(
+    target: AyahMarker,
+    current: AyahMarker,
+    forward: Boolean,
+    onGo: (AyahMarker) -> Unit,
+) {
+    val place = if (target.surahNumber == current.surahNumber) "الآية ${target.ayahNumber.toArabicDigits()}"
+    else "${target.surahNameAr} ${target.ayahNumber.toArabicDigits()}"
+    val caption = if (forward) "التالية" else "السابقة"
+    // Mirrored with the layout: «السابقة» sits at the start (the right, in Arabic) pointing back,
+    // «التالية» at the end pointing on, the way the reading goes.
+    val arrow = if (forward) Icons.AutoMirrored.Filled.KeyboardArrowRight else Icons.AutoMirrored.Filled.KeyboardArrowLeft
+    TextButton(
+        onClick = { onGo(target) },
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+    ) {
+        if (!forward) Icon(arrow, contentDescription = null, modifier = Modifier.size(22.dp))
+        Column(
+            horizontalAlignment = if (forward) Alignment.End else Alignment.Start,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        ) {
+            Text(caption, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(place, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        }
+        if (forward) Icon(arrow, contentDescription = null, modifier = Modifier.size(22.dp))
     }
 }
 
@@ -1246,6 +1407,7 @@ private fun ReaderHeader(
     onPageFawaed: () -> Unit,
     onPaletteChange: (String) -> Unit,
     onStats: () -> Unit,
+    onOpenNotes: () -> Unit,
     onPageClick: () -> Unit,
     onAbout: () -> Unit,
 ) {
@@ -1419,6 +1581,7 @@ private fun ReaderHeader(
                         buttonTint = buttonTint,
                         onOpenSearch = onOpenSearch,
                         onStats = onStats,
+                        onOpenNotes = onOpenNotes,
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
@@ -1440,6 +1603,7 @@ private fun ReaderHeader(
                         visibleBarActionIds = visibleBarActionIds,
                         onOpenSearch = onOpenSearch,
                         onStats = onStats,
+                        onOpenNotes = onOpenNotes,
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
@@ -1535,6 +1699,7 @@ private fun ReaderHeader(
                         buttonTint = buttonTint,
                         onOpenSearch = onOpenSearch,
                         onStats = onStats,
+                        onOpenNotes = onOpenNotes,
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
@@ -1556,6 +1721,7 @@ private fun ReaderHeader(
                         visibleBarActionIds = visibleBarActionIds,
                         onOpenSearch = onOpenSearch,
                         onStats = onStats,
+                        onOpenNotes = onOpenNotes,
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
                         onToggleFillScreen = onToggleFillScreen,
@@ -1644,6 +1810,7 @@ private fun HeaderMoreMenu(
     visibleBarActionIds: Set<String>,
     onOpenSearch: () -> Unit,
     onStats: () -> Unit,
+    onOpenNotes: () -> Unit,
     onOpenIndex: (Int) -> Unit,
     onPaletteChange: (String) -> Unit,
     onToggleFillScreen: () -> Unit,
@@ -1699,7 +1866,7 @@ private fun HeaderMoreMenu(
                         } else {
                             runHeaderAction(
                                 action.id, onOpenSearch,
-                                onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen, onSharePage, onPageFawaed
+                                onStats, onOpenNotes, onOpenIndex, onToggleFillScreen, onHideHeader, onListen, onSharePage, onPageFawaed
                             )
                         }
                     }
@@ -1755,6 +1922,7 @@ private fun HeaderBarActions(
     buttonTint: (String, Color) -> Color,
     onOpenSearch: () -> Unit,
     onStats: () -> Unit,
+    onOpenNotes: () -> Unit,
     onOpenIndex: (Int) -> Unit,
     onPaletteChange: (String) -> Unit,
     onToggleFillScreen: () -> Unit,
@@ -1795,7 +1963,7 @@ private fun HeaderBarActions(
             onClick = {
                 runHeaderAction(
                     action.id, onOpenSearch,
-                    onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen, onSharePage, onPageFawaed
+                    onStats, onOpenNotes, onOpenIndex, onToggleFillScreen, onHideHeader, onListen, onSharePage, onPageFawaed
                 )
             },
             enabled = enabled,
@@ -1904,6 +2072,7 @@ private fun runHeaderAction(
     id: String,
     onOpenSearch: () -> Unit,
     onStats: () -> Unit,
+    onOpenNotes: () -> Unit,
     onOpenIndex: (Int) -> Unit,
     onToggleFillScreen: () -> Unit,
     onHideHeader: () -> Unit,
@@ -1916,6 +2085,7 @@ private fun runHeaderAction(
         "share" -> onSharePage()
         "fawaed" -> onPageFawaed()
         "stats" -> onStats()
+        "notes" -> onOpenNotes()
         "index" -> onOpenIndex(0)
         "fill" -> onToggleFillScreen()
         "hide" -> onHideHeader()
@@ -2428,6 +2598,11 @@ private fun AyahExplanationSheet(
     loadFawaed: suspend (Int) -> List<String>,
     loadSurahCard: suspend (Int) -> SurahCard?,
     loadTajweed: suspend (surah: Int, ayah: Int) -> TajweedNote?,
+    /** The ayahs either side of this one in mushaf order; null at the mushaf's two ends. */
+    previousAyah: AyahMarker?,
+    nextAyah: AyahMarker?,
+    /** Moves the sheet to another ayah, keeping the source being read. */
+    onGoToAyah: (ayah: AyahMarker, source: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -2651,6 +2826,9 @@ private fun AyahExplanationSheet(
             }
 
             // One page per source: a sideways swipe moves between them, as the bar's arrows do.
+            // Keyed on the ayah, so stepping to the next one opens its text at the top, not
+            // scrolled as far down as the last one was read.
+            key(request.ayah.verseKey) {
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier
@@ -2837,6 +3015,16 @@ private fun AyahExplanationSheet(
                     }
                 }
             }
+            }
+
+            // The neighbouring ayahs, at the foot of the sheet: where the reader's eye and thumb are
+            // when they finish the text, whichever source it is in.
+            AyahStepBar(
+                current = request.ayah,
+                previous = previousAyah,
+                next = nextAyah,
+                onGo = { onGoToAyah(it, source) },
+            )
         }
     }
 }
@@ -3605,6 +3793,9 @@ private fun AyahLongPressMenu(
     bookmarkMenu: BookmarkMenu,
     onBookmark: (Int) -> Unit,
     showBookmark: Boolean,
+    hasAyahNote: Boolean,
+    hasSurahNote: Boolean,
+    onNote: (onSurah: Boolean) -> Unit,
     onExplain: () -> Unit,
     onListenAyah: () -> Unit,
     onPlayFrom: () -> Unit,
@@ -3776,6 +3967,13 @@ private fun AyahLongPressMenu(
                                 onToggle = onBookmark,
                             )
                         }
+                        NoteBarAction(
+                            modifier = slot,
+                            surahName = ayah.surahNameAr,
+                            hasAyahNote = hasAyahNote,
+                            hasSurahNote = hasSurahNote,
+                            onNote = onNote,
+                        )
                         AyahBarAction(
                             modifier = slot,
                             label = "نسخ",
@@ -3907,13 +4105,21 @@ private fun AyahBarAction(
             Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = glyph)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // On a narrow screen six actions share the bar, and a name with its menu arrow can
+            // outgrow its share; it steps down a size or two rather than losing letters to "…".
+            val labelStyle = MaterialTheme.typography.labelMedium
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium,
+                style = labelStyle,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
+                autoSize = TextAutoSize.StepBased(
+                    minFontSize = 9.sp,
+                    maxFontSize = labelStyle.fontSize,
+                    stepSize = 0.5.sp,
+                ),
                 modifier = Modifier.weight(1f, fill = false),
             )
             if (hasMenu) {
@@ -4032,6 +4238,63 @@ private fun BookmarkBarAction(
                 open = false
                 menu.onManage()
             }
+        }
+    }
+}
+
+/**
+ * Notes, as one action in the ayah card's bar: a tap offers a note on this ayah or on its whole
+ * surah, each saying whether one is already written. The icon is filled when this ayah carries
+ * a note.
+ */
+@Composable
+private fun NoteBarAction(
+    modifier: Modifier,
+    surahName: String,
+    hasAyahNote: Boolean,
+    hasSurahNote: Boolean,
+    onNote: (onSurah: Boolean) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        AyahBarAction(
+            modifier = Modifier.fillMaxWidth(),
+            label = "ملاحظة",
+            icon = if (hasAyahNote) Icons.AutoMirrored.Filled.StickyNote2 else Icons.AutoMirrored.Outlined.StickyNote2,
+            tint = NoteColor,
+            onClickLabel = "الملاحظات",
+            hasMenu = true,
+            onClick = { open = true },
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text(if (hasAyahNote) "ملاحظتك على هذه الآية" else "ملاحظة على هذه الآية") },
+                leadingIcon = {
+                    Icon(
+                        if (hasAyahNote) Icons.AutoMirrored.Filled.StickyNote2 else Icons.AutoMirrored.Outlined.StickyNote2,
+                        contentDescription = null,
+                        tint = NoteColor,
+                    )
+                },
+                onClick = {
+                    open = false
+                    onNote(false)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(if (hasSurahNote) "ملاحظتك على سورة $surahName" else "ملاحظة على سورة $surahName") },
+                leadingIcon = {
+                    Icon(
+                        if (hasSurahNote) Icons.AutoMirrored.Filled.MenuBook else Icons.AutoMirrored.Outlined.MenuBook,
+                        contentDescription = null,
+                        tint = NoteColor,
+                    )
+                },
+                onClick = {
+                    open = false
+                    onNote(true)
+                },
+            )
         }
     }
 }

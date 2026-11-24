@@ -1,6 +1,7 @@
 package com.mushaf.reader.data.backup
 
 import com.mushaf.reader.data.ReadingStore
+import com.mushaf.reader.data.notes.NoteEntity
 import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.SessionEntity
 import org.json.JSONArray
@@ -16,6 +17,8 @@ object BackupJsonCodec {
     private const val MAX_EXPANDED_BYTES = 25 * 1024 * 1024
     private const val MAX_SESSIONS = 100_000
     private const val MAX_KHATMAS = 10_000
+    // One per ayah and one per surah is the most there can be.
+    private const val MAX_NOTES = 6_236 + 114
     private val verseKeyPattern = Regex("^[0-9]{1,3}:[0-9]{1,3}$")
 
     /** The JSON name of each bookmark slot. The first two are the names schema v1 shipped with. */
@@ -32,6 +35,7 @@ object BackupJsonCodec {
             .put("reading", encodeReading(snapshot.reading))
             .put("sessions", encodeSessions(snapshot.sessions))
             .put("khatmas", encodeKhatmas(snapshot.khatmas))
+            .put("notes", encodeNotes(snapshot.notes))
 
         val raw = root.toString().toByteArray(Charsets.UTF_8)
         val output = ByteArrayOutputStream()
@@ -75,6 +79,8 @@ object BackupJsonCodec {
                 reading = decodeReading(root.getJSONObject("reading"), expectedPageCount),
                 sessions = decodeSessions(root.getJSONArray("sessions"), expectedPageCount),
                 khatmas = decodeKhatmas(root.getJSONArray("khatmas"), expectedPageCount),
+                // Notes came after schema v1 shipped; a backup from before them has none.
+                notes = root.optJSONArray("notes")?.let(::decodeNotes) ?: emptyList(),
             )
         } catch (known: BackupException) {
             throw known
@@ -131,6 +137,8 @@ object BackupJsonCodec {
         .put("verticalPaging", value.verticalPaging)
         .put("keepScreenOn", value.keepScreenOn)
         .put("edgeMargin", value.edgeMargin)
+        .put("showNoteMarks", value.showNoteMarks)
+        .put("noteMarkOpacity", value.noteMarkOpacity)
 
     private fun decodeReading(root: JSONObject, pageCount: Int): ReadingStore.BackupState {
         val settingsJson = root.getJSONObject("settings")
@@ -215,6 +223,10 @@ object BackupJsonCodec {
             // "auto" would move their page for them. A new install and a restore are different
             // questions, so the two defaults are allowed to differ.
             edgeMargin = safeText(settingsJson, "edgeMargin", ReadingStore.EDGE_MARGIN_NONE),
+            // Added with notes; a backup from before them shows the mark as a new install does.
+            showNoteMarks = settingsJson.optBoolean("showNoteMarks", ReadingStore.DEFAULT_SHOW_NOTE_MARKS),
+            noteMarkOpacity = settingsJson.optInt("noteMarkOpacity", ReadingStore.DEFAULT_NOTE_MARK_OPACITY)
+                .coerceIn(ReadingStore.NOTE_MARK_OPACITY_RANGE),
         )
         return ReadingStore.BackupState(settings, bookmarks, decodeBookmarkNames(root))
     }
@@ -301,6 +313,41 @@ object BackupJsonCodec {
                 pagesRead = pagesRead,
             )
         }
+    }
+
+    private fun encodeNotes(values: List<NoteEntity>): JSONArray = JSONArray().apply {
+        values.forEach { note ->
+            put(
+                JSONObject()
+                    .put("surah", note.surah)
+                    .put("ayah", note.ayah)
+                    .put("text", note.text)
+                    .put("createdAt", note.createdAt)
+                    .put("updatedAt", note.updatedAt)
+            )
+        }
+    }
+
+    private fun decodeNotes(values: JSONArray): List<NoteEntity> {
+        if (values.length() > MAX_NOTES) throw BackupException("عدد الملاحظات في النسخة كبير جداً.")
+        val notes = List(values.length()) { index ->
+            val value = values.getJSONObject(index)
+            val surah = value.getInt("surah")
+            val ayah = value.getInt("ayah")
+            val text = value.getString("text")
+            val createdAt = value.getLong("createdAt")
+            val updatedAt = value.getLong("updatedAt")
+            if (!NoteEntity.isValidPlace(surah, ayah) || text.isBlank() ||
+                text.length > NoteEntity.MAX_TEXT || createdAt < 0L || updatedAt < 0L
+            ) {
+                throw BackupException("تحتوي النسخة على ملاحظة غير صالحة.")
+            }
+            NoteEntity(surah, ayah, text, createdAt, updatedAt)
+        }
+        if (notes.distinctBy { it.surah to it.ayah }.size != notes.size) {
+            throw BackupException("تحتوي النسخة على ملاحظتين في الموضع نفسه.")
+        }
+        return notes
     }
 
     private fun intArray(values: Set<Int>): JSONArray = JSONArray().apply {

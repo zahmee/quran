@@ -28,6 +28,12 @@ class ReadingStore(private val context: Context) {
         const val DEFAULT_BAR_OPACITY = 100
         /** The page-side marker has always been drawn a little see-through; keep that as its default. */
         const val DEFAULT_SIDE_INDICATOR_OPACITY = 70
+
+        /** The mark beside an ayah that carries a note: shown out of the box, at a strength that
+         *  reads as "a note is here" while the letters under it stay as printed. */
+        const val DEFAULT_SHOW_NOTE_MARKS = true
+        const val DEFAULT_NOTE_MARK_OPACITY = 45
+        val NOTE_MARK_OPACITY_RANGE = 10..100
         /** Keep the restore-header button at its current visual strength until the user changes it. */
         const val DEFAULT_SHOW_HEADER_BUTTON_OPACITY = 100
         /** The folded recitation handle used to be drawn at 55%, which read as gone over a page;
@@ -229,6 +235,8 @@ class ReadingStore(private val context: Context) {
     private val keyLastBackupSize = longPreferencesKey("last_backup_size")
 
     private val keyEdgeMargin = stringPreferencesKey("edge_margin")
+    private val keyShowNoteMarks = booleanPreferencesKey("show_note_marks")
+    private val keyNoteMarkOpacity = intPreferencesKey("note_mark_opacity")
 
     /** Which generation of defaults this install has already been reconciled with. */
     private val keyDefaultsVersion = intPreferencesKey(DEFAULTS_VERSION_KEY)
@@ -315,6 +323,9 @@ class ReadingStore(private val context: Context) {
         val keepScreenOn: Boolean,
         val edgeMargin: String,
         val showReadingPosition: Boolean = false,
+        val showNoteMarks: Boolean = DEFAULT_SHOW_NOTE_MARKS,
+        /** Percent, within [NOTE_MARK_OPACITY_RANGE]. */
+        val noteMarkOpacity: Int = DEFAULT_NOTE_MARK_OPACITY,
     )
 
     /** When the app last asked Play about an update, and which version the reader waved away.
@@ -425,6 +436,9 @@ class ReadingStore(private val context: Context) {
             verticalPaging = prefs[keyVerticalPaging] ?: false,
             keepScreenOn = prefs[keyKeepScreenOn] ?: DEFAULT_KEEP_SCREEN_ON,
             edgeMargin = prefs[keyEdgeMargin] ?: DEFAULT_EDGE_MARGIN,
+            showNoteMarks = prefs[keyShowNoteMarks] ?: DEFAULT_SHOW_NOTE_MARKS,
+            noteMarkOpacity = (prefs[keyNoteMarkOpacity] ?: DEFAULT_NOTE_MARK_OPACITY)
+                .coerceIn(NOTE_MARK_OPACITY_RANGE),
         )
     }
 
@@ -484,6 +498,8 @@ class ReadingStore(private val context: Context) {
             prefs[keyVerticalPaging] = value.verticalPaging
             prefs[keyKeepScreenOn] = value.keepScreenOn
             prefs[keyEdgeMargin] = value.edgeMargin
+            prefs[keyShowNoteMarks] = value.showNoteMarks
+            prefs[keyNoteMarkOpacity] = value.noteMarkOpacity
         }
     }
 
@@ -589,6 +605,14 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setEdgeMargin(value: String) {
         context.dataStore.edit { it[keyEdgeMargin] = value }
+    }
+
+    suspend fun setShowNoteMarks(value: Boolean) {
+        context.dataStore.edit { it[keyShowNoteMarks] = value }
+    }
+
+    suspend fun setNoteMarkOpacity(value: Int) {
+        context.dataStore.edit { it[keyNoteMarkOpacity] = value.coerceIn(NOTE_MARK_OPACITY_RANGE) }
     }
 
     suspend fun recitationReciterId(): Int? = context.dataStore.data.first()[keyRecitationReciterId]

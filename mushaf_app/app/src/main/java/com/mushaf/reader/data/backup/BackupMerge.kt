@@ -1,6 +1,7 @@
 package com.mushaf.reader.data.backup
 
 import com.mushaf.reader.data.ReadingStore
+import com.mushaf.reader.data.notes.NoteEntity
 import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.SessionEntity
 
@@ -50,8 +51,19 @@ object BackupMerge {
             ),
             sessions = mergeSessions(local.sessions, incoming.sessions),
             khatmas = khatmas,
+            notes = mergeNotes(local.notes, incoming.notes),
         )
     }
+
+    /**
+     * Notes from both sides, one per place. Where both sides wrote on the same ayah or surah, the
+     * one edited last is kept — a restore never throws away what was written after the backup.
+     */
+    fun mergeNotes(local: List<NoteEntity>, incoming: List<NoteEntity>): List<NoteEntity> =
+        (local + incoming)
+            .groupBy { it.surah to it.ayah }
+            .map { (_, both) -> both.maxBy { it.updatedAt } }
+            .sortedWith(compareBy({ it.surah }, { it.ayah }))
 
     /**
      * A session is the same session when it started and ended at the same instant — ids are only

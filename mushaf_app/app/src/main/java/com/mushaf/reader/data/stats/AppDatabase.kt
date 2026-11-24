@@ -6,12 +6,19 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.mushaf.reader.data.notes.NoteDao
+import com.mushaf.reader.data.notes.NoteEntity
 
-@Database(entities = [SessionEntity::class, KhatmaEntity::class], version = 3, exportSchema = false)
+@Database(
+    entities = [SessionEntity::class, KhatmaEntity::class, NoteEntity::class],
+    version = 4,
+    exportSchema = false,
+)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun sessionDao(): SessionDao
     abstract fun khatmaDao(): KhatmaDao
+    abstract fun noteDao(): NoteDao
 
     companion object {
         @Volatile
@@ -40,13 +47,28 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v3 → v4: add the reader's notes. Sessions and khatmas are left exactly as they were. */
+        internal val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `notes` (" +
+                        "`surah` INTEGER NOT NULL, " +
+                        "`ayah` INTEGER NOT NULL, " +
+                        "`text` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`surah`, `ayah`))"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "quran_reader.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
             }
     }
 }

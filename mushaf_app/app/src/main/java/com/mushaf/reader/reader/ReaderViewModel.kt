@@ -6,6 +6,7 @@ import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -14,9 +15,12 @@ import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.AyahRepository
 import com.mushaf.reader.data.AyahSearchIndex
 import com.mushaf.reader.data.ExplanationTextScale
+import com.mushaf.reader.data.AyahNeighbours
 import com.mushaf.reader.data.JuzLayout
 import com.mushaf.reader.data.PageRepository
 import com.mushaf.reader.data.ReadingStore
+import com.mushaf.reader.data.notes.NoteEntity
+import com.mushaf.reader.data.notes.NotesRepository
 import com.mushaf.reader.data.SearchTier
 import com.mushaf.reader.data.SurahAyahCounts
 import com.mushaf.reader.data.backup.BackupException
@@ -155,6 +159,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     private val centerExtras = CenterExtrasRepository(app)
     private val store = ReadingStore(app)
     private val statsRepo = StatsRepository(app)
+    private val notesRepo = NotesRepository(app)
     private val backupRepo = FileBackupRepository(app)
     private val cloudRepo = CloudBackupRepository(app)
     private val syncRepo = CloudSyncRepository(app)
@@ -337,6 +342,14 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var edgeMargin by mutableStateOf(initialSettings.edgeMargin)
         private set
 
+    /** Whether an ayah that carries a note shows its mark on the page. */
+    var showNoteMarks by mutableStateOf(initialSettings.showNoteMarks)
+        private set
+
+    /** How strongly that mark shows, in percent. */
+    var noteMarkOpacity by mutableStateOf(initialSettings.noteMarkOpacity)
+        private set
+
     /** Ids of the header buttons the user has hidden; any id NOT in this set is shown. */
     var hiddenButtons by mutableStateOf(initialSettings.hiddenButtons)
         private set
@@ -476,6 +489,19 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var bookmarks by mutableStateOf<List<String?>>(List(ReadingStore.BOOKMARK_SLOTS) { null })
         private set
 
+    /** Every note the reader wrote, in mushaf order; kept current from the database. */
+    var notes by mutableStateOf<List<NoteEntity>>(emptyList())
+        private set
+
+    private val notesByPlace by derivedStateOf { notes.associateBy { it.surah to it.ayah } }
+
+    /** The verse keys that carry a note, for the mark on the page. */
+    val notedVerseKeys: Set<String> by derivedStateOf { notes.mapNotNullTo(HashSet()) { it.verseKey } }
+
+    /** A note that could not be saved or deleted, for the reader to be told; cleared once shown. */
+    var noteError by mutableStateOf<String?>(null)
+        private set
+
     /** The name the reader gave each bookmark, by slot; blank where it goes by its colour. */
     var bookmarkNames by mutableStateOf(List(ReadingStore.BOOKMARK_SLOTS) { "" })
         private set
@@ -530,6 +556,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
             bookmarks = withContext(Dispatchers.IO) { store.bookmarkSlots() }.map { it.firstOrNull() }
         }
         viewModelScope.launch { bookmarkNames = withContext(Dispatchers.IO) { store.bookmarkNames() } }
+        viewModelScope.launch { notesRepo.notes.collect { notes = it } }
         viewModelScope.launch { khatmas = withContext(Dispatchers.IO) { statsRepo.allKhatmas() } }
         if (cloudRepo.isAvailable) viewModelScope.launch {
             loadCloudAccount()
@@ -570,6 +597,19 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         if (value == edgeMargin) return
         edgeMargin = value
         viewModelScope.launch { store.setEdgeMargin(value) }
+    }
+
+    fun updateShowNoteMarks(value: Boolean) {
+        if (value == showNoteMarks) return
+        showNoteMarks = value
+        viewModelScope.launch { store.setShowNoteMarks(value) }
+    }
+
+    fun updateNoteMarkOpacity(value: Int) {
+        val clamped = value.coerceIn(ReadingStore.NOTE_MARK_OPACITY_RANGE)
+        if (clamped == noteMarkOpacity) return
+        noteMarkOpacity = clamped
+        viewModelScope.launch { store.setNoteMarkOpacity(clamped) }
     }
 
     /** Whether the header button with [id] is currently shown. */
@@ -1183,6 +1223,8 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         verticalPaging = value.verticalPaging
         keepScreenOn = value.keepScreenOn
         edgeMargin = value.edgeMargin
+        showNoteMarks = value.showNoteMarks
+        noteMarkOpacity = value.noteMarkOpacity
         hiddenButtons = value.hiddenButtons
         barButtons = value.barButtons
         buttonColors = value.buttonColors
@@ -1237,6 +1279,14 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     fun hizbMarkersForPage(pageNumber: Int) = ayahData.hizbMarkersByPage[pageNumber].orEmpty()
 
     fun selectAyah(ayah: AyahMarker?) { selectedAyah = ayah }
+
+    /** The ayah [direction] steps away from [ayah] in mushaf order (+1 next, -1 previous), if any. */
+    fun neighbourAyah(ayah: AyahMarker, direction: Int): AyahMarker? {
+        val (surah, number) = AyahNeighbours.step(ayah.surahNumber, ayah.ayahNumber, direction) ?: return null
+        val key = "$surah:$number"
+        val page = ayahData.keyToPage[key] ?: return null
+        return ayahData.byPage[page]?.firstOrNull { it.verseKey == key }
+    }
 
     fun clearSelection() { selectedAyah = null }
 
@@ -1354,6 +1404,46 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
             if (slot == 0) recordBookmarkForSync(verseKey)
         }
     }
+
+    /** The note on [surah]:[ayah] (or on the whole surah when [ayah] is 0), if there is one. */
+    fun noteAt(surah: Int, ayah: Int): NoteEntity? = notesByPlace[surah to ayah]
+
+    /** Saves [text] as the note at [surah]:[ayah]; blank text deletes it. */
+    fun saveNote(surah: Int, ayah: Int, text: String) {
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { notesRepo.save(surah, ayah, text) }
+            } catch (error: Exception) {
+                noteError = "تعذر حفظ الملاحظة. حاول مرة أخرى."
+            }
+        }
+    }
+
+    fun deleteNote(surah: Int, ayah: Int) {
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { notesRepo.delete(surah, ayah) }
+            } catch (error: Exception) {
+                noteError = "تعذر حذف الملاحظة. حاول مرة أخرى."
+            }
+        }
+    }
+
+    fun clearNoteError() { noteError = null }
+
+    /** The page a note opens on: its ayah's, or the first page of its surah. */
+    fun notePage(note: NoteEntity): Int? =
+        if (note.isSurahNote) surahStartPage(note.surah)
+        else ayahData.keyToPage[note.verseKey]
+
+    /** The Uthmani text of [verseKey], shown above its note while it is written. */
+    fun ayahText(verseKey: String): String? {
+        val page = ayahData.keyToPage[verseKey] ?: return null
+        return ayahData.byPage[page]?.firstOrNull { it.verseKey == verseKey }?.textUthmani
+    }
+
+    /** The page that opens [surah]: the page of its first ayah. */
+    fun surahStartPage(surah: Int): Int? = ayahData.keyToPage["$surah:1"]
 
     /** What bookmark [slot] is called: the reader's name for it, or its colour's. */
     fun bookmarkTitle(slot: Int): String = bookmarkTitle(slot, bookmarkNames[slot])
