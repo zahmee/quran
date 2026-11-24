@@ -266,6 +266,8 @@ class ReadingStore(private val context: Context) {
     private val keyExplanationTextScale = intPreferencesKey("explanation_text_scale")
     private val keyUpdateDismissedVersion = intPreferencesKey("update_dismissed_version")
     private val keyUpdateDismissedAt = longPreferencesKey("update_dismissed_at")
+    /** The [com.mushaf.reader.reader.WhatsNew] release whose card this install has already shown. */
+    private val keyWhatsNewSeen = intPreferencesKey("whats_new_seen")
 
     // Cloud-backup bookkeeping, device-local for the same reason: an account and a schedule belong
     // to this install, so they never travel inside a backup. The device id tells this install's
@@ -594,6 +596,12 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setUpdateCheckedAt(value: Long) {
         context.dataStore.edit { it[keyUpdateCheckedAt] = value }
+    }
+
+    suspend fun whatsNewSeen(): Int = context.dataStore.data.first()[keyWhatsNewSeen] ?: 0
+
+    suspend fun setWhatsNewSeen(value: Int) {
+        context.dataStore.edit { it[keyWhatsNewSeen] = value }
     }
 
     suspend fun setUpdateDismissed(versionCode: Int, at: Long) {

@@ -200,6 +200,25 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         mobileDataPolicy = MobileData.policy(getApplication())
     }
 
+    /** Whether the "what's new" card is up: once per [WhatsNew.RELEASE], and only after an update. */
+    var showWhatsNew by mutableStateOf(false)
+        private set
+
+    private fun loadWhatsNew() = viewModelScope.launch {
+        if (store.whatsNewSeen() >= WhatsNew.RELEASE) return@launch
+        val app = getApplication<Application>()
+        val info = runCatching { app.packageManager.getPackageInfo(app.packageName, 0) }.getOrNull()
+        // A fresh install has nothing "new" to compare against: the guide in the More menu is
+        // where it learns the app, so its card is marked seen without showing.
+        val updated = info != null && info.lastUpdateTime > info.firstInstallTime
+        if (updated) showWhatsNew = true else store.setWhatsNewSeen(WhatsNew.RELEASE)
+    }
+
+    fun dismissWhatsNew() {
+        showWhatsNew = false
+        viewModelScope.launch { store.setWhatsNewSeen(WhatsNew.RELEASE) }
+    }
+
     /** Turn the page with the recitation. Off lets the reader browse while it plays on. */
     var recitationFollowPage by mutableStateOf(true)
         private set
@@ -291,6 +310,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         }
         // Only lists the pack files already on the device; nothing here touches the network.
         packDownloads.start()
+        loadWhatsNew()
     }
 
     val pageCount: Int = pageRepo.pageCount()

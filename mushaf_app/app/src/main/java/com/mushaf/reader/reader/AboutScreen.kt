@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Business
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -132,6 +133,7 @@ fun AboutScreen(
                 }
 
                 AppIdentityPanel(versionName)
+                GuidePanel(onOpen = { openFeatureGuide(context, FeatureGuide.HUB) })
                 if (updates != null) UpdatePanel(updates)
                 if (onOpenBackup != null) BackupPanel(onOpenBackup)
                 TrustPanel()
@@ -346,6 +348,23 @@ private fun ContactPanel(
             text = "صفحة التواصل الرسمية",
             icon = Icons.Outlined.Language,
             onClick = onWebsite
+        )
+    }
+}
+
+@Composable
+private fun GuidePanel(onOpen: () -> Unit) {
+    Panel {
+        InfoHeader(
+            icon = Icons.AutoMirrored.Outlined.HelpOutline,
+            title = "دليل الميزات",
+            body = "شرح كل ميزة بمقطع قصير من التطبيق نفسه: كيف تصل إليها وكيف تستعملها، وما الجديد في كل إصدار."
+        )
+        Spacer(Modifier.height(14.dp))
+        ActionButton(
+            text = "افتح دليل الميزات",
+            icon = Icons.AutoMirrored.Outlined.HelpOutline,
+            onClick = onOpen
         )
     }
 }

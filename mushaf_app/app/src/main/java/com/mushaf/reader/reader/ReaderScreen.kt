@@ -89,6 +89,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
@@ -878,6 +879,10 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
 
         if (showTafsirLibrary) {
             TafsirLibraryDialog(downloads = viewModel.packDownloads, onDismiss = { showTafsirLibrary = false })
+        }
+
+        if (viewModel.showWhatsNew) {
+            WhatsNewDialog(onDismiss = viewModel::dismissWhatsNew)
         }
 
         if (showAbout) {
@@ -1823,6 +1828,7 @@ private fun HeaderMoreMenu(
     // Actions assigned to the menu plus any preferred bar actions that did not fit this window.
     val menuActions = HeaderActions.filter { isVisible(it.id) && it.id !in visibleBarActionIds }
 
+    val context = LocalContext.current
     var showMoreMenu by remember { mutableStateOf(false) }
     var showThemeMenu by remember { mutableStateOf(false) }
     var showBookmarkMenu by remember { mutableStateOf(false) }
@@ -1874,6 +1880,20 @@ private fun HeaderMoreMenu(
             }
 
             if (menuActions.isNotEmpty()) HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("دليل الميزات") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
+                        contentDescription = null,
+                        tint = quietContentColor
+                    )
+                },
+                onClick = {
+                    showMoreMenu = false
+                    openFeatureGuide(context, FeatureGuide.HUB)
+                }
+            )
             DropdownMenuItem(
                 text = { Text("حول التطبيق") },
                 leadingIcon = {
