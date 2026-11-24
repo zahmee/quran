@@ -6,7 +6,9 @@ package com.mushaf.reader.data
  * the two ends are reachable.
  */
 object ExplanationTextScale {
-    val STEPS = listOf(85, 100, 115, 130, 150, 175)
+    // Down to 60: on a large screen held at a distance, a smaller size fits more of a long
+    // passage at once without the reader having to scroll through it.
+    val STEPS = listOf(60, 70, 85, 100, 115, 130, 150, 175)
     const val DEFAULT = 100
 
     /** A stored value that is missing or no longer a step falls back to the nearest step. */

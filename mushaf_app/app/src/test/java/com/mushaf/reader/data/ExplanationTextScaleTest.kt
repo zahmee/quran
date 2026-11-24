@@ -16,7 +16,7 @@ class ExplanationTextScaleTest {
     fun `an off-step stored value snaps to the nearest step`() {
         assertEquals(115, ExplanationTextScale.normalize(120))
         assertEquals(175, ExplanationTextScale.normalize(400))
-        assertEquals(85, ExplanationTextScale.normalize(10))
+        assertEquals(60, ExplanationTextScale.normalize(10))
     }
 
     @Test
@@ -24,14 +24,17 @@ class ExplanationTextScaleTest {
         assertEquals(115, ExplanationTextScale.step(100, +1))
         assertEquals(85, ExplanationTextScale.step(100, -1))
         assertEquals(175, ExplanationTextScale.step(175, +1))
-        assertEquals(85, ExplanationTextScale.step(85, -1))
+        assertEquals(70, ExplanationTextScale.step(85, -1))
+        assertEquals(60, ExplanationTextScale.step(70, -1))
+        assertEquals(60, ExplanationTextScale.step(60, -1))
     }
 
     @Test
     fun `the ends disable the matching button`() {
         assertFalse(ExplanationTextScale.canGrow(175))
         assertTrue(ExplanationTextScale.canShrink(175))
-        assertFalse(ExplanationTextScale.canShrink(85))
-        assertTrue(ExplanationTextScale.canGrow(85))
+        assertTrue(ExplanationTextScale.canShrink(85))
+        assertFalse(ExplanationTextScale.canShrink(60))
+        assertTrue(ExplanationTextScale.canGrow(60))
     }
 }
