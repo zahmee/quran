@@ -287,10 +287,24 @@ class CloudBackupRepository(context: Context) {
         }
     }
 
+    /** A network is up. Enough to try: some networks reach the internet without the system
+     *  ever confirming it, and those must still be able to back up and sync. */
     private fun hasConnection(): Boolean {
         val manager = appContext.getSystemService(ConnectivityManager::class.java) ?: return true
         val capabilities = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    /**
+     * The system has confirmed the current network reaches the internet. Not required to try —
+     * see [hasConnection] — but when a call has failed, its absence means the failure says
+     * nothing about the server: Wi-Fi with the line behind it down is "connected" all the same.
+     */
+    private fun hasWorkingInternet(): Boolean {
+        val manager = appContext.getSystemService(ConnectivityManager::class.java) ?: return true
+        val capabilities = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     /**
@@ -305,14 +319,35 @@ class CloudBackupRepository(context: Context) {
                 "timeout" in message.lowercase()
         }
 
-    private fun describe(error: Exception): BackupException = when {
-        isNetworkFailure(error) -> CloudOfflineException(error)
-        else -> describeRefusal(error)
+    /** Sorts a failure into one that passes by itself and one the reader must hear about. */
+    private fun describe(error: Exception): BackupException {
+        val firestoreCode = generateSequence<Throwable>(error) { it.cause }
+            .filterIsInstance<FirebaseFirestoreException>()
+            .firstOrNull()
+            ?.code
+        val verdict = CloudFailures.verdict(
+            networkFailure = isNetworkFailure(error),
+            workingInternet = hasWorkingInternet(),
+            firestoreCode = firestoreCode?.name,
+            tooManyRequests = error is FirebaseTooManyRequestsException,
+        )
+        return when (verdict) {
+            CloudFailures.Verdict.Transient -> CloudOfflineException(
+                error,
+                when {
+                    error is FirebaseTooManyRequestsException ->
+                        "محاولات كثيرة متتالية؛ انتظر قليلاً ثم أعد المحاولة."
+                    firestoreCode == FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED ->
+                        "الخدمة مشغولة حالياً؛ أعد المحاولة لاحقاً."
+                    else -> CloudOfflineException.DEFAULT_MESSAGE
+                },
+            )
+            CloudFailures.Verdict.Refused -> describeRefusal(error)
+        }
     }
 
+    /** The reader's words for a refusal — only reached once [CloudFailures] has called it one. */
     private fun describeRefusal(error: Exception): BackupException = when (error) {
-        is FirebaseTooManyRequestsException ->
-            BackupException("محاولات كثيرة متتالية؛ انتظر قليلاً ثم أعد المحاولة.", error)
         is FirebaseAuthUserCollisionException ->
             BackupException("هذا الاسم مستخدم من قبل؛ اختر اسماً آخر.", error)
         is FirebaseAuthWeakPasswordException ->
@@ -328,13 +363,9 @@ class CloudBackupRepository(context: Context) {
                 BackupException(GENERIC_ERROR, error)
             }
         is FirebaseFirestoreException -> when (error.code) {
-            FirebaseFirestoreException.Code.UNAVAILABLE,
-            FirebaseFirestoreException.Code.DEADLINE_EXCEEDED -> CloudOfflineException(error)
             FirebaseFirestoreException.Code.PERMISSION_DENIED,
             FirebaseFirestoreException.Code.UNAUTHENTICATED ->
                 BackupException("رفض الخادم العملية. سجّل الدخول من جديد ثم أعد المحاولة.", error)
-            FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED ->
-                BackupException("الخدمة مشغولة حالياً؛ أعد المحاولة لاحقاً.", error)
             else -> BackupException(GENERIC_ERROR, error)
         }
         else -> BackupException(GENERIC_ERROR, error)

@@ -45,9 +45,19 @@ data class BackupUiState(
 
 open class BackupException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
-/** The cloud could not be reached: worth retrying later, unlike a refusal. */
-class CloudOfflineException(cause: Throwable? = null) :
-    BackupException("تعذر الاتصال بالخادم. تأكد من اتصالك بالإنترنت ثم أعد المحاولة.", cause)
+/**
+ * A failure that passes by itself — no connection, a line too poor to finish, a busy service —
+ * and so is retried quietly, unlike a refusal (see [CloudFailures]). [message] is what a reader
+ * who asked for the operation is told.
+ */
+class CloudOfflineException(
+    cause: Throwable? = null,
+    message: String = DEFAULT_MESSAGE,
+) : BackupException(message, cause) {
+    companion object {
+        const val DEFAULT_MESSAGE = "تعذر الاتصال بالخادم. تأكد من اتصالك بالإنترنت ثم أعد المحاولة."
+    }
+}
 
 /** One backup stored in the reader's cloud account, as listed without downloading it. */
 data class CloudBackupInfo(
