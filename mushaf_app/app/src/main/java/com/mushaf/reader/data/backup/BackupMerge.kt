@@ -39,8 +39,14 @@ object BackupMerge {
         return incoming.copy(
             reading = ReadingStore.BackupState(
                 settings = settings,
-                bookmarks = incoming.reading.bookmarks.ifEmpty { local.reading.bookmarks },
-                bookmarks2 = incoming.reading.bookmarks2.ifEmpty { local.reading.bookmarks2 },
+                // Slot by slot: a marker the backup never set leaves this device's in place.
+                bookmarks = incoming.reading.bookmarks.zip(local.reading.bookmarks) { theirs, ours ->
+                    theirs.ifEmpty { ours }
+                },
+                // Names likewise: the backup's where it named the slot, this device's otherwise.
+                bookmarkNames = incoming.reading.bookmarkNames.zip(local.reading.bookmarkNames) { theirs, ours ->
+                    theirs.ifBlank { ours }
+                },
             ),
             sessions = mergeSessions(local.sessions, incoming.sessions),
             khatmas = khatmas,

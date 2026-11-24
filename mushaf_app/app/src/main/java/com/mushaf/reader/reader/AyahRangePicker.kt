@@ -138,8 +138,7 @@ internal fun AyahRangePicker(
                     imageWidth = imageWidth,
                     imageHeight = imageHeight,
                     selectedAyah = null,
-                    bookmarkedKeys = emptySet(),
-                    bookmarkedKeys2 = emptySet(),
+                    bookmarkColors = emptyMap(),
                     onLongPressAyah = { _, _, _ -> },
                     fillScreen = false,
                     pageOverlay = { scale, _, _ ->

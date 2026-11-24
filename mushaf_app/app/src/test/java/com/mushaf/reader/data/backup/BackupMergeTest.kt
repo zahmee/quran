@@ -63,24 +63,32 @@ class BackupMergeTest {
     @Test
     fun `reading position and markers come from the backup`() {
         val merged = BackupMerge.merge(
-            local = snapshot(lastPage = 10, bookmarks = setOf("1:1"), bookmarks2 = setOf("2:1")),
-            incoming = snapshot(lastPage = 300, bookmarks = setOf("18:10"), bookmarks2 = setOf("36:1")),
+            local = snapshot(lastPage = 10, bookmarks = slots("1:1", "2:1", "3:1", "4:1")),
+            incoming = snapshot(lastPage = 300, bookmarks = slots("18:10", "36:1", "55:1", "67:1")),
             takeDisplaySettings = false,
         )
         assertEquals(300, merged.reading.settings.lastPage)
-        assertEquals(setOf("18:10"), merged.reading.bookmarks)
-        assertEquals(setOf("36:1"), merged.reading.bookmarks2)
+        assertEquals(slots("18:10", "36:1", "55:1", "67:1"), merged.reading.bookmarks)
     }
 
     @Test
     fun `a marker the backup never set leaves this device's in place`() {
         val merged = BackupMerge.merge(
-            local = snapshot(bookmarks = setOf("1:1"), bookmarks2 = setOf("2:1")),
-            incoming = snapshot(bookmarks = emptySet(), bookmarks2 = setOf("36:1")),
+            local = snapshot(bookmarks = slots("1:1", "2:1", "3:1", null)),
+            incoming = snapshot(bookmarks = slots(null, "36:1", null, "67:1")),
             takeDisplaySettings = false,
         )
-        assertEquals(setOf("1:1"), merged.reading.bookmarks)
-        assertEquals(setOf("36:1"), merged.reading.bookmarks2)
+        assertEquals(slots("1:1", "36:1", "3:1", "67:1"), merged.reading.bookmarks)
+    }
+
+    @Test
+    fun `a name the backup never gave leaves this device's in place`() {
+        val merged = BackupMerge.merge(
+            local = snapshot(names = listOf("الحفظ", "المراجعة", "", "")),
+            incoming = snapshot(names = listOf("", "الورد", "الليل", "")),
+            takeDisplaySettings = false,
+        )
+        assertEquals(listOf("الحفظ", "الورد", "الليل", ""), merged.reading.bookmarkNames)
     }
 
     // ── Display settings only on request ────────────────────────────────────────
@@ -198,14 +206,17 @@ class BackupMergeTest {
         pagesRead = 604,
     )
 
+    /** One verse key, or none, per bookmark slot. */
+    private fun slots(vararg keys: String?): List<Set<String>> = keys.map { setOfNotNull(it) }
+
     private fun snapshot(
         lastPage: Int = 1,
         themeId: String = ReadingStore.DEFAULT_THEME_ID,
         khatmaStartedAt: Long = 100,
         visited: Set<Int> = emptySet(),
         read: Set<Int> = emptySet(),
-        bookmarks: Set<String> = emptySet(),
-        bookmarks2: Set<String> = emptySet(),
+        bookmarks: List<Set<String>> = slots(null, null, null, null),
+        names: List<String> = List(4) { "" },
         sessions: List<SessionEntity> = emptyList(),
         khatmas: List<KhatmaEntity> = emptyList(),
     ) = BackupSnapshot(
@@ -217,7 +228,7 @@ class BackupMergeTest {
         reading = ReadingStore.BackupState(
             settings = settings(lastPage, themeId, khatmaStartedAt, visited, read),
             bookmarks = bookmarks,
-            bookmarks2 = bookmarks2,
+            bookmarkNames = names,
         ),
         sessions = sessions,
         khatmas = khatmas,

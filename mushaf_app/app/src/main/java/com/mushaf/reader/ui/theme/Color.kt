@@ -32,6 +32,10 @@ val ErrorDark = Color(0xFFE58C84)
 // image or represent a user-selected status, rather than app chrome.
 val BookmarkGoldColor = Color(0xFFD4A017)
 val BookmarkVioletColor = Color(0xFF7E57C2)
+// The third and fourth bookmarks: kept clear of the green of a long-pressed ayah, the blue of the
+// recited one and the orange of a search flash, so no highlight on the page reads as another.
+val BookmarkRedColor = Color(0xFFC62828)
+val BookmarkTealColor = Color(0xFF00A3B4)
 val AyahSelectionColor = Color(0xFF276F54)
 val StatusRedColor = Color(0xFFE53935)
 val StatusGreenColor = Color(0xFF2E9E45)

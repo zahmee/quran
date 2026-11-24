@@ -18,6 +18,9 @@ object BackupJsonCodec {
     private const val MAX_KHATMAS = 10_000
     private val verseKeyPattern = Regex("^[0-9]{1,3}:[0-9]{1,3}$")
 
+    /** The JSON name of each bookmark slot. The first two are the names schema v1 shipped with. */
+    private val bookmarkFields = listOf("bookmarks", "bookmarks2", "bookmarks3", "bookmarks4")
+
     fun encode(snapshot: BackupSnapshot): ByteArray {
         val root = JSONObject()
             .put("schemaVersion", snapshot.schemaVersion)
@@ -80,10 +83,11 @@ object BackupJsonCodec {
         }
     }
 
-    private fun encodeReading(state: ReadingStore.BackupState): JSONObject = JSONObject()
-        .put("settings", encodeSettings(state.settings))
-        .put("bookmarks", stringArray(state.bookmarks))
-        .put("bookmarks2", stringArray(state.bookmarks2))
+    private fun encodeReading(state: ReadingStore.BackupState): JSONObject =
+        JSONObject().put("settings", encodeSettings(state.settings)).apply {
+            bookmarkFields.forEachIndexed { slot, field -> put(field, stringArray(state.bookmarks[slot])) }
+            put("bookmarkNames", JSONArray(state.bookmarkNames))
+        }
 
     private fun encodeSettings(value: ReadingStore.Settings): JSONObject = JSONObject()
         .put("lastPage", value.lastPage)
@@ -137,8 +141,12 @@ object BackupJsonCodec {
         // session, khatma and bookmark in them over a set the app can repair on the spot.
         val visitedPages = intSet(settingsJson.getJSONArray("visitedPages"), pageCount) + readPages
 
-        val bookmarks = stringSet(root.getJSONArray("bookmarks"), 16).also(::validateBookmarks)
-        val bookmarks2 = stringSet(root.getJSONArray("bookmarks2"), 16).also(::validateBookmarks)
+        // The first two slots are in every backup; the third and fourth came later, and a backup
+        // written before them simply has those two empty.
+        val bookmarks = bookmarkFields.mapIndexed { slot, field ->
+            val array = if (slot < 2) root.getJSONArray(field) else root.optJSONArray(field)
+            (array?.let { stringSet(it, 16) } ?: emptySet()).also(::validateBookmarks)
+        }
         val lastPage = settingsJson.getInt("lastPage")
         if (lastPage !in 1..pageCount) throw BackupException("موضع القراءة في النسخة غير صالح.")
 
@@ -208,7 +216,7 @@ object BackupJsonCodec {
             // questions, so the two defaults are allowed to differ.
             edgeMargin = safeText(settingsJson, "edgeMargin", ReadingStore.EDGE_MARGIN_NONE),
         )
-        return ReadingStore.BackupState(settings, bookmarks, bookmarks2)
+        return ReadingStore.BackupState(settings, bookmarks, decodeBookmarkNames(root))
     }
 
     private fun encodeSessions(values: List<SessionEntity>): JSONArray = JSONArray().apply {
@@ -322,6 +330,14 @@ object BackupJsonCodec {
                 if (item.length > 100) throw BackupException("تحتوي النسخة على نص غير صالح.")
                 add(item)
             }
+        }
+    }
+
+    /** Names came after the slots did; a backup without them, or with a short list, names nothing. */
+    private fun decodeBookmarkNames(root: JSONObject): List<String> {
+        val array = root.optJSONArray("bookmarkNames")
+        return List(ReadingStore.BOOKMARK_SLOTS) { slot ->
+            ReadingStore.cleanBookmarkName(array?.optString(slot, "").orEmpty())
         }
     }
 

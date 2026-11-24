@@ -38,9 +38,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.ui.theme.AyahSelectionColor
-import com.mushaf.reader.ui.theme.BookmarkGoldColor
 import com.mushaf.reader.ui.theme.MushafPalette
-import com.mushaf.reader.ui.theme.BookmarkVioletColor
 import com.mushaf.reader.ui.theme.PageRecolor
 import kotlin.math.min
 
@@ -58,7 +56,8 @@ import kotlin.math.min
  *   (height only) to fill top-to-bottom; the full width stays visible (no side cropping), the
  *   glyphs just get a little taller.
  *
- * Bookmarked ayahs stay highlighted (amber); a long-pressed ayah is highlighted (green).
+ * Bookmarked ayahs stay highlighted, each in its bookmark's colour; a long-pressed ayah is
+ * highlighted (green).
  *
  * [recolor] repaints the printed page for the chosen reading theme — the page assets themselves
  * ship in one light version only. [palette] is that same theme, kept whole because [MoreBelowFade]
@@ -73,20 +72,16 @@ fun MushafPage(
     imageWidth: Int,
     imageHeight: Int,
     selectedAyah: AyahMarker?,
-    bookmarkedKeys: Set<String>,
-    bookmarkedKeys2: Set<String>,
+    /** Each bookmarked verse key and the colour of the bookmark on it. */
+    bookmarkColors: Map<String, Color>,
     onLongPressAyah: (AyahMarker, Offset, Rect) -> Unit,
     fillScreen: Boolean = false,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit = { _, _, _ -> },
 ) {
     val highlight = selectedAyah?.takeIf { markers.contains(it) }
-    val bookmarked = remember(markers, bookmarkedKeys) {
-        if (bookmarkedKeys.isEmpty()) emptyList()
-        else markers.filter { bookmarkedKeys.contains(it.verseKey) }
-    }
-    val bookmarked2 = remember(markers, bookmarkedKeys2) {
-        if (bookmarkedKeys2.isEmpty()) emptyList()
-        else markers.filter { bookmarkedKeys2.contains(it.verseKey) }
+    val bookmarked = remember(markers, bookmarkColors) {
+        if (bookmarkColors.isEmpty()) emptyList()
+        else markers.mapNotNull { m -> bookmarkColors[m.verseKey]?.let { m to it } }
     }
 
     BoxWithConstraints(
@@ -107,17 +102,17 @@ fun MushafPage(
         when {
             !fillScreen -> WholePage(
                 model, recolor, markers, fitScale, wPx, hPx, imgW, imgH,
-                bookmarked, bookmarked2, highlight, onLongPressAyah, pageOverlay
+                bookmarked, highlight, onLongPressAyah, pageOverlay
             )
 
             widthConstrained -> StretchedPage(
                 model, recolor, markers, fitScale, wPx, hPx, imgW, imgH,
-                bookmarked, bookmarked2, highlight, onLongPressAyah, pageOverlay
+                bookmarked, highlight, onLongPressAyah, pageOverlay
             )
 
             else -> FilledWidthPage(
                 model, recolor, palette, markers, wPx, hPx, imgW, imgH,
-                bookmarked, bookmarked2, highlight, onLongPressAyah, pageOverlay
+                bookmarked, highlight, onLongPressAyah, pageOverlay
             )
         }
     }
@@ -134,8 +129,7 @@ private fun WholePage(
     hPx: Float,
     imgW: Float,
     imgH: Float,
-    bookmarked: List<AyahMarker>,
-    bookmarked2: List<AyahMarker>,
+    bookmarked: List<Pair<AyahMarker, Color>>,
     highlight: AyahMarker?,
     onLongPressAyah: (AyahMarker, Offset, Rect) -> Unit,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
@@ -173,7 +167,6 @@ private fun WholePage(
             recolor = recolor,
             baseScale = fitScale,
             bookmarked = bookmarked,
-            bookmarked2 = bookmarked2,
             highlight = highlight,
             pageOverlay = pageOverlay,
             viewportTop = { 0f },
@@ -193,8 +186,7 @@ private fun StretchedPage(
     hPx: Float,
     imgW: Float,
     imgH: Float,
-    bookmarked: List<AyahMarker>,
-    bookmarked2: List<AyahMarker>,
+    bookmarked: List<Pair<AyahMarker, Color>>,
     highlight: AyahMarker?,
     onLongPressAyah: (AyahMarker, Offset, Rect) -> Unit,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
@@ -238,7 +230,6 @@ private fun StretchedPage(
             recolor = recolor,
             baseScale = fitScale,
             bookmarked = bookmarked,
-            bookmarked2 = bookmarked2,
             highlight = highlight,
             pageOverlay = pageOverlay,
             viewportTop = { 0f },
@@ -264,8 +255,7 @@ private fun FilledWidthPage(
     hPx: Float,
     imgW: Float,
     imgH: Float,
-    bookmarked: List<AyahMarker>,
-    bookmarked2: List<AyahMarker>,
+    bookmarked: List<Pair<AyahMarker, Color>>,
     highlight: AyahMarker?,
     onLongPressAyah: (AyahMarker, Offset, Rect) -> Unit,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
@@ -307,7 +297,6 @@ private fun FilledWidthPage(
                 recolor = recolor,
                 baseScale = scale,
                 bookmarked = bookmarked,
-                bookmarked2 = bookmarked2,
                 highlight = highlight,
                 pageOverlay = pageOverlay,
                 viewportTop = { scrollState.value.toFloat() },
@@ -404,8 +393,7 @@ private fun PageContent(
     model: String,
     recolor: PageRecolor,
     baseScale: Float,
-    bookmarked: List<AyahMarker>,
-    bookmarked2: List<AyahMarker>,
+    bookmarked: List<Pair<AyahMarker, Color>>,
     highlight: AyahMarker?,
     pageOverlay: @Composable (Float, () -> Float, Float) -> Unit,
     viewportTop: () -> Float,
@@ -432,25 +420,14 @@ private fun PageContent(
                 )
         )
 
-        if (bookmarked.isNotEmpty() || bookmarked2.isNotEmpty() || highlight != null) {
+        if (bookmarked.isNotEmpty() || highlight != null) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val corner = CornerRadius(8f, 8f)
-                val bm = BookmarkGoldColor.copy(alpha = 0.22f)
-                bookmarked.forEach { m ->
+                bookmarked.forEach { (m, color) ->
+                    val fill = color.copy(alpha = 0.22f)
                     m.rects.forEach { r ->
                         drawRoundRect(
-                            color = bm,
-                            topLeft = Offset(r.x * baseScale, r.y * baseScale),
-                            size = Size(r.w * baseScale, r.h * baseScale),
-                            cornerRadius = corner
-                        )
-                    }
-                }
-                val bm2 = BookmarkVioletColor.copy(alpha = 0.22f)
-                bookmarked2.forEach { m ->
-                    m.rects.forEach { r ->
-                        drawRoundRect(
-                            color = bm2,
+                            color = fill,
                             topLeft = Offset(r.x * baseScale, r.y * baseScale),
                             size = Size(r.w * baseScale, r.h * baseScale),
                             cornerRadius = corner

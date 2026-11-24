@@ -469,11 +469,15 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     private var explanationJob: Job? = null
 
-    var bookmarks by mutableStateOf<Set<String>>(emptySet())
+    /**
+     * The verse each coloured bookmark holds, by slot (gold, violet, red, teal); null where unset.
+     * Each is a single place: setting it on another ayah moves it there.
+     */
+    var bookmarks by mutableStateOf<List<String?>>(List(ReadingStore.BOOKMARK_SLOTS) { null })
         private set
 
-    /** Second, independent bookmark (different colour); behaves exactly like the first. */
-    var bookmarks2 by mutableStateOf<Set<String>>(emptySet())
+    /** The name the reader gave each bookmark, by slot; blank where it goes by its colour. */
+    var bookmarkNames by mutableStateOf(List(ReadingStore.BOOKMARK_SLOTS) { "" })
         private set
 
     var stats by mutableStateOf<ReadingStats?>(null)
@@ -522,8 +526,10 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch { ayahData = withContext(Dispatchers.IO) { ayahRepo.loadAll() } }
-        viewModelScope.launch { bookmarks = withContext(Dispatchers.IO) { store.bookmarks() } }
-        viewModelScope.launch { bookmarks2 = withContext(Dispatchers.IO) { store.bookmarks2() } }
+        viewModelScope.launch {
+            bookmarks = withContext(Dispatchers.IO) { store.bookmarkSlots() }.map { it.firstOrNull() }
+        }
+        viewModelScope.launch { bookmarkNames = withContext(Dispatchers.IO) { store.bookmarkNames() } }
         viewModelScope.launch { khatmas = withContext(Dispatchers.IO) { statsRepo.allKhatmas() } }
         if (cloudRepo.isAvailable) viewModelScope.launch {
             loadCloudAccount()
@@ -1018,7 +1024,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
                 thisDeviceId = result.thisDeviceId,
                 localLatestAt = local.latestAt,
                 currentPage = lastPage,
-                localBookmarkKey = bookmarks.firstOrNull(),
+                localBookmarkKey = bookmarks[0],
                 devices = result.devices,
                 dismissedKey = local.dismissedKey,
             )
@@ -1209,8 +1215,8 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         pageSideIndicatorLength = value.pageSideIndicatorLength
         pageSideIndicatorOpacity = value.pageSideIndicatorOpacity
         khatmaStartedAt = value.khatmaStartedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
-        bookmarks = snapshot.reading.bookmarks
-        bookmarks2 = snapshot.reading.bookmarks2
+        bookmarks = snapshot.reading.bookmarks.map { it.firstOrNull() }
+        bookmarkNames = snapshot.reading.bookmarkNames.map(ReadingStore::cleanBookmarkName)
         visitedPagesAll = value.visitedPages
         readPagesAll = value.readPages
         lastPage = value.lastPage.coerceIn(1, pageCount)
@@ -1327,32 +1333,50 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun isBookmarked(verseKey: String): Boolean = bookmarks.contains(verseKey)
+    /**
+     * Puts bookmark [slot] on [ayah], moving it from wherever it was; tapping the slot that
+     * already holds this ayah clears it. Only the first (gold) slot is shared with the reader's
+     * other devices — the reading-sync record carries one bookmark.
+     */
+    fun toggleBookmark(slot: Int, ayah: AyahMarker) {
+        setBookmark(slot, if (bookmarks[slot] == ayah.verseKey) null else ayah.verseKey)
+    }
 
-    /** Single bookmark: a new one replaces the old; re-tapping the current one clears it. */
-    fun toggleBookmark(ayah: AyahMarker) {
-        val next = if (bookmarks.contains(ayah.verseKey)) emptySet() else setOf(ayah.verseKey)
-        bookmarks = next
+    /** Takes bookmark [slot] off wherever it is, without going there first. */
+    fun clearBookmark(slot: Int) {
+        if (bookmarks[slot] != null) setBookmark(slot, null)
+    }
+
+    private fun setBookmark(slot: Int, verseKey: String?) {
+        bookmarks = bookmarks.toMutableList().also { it[slot] = verseKey }
         viewModelScope.launch {
-            store.setBookmarks(next)
-            recordBookmarkForSync(next.firstOrNull())
+            store.setBookmarkSlot(slot, setOfNotNull(verseKey))
+            if (slot == 0) recordBookmarkForSync(verseKey)
         }
     }
 
-    private fun bookmarkPage(): Int? = bookmarks.firstOrNull()?.let { ayahData.keyToPage[it] }
+    /** What bookmark [slot] is called: the reader's name for it, or its colour's. */
+    fun bookmarkTitle(slot: Int): String = bookmarkTitle(slot, bookmarkNames[slot])
 
-    fun bookmarkJumpPage(): Int? = bookmarkPage()
-
-    fun isBookmarked2(verseKey: String): Boolean = bookmarks2.contains(verseKey)
-
-    /** Second bookmark: same single-slot behaviour as the first, stored separately. */
-    fun toggleBookmark2(ayah: AyahMarker) {
-        val next = if (bookmarks2.contains(ayah.verseKey)) emptySet() else setOf(ayah.verseKey)
-        bookmarks2 = next
-        viewModelScope.launch { store.setBookmarks2(next) }
+    /** Saves the names from the bookmarks screen; a blank one goes back to the colour's name. */
+    fun saveBookmarkNames(names: List<String>) {
+        val clean = names.map(ReadingStore::cleanBookmarkName)
+        if (clean == bookmarkNames) return
+        bookmarkNames = clean
+        viewModelScope.launch { store.setBookmarkNames(clean) }
     }
 
-    fun bookmark2JumpPage(): Int? = bookmarks2.firstOrNull()?.let { ayahData.keyToPage[it] }
+    /** Where bookmark [slot] stands, for the menus that list the four; null when it is unset. */
+    fun bookmarkPlace(slot: Int): BookmarkPlace? {
+        val key = bookmarks[slot] ?: return null
+        val page = ayahData.keyToPage[key] ?: return null
+        return BookmarkPlace(verseKey = key, page = page, verse = describeVerse(key) ?: key)
+    }
+
+    /** The gold bookmark's page: the one the statistics and the khatma map point at. */
+    private fun bookmarkPage(): Int? = bookmarkJumpPage(0)
+
+    fun bookmarkJumpPage(slot: Int = 0): Int? = bookmarks[slot]?.let { ayahData.keyToPage[it] }
 
     fun saveLastPage(page: Int) {
         lastPage = page

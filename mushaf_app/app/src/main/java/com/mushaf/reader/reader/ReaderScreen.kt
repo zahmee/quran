@@ -171,7 +171,6 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import com.mushaf.reader.update.AppUpdateUi
 import com.mushaf.reader.update.UpdateBanner
 import com.mushaf.reader.ui.theme.BookmarkGoldColor
-import com.mushaf.reader.ui.theme.BookmarkVioletColor
 import com.mushaf.reader.ui.theme.MushafPalettes
 import com.mushaf.reader.ui.theme.ReadingType
 import com.mushaf.reader.ui.theme.StatusBlueColor
@@ -231,6 +230,22 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     var showAbout by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showBackup by remember { mutableStateOf(false) }
+    var showBookmarkManager by remember { mutableStateOf(false) }
+    // What every bookmark menu (header bar, More menu, ayah card) reads and does.
+    val bookmarkMenu = remember(viewModel) {
+        BookmarkMenu(
+            place = viewModel::bookmarkPlace,
+            title = viewModel::bookmarkTitle,
+            onJump = { slot ->
+                viewModel.bookmarkJumpPage(slot)?.let { p ->
+                    // Read the count now, not when this was remembered: it is set once the mushaf loads.
+                    val last = viewModel.pageCount.coerceAtLeast(1) - 1
+                    scope.launch { pagerState.scrollToPage((p - 1).coerceIn(0, last)) }
+                }
+            },
+            onManage = { showBookmarkManager = true },
+        )
+    }
     var showTafsirLibrary by remember { mutableStateOf(false) }
     var headerVisible by remember { mutableStateOf(true) }
     // Unfolding or folding a phone changes this, and with it which fill choice is in force.
@@ -334,8 +349,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                         pagesInJuz = juzInfo.pagesInJuz,
                         juzPercent = juzInfo.pageInJuz * 100 / juzInfo.pagesInJuz,
                         paletteId = viewModel.themeId,
-                        hasBookmark = viewModel.bookmarks.isNotEmpty(),
-                        hasBookmark2 = viewModel.bookmarks2.isNotEmpty(),
+                        hasBookmark = viewModel.bookmarks.any { it != null },
+                        bookmarkMenu = bookmarkMenu,
                         fillScreen = fillScreen,
                         bigButtons = viewModel.bigButtons,
                         showClock = viewModel.showClock,
@@ -372,16 +387,6 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                         onSharePage = { share = ShareSession(currentPage, ayah = null, viewModel.themeId) },
                         onPageFawaed = { fawaedPage = currentPage },
                         onPaletteChange = { viewModel.updateThemeId(it) },
-                        onBookmarkJump = {
-                            viewModel.bookmarkJumpPage()?.let { p ->
-                                scope.launch { pagerState.scrollToPage((p - 1).coerceIn(0, pageCount - 1)) }
-                            }
-                        },
-                        onBookmark2Jump = {
-                            viewModel.bookmark2JumpPage()?.let { p ->
-                                scope.launch { pagerState.scrollToPage((p - 1).coerceIn(0, pageCount - 1)) }
-                            }
-                        },
                         onStats = {
                             viewModel.openStats()
                             showStatsScreen = true
@@ -419,6 +424,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                     verticalPaging = viewModel.verticalPaging,
                     readerVisible = canRead,
                     updates = updates,
+                    bookmarkMenu = bookmarkMenu,
                     onOpenRepeat = { repeatFrom = it },
                     onShareAyah = { share = ShareSession(it.page, it, viewModel.themeId) },
                 )
@@ -625,6 +631,17 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                 onResetKhatma = { viewModel.resetKhatmaProgress(); showStatsScreen = false },
                 onBack = { showStatsScreen = false },
                 onOpenKhatmaMap = { showKhatmaMap = true },
+            )
+        }
+
+        if (showBookmarkManager) {
+            BookmarkManageDialog(
+                names = viewModel.bookmarkNames,
+                place = viewModel::bookmarkPlace,
+                onSaveNames = viewModel::saveBookmarkNames,
+                onJump = bookmarkMenu.onJump,
+                onClear = viewModel::clearBookmark,
+                onDismiss = { showBookmarkManager = false },
             )
         }
 
@@ -923,6 +940,7 @@ private fun ReaderPager(
     verticalPaging: Boolean,
     readerVisible: Boolean,
     updates: AppUpdateUi?,
+    bookmarkMenu: BookmarkMenu,
     onOpenRepeat: (AyahRef) -> Unit,
     onShareAyah: (AyahMarker) -> Unit,
 ) {
@@ -967,6 +985,15 @@ private fun ReaderPager(
         )
 
         // Same page content for both orientations; only the pager axis differs.
+        // Each bookmarked ayah and the colour of its bookmark. Where two share an ayah the earlier
+        // slot shows, so gold stays gold.
+        val showBookmarks = viewModel.isButtonVisible("bookmark")
+        val bookmarkColors = remember(viewModel.bookmarks, showBookmarks) {
+            if (!showBookmarks) emptyMap()
+            else viewModel.bookmarks.withIndex().reversed()
+                .mapNotNull { (slot, key) -> key?.let { it to BookmarkSlotStyles[slot].color } }
+                .toMap()
+        }
         val pageContent: @Composable PagerScope.(Int) -> Unit = { index ->
             val pageNumber = index + 1
             MushafPage(
@@ -977,8 +1004,7 @@ private fun ReaderPager(
                 imageWidth = viewModel.imageWidth,
                 imageHeight = viewModel.imageHeight,
                 selectedAyah = selected,
-                bookmarkedKeys = if (viewModel.isButtonVisible("bookmark")) viewModel.bookmarks else emptySet(),
-                bookmarkedKeys2 = if (viewModel.isButtonVisible("bookmark2")) viewModel.bookmarks2 else emptySet(),
+                bookmarkColors = bookmarkColors,
                 onLongPressAyah = { m, _, bounds ->
                     viewModel.selectAyah(m)
                     ayahBounds = bounds
@@ -1055,12 +1081,9 @@ private fun ReaderPager(
                 boxWidthPx = boxW,
                 boxHeightPx = boxH,
                 pageWidthPx = pageWidthPx,
-                bookmarked = viewModel.isBookmarked(ayah.verseKey),
-                onBookmark = { viewModel.toggleBookmark(ayah) },
+                bookmarkMenu = bookmarkMenu,
+                onBookmark = { slot -> viewModel.toggleBookmark(slot, ayah) },
                 showBookmark = viewModel.isButtonVisible("bookmark"),
-                bookmarked2 = viewModel.isBookmarked2(ayah.verseKey),
-                onBookmark2 = { viewModel.toggleBookmark2(ayah) },
-                showBookmark2 = viewModel.isButtonVisible("bookmark2"),
                 onExplain = {
                     longPressAyah = null
                     viewModel.loadExplanation(ayah)
@@ -1191,7 +1214,7 @@ private fun ReaderHeader(
     juzPercent: Int,
     paletteId: String,
     hasBookmark: Boolean,
-    hasBookmark2: Boolean,
+    bookmarkMenu: BookmarkMenu,
     fillScreen: Boolean,
     bigButtons: Boolean,
     showClock: Boolean,
@@ -1222,8 +1245,6 @@ private fun ReaderHeader(
     onSharePage: () -> Unit,
     onPageFawaed: () -> Unit,
     onPaletteChange: (String) -> Unit,
-    onBookmarkJump: () -> Unit,
-    onBookmark2Jump: () -> Unit,
     onStats: () -> Unit,
     onPageClick: () -> Unit,
     onAbout: () -> Unit,
@@ -1391,14 +1412,12 @@ private fun ReaderHeader(
                         activeContentColor = activeContentColor,
                         fillScreen = fillScreen,
                         hasBookmark = hasBookmark,
-                        hasBookmark2 = hasBookmark2,
+                        bookmarkMenu = bookmarkMenu,
                         paletteId = paletteId,
                         isVisible = isVisible,
                         visibleBarActionIds = visibleBarActionIds,
                         buttonTint = buttonTint,
                         onOpenSearch = onOpenSearch,
-                        onBookmarkJump = onBookmarkJump,
-                        onBookmark2Jump = onBookmark2Jump,
                         onStats = onStats,
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
@@ -1414,14 +1433,12 @@ private fun ReaderHeader(
                         tint = quietContentColor,
                         quietContentColor = quietContentColor,
                         hasBookmark = hasBookmark,
-                        hasBookmark2 = hasBookmark2,
+                        bookmarkMenu = bookmarkMenu,
                         fillScreen = fillScreen,
                         paletteId = paletteId,
                         isVisible = isVisible,
                         visibleBarActionIds = visibleBarActionIds,
                         onOpenSearch = onOpenSearch,
-                        onBookmarkJump = onBookmarkJump,
-                        onBookmark2Jump = onBookmark2Jump,
                         onStats = onStats,
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
@@ -1511,14 +1528,12 @@ private fun ReaderHeader(
                         activeContentColor = activeContentColor,
                         fillScreen = fillScreen,
                         hasBookmark = hasBookmark,
-                        hasBookmark2 = hasBookmark2,
+                        bookmarkMenu = bookmarkMenu,
                         paletteId = paletteId,
                         isVisible = isVisible,
                         visibleBarActionIds = visibleBarActionIds,
                         buttonTint = buttonTint,
                         onOpenSearch = onOpenSearch,
-                        onBookmarkJump = onBookmarkJump,
-                        onBookmark2Jump = onBookmark2Jump,
                         onStats = onStats,
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
@@ -1534,14 +1549,12 @@ private fun ReaderHeader(
                         tint = quietContentColor,
                         quietContentColor = quietContentColor,
                         hasBookmark = hasBookmark,
-                        hasBookmark2 = hasBookmark2,
+                        bookmarkMenu = bookmarkMenu,
                         fillScreen = fillScreen,
                         paletteId = paletteId,
                         isVisible = isVisible,
                         visibleBarActionIds = visibleBarActionIds,
                         onOpenSearch = onOpenSearch,
-                        onBookmarkJump = onBookmarkJump,
-                        onBookmark2Jump = onBookmark2Jump,
                         onStats = onStats,
                         onOpenIndex = onOpenIndex,
                         onPaletteChange = onPaletteChange,
@@ -1624,14 +1637,12 @@ private fun HeaderMoreMenu(
     tint: Color,
     quietContentColor: Color,
     hasBookmark: Boolean,
-    hasBookmark2: Boolean,
+    bookmarkMenu: BookmarkMenu,
     fillScreen: Boolean,
     paletteId: String,
     isVisible: (String) -> Boolean,
     visibleBarActionIds: Set<String>,
     onOpenSearch: () -> Unit,
-    onBookmarkJump: () -> Unit,
-    onBookmark2Jump: () -> Unit,
     onStats: () -> Unit,
     onOpenIndex: (Int) -> Unit,
     onPaletteChange: (String) -> Unit,
@@ -1647,6 +1658,7 @@ private fun HeaderMoreMenu(
 
     var showMoreMenu by remember { mutableStateOf(false) }
     var showThemeMenu by remember { mutableStateOf(false) }
+    var showBookmarkMenu by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { showMoreMenu = true }, modifier = Modifier.size(btnSize)) {
             Icon(
@@ -1663,7 +1675,6 @@ private fun HeaderMoreMenu(
             menuActions.forEach { action ->
                 val enabled = when (action.id) {
                     "bookmark" -> hasBookmark
-                    "bookmark2" -> hasBookmark2
                     else -> true
                 }
                 DropdownMenuItem(
@@ -1673,7 +1684,7 @@ private fun HeaderMoreMenu(
                             imageVector = headerActionIcon(action, fillScreen),
                             contentDescription = null,
                             tint = headerActionDefaultTint(
-                                action.id, hasBookmark, hasBookmark2, fillScreen,
+                                action.id, hasBookmark, fillScreen,
                                 quietContentColor, quietContentColor
                             )
                         )
@@ -1683,9 +1694,11 @@ private fun HeaderMoreMenu(
                         showMoreMenu = false
                         if (action.id == "theme") {
                             showThemeMenu = true
+                        } else if (action.id == "bookmark") {
+                            showBookmarkMenu = true
                         } else {
                             runHeaderAction(
-                                action.id, onOpenSearch, onBookmarkJump, onBookmark2Jump,
+                                action.id, onOpenSearch,
                                 onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen, onSharePage, onPageFawaed
                             )
                         }
@@ -1716,6 +1729,12 @@ private fun HeaderMoreMenu(
             onDismiss = { showThemeMenu = false },
             onPaletteChange = onPaletteChange
         )
+        // And the four bookmarks, to pick which one to go back to.
+        BookmarkJumpMenu(
+            expanded = showBookmarkMenu,
+            menu = bookmarkMenu,
+            onDismiss = { showBookmarkMenu = false },
+        )
     }
 }
 
@@ -1729,14 +1748,12 @@ private fun HeaderBarActions(
     activeContentColor: Color,
     fillScreen: Boolean,
     hasBookmark: Boolean,
-    hasBookmark2: Boolean,
+    bookmarkMenu: BookmarkMenu,
     paletteId: String,
     isVisible: (String) -> Boolean,
     visibleBarActionIds: Set<String>,
     buttonTint: (String, Color) -> Color,
     onOpenSearch: () -> Unit,
-    onBookmarkJump: () -> Unit,
-    onBookmark2Jump: () -> Unit,
     onStats: () -> Unit,
     onOpenIndex: (Int) -> Unit,
     onPaletteChange: (String) -> Unit,
@@ -1751,7 +1768,7 @@ private fun HeaderBarActions(
         val tint = buttonTint(
             action.id,
             headerActionDefaultTint(
-                action.id, hasBookmark, hasBookmark2, fillScreen,
+                action.id, hasBookmark, fillScreen,
                 quietContentColor, activeContentColor
             )
         )
@@ -1759,15 +1776,25 @@ private fun HeaderBarActions(
             HeaderThemeButton(btnSize, iconSize, tint, paletteId, onPaletteChange)
             return@forEach
         }
+        if (action.id == "bookmark") {
+            HeaderBookmarkButton(
+                btnSize, iconSize,
+                tint = if (hasBookmark) tint else quietContentColor.copy(alpha = 0.38f),
+                enabled = hasBookmark,
+                label = action.title,
+                icon = headerActionIcon(action, fillScreen),
+                bookmarkMenu = bookmarkMenu,
+            )
+            return@forEach
+        }
         val enabled = when (action.id) {
             "bookmark" -> hasBookmark
-            "bookmark2" -> hasBookmark2
             else -> true
         }
         IconButton(
             onClick = {
                 runHeaderAction(
-                    action.id, onOpenSearch, onBookmarkJump, onBookmark2Jump,
+                    action.id, onOpenSearch,
                     onStats, onOpenIndex, onToggleFillScreen, onHideHeader, onListen, onSharePage, onPageFawaed
                 )
             },
@@ -1781,6 +1808,35 @@ private fun HeaderBarActions(
                 modifier = Modifier.size(iconSize)
             )
         }
+    }
+}
+
+/** The bookmark as a bar button: it opens the four bookmarks, each with where it stands. */
+@Composable
+private fun HeaderBookmarkButton(
+    btnSize: Dp,
+    iconSize: Dp,
+    tint: Color,
+    enabled: Boolean,
+    label: String,
+    icon: ImageVector,
+    bookmarkMenu: BookmarkMenu,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }, enabled = enabled, modifier = Modifier.size(btnSize)) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = tint,
+                modifier = Modifier.size(iconSize)
+            )
+        }
+        BookmarkJumpMenu(
+            expanded = expanded,
+            menu = bookmarkMenu,
+            onDismiss = { expanded = false },
+        )
     }
 }
 
@@ -1847,8 +1903,6 @@ private fun PaletteMenu(
 private fun runHeaderAction(
     id: String,
     onOpenSearch: () -> Unit,
-    onBookmarkJump: () -> Unit,
-    onBookmark2Jump: () -> Unit,
     onStats: () -> Unit,
     onOpenIndex: (Int) -> Unit,
     onToggleFillScreen: () -> Unit,
@@ -1861,8 +1915,6 @@ private fun runHeaderAction(
         "search" -> onOpenSearch()
         "share" -> onSharePage()
         "fawaed" -> onPageFawaed()
-        "bookmark" -> onBookmarkJump()
-        "bookmark2" -> onBookmark2Jump()
         "stats" -> onStats()
         "index" -> onOpenIndex(0)
         "fill" -> onToggleFillScreen()
@@ -1883,13 +1935,11 @@ private fun headerActionLabel(action: HeaderAction, fillScreen: Boolean) =
 private fun headerActionDefaultTint(
     id: String,
     hasBookmark: Boolean,
-    hasBookmark2: Boolean,
     fillScreen: Boolean,
     quiet: Color,
     active: Color,
 ): Color = when (id) {
     "bookmark" -> if (hasBookmark) BookmarkGoldColor else quiet
-    "bookmark2" -> if (hasBookmark2) BookmarkVioletColor else quiet
     "fill" -> if (fillScreen) active else quiet
     else -> quiet
 }
@@ -3552,12 +3602,9 @@ private fun AyahLongPressMenu(
     boxWidthPx: Int,
     boxHeightPx: Int,
     pageWidthPx: Int,
-    bookmarked: Boolean,
-    onBookmark: () -> Unit,
+    bookmarkMenu: BookmarkMenu,
+    onBookmark: (Int) -> Unit,
     showBookmark: Boolean,
-    bookmarked2: Boolean,
-    onBookmark2: () -> Unit,
-    showBookmark2: Boolean,
     onExplain: () -> Unit,
     onListenAyah: () -> Unit,
     onPlayFrom: () -> Unit,
@@ -3721,26 +3768,12 @@ private fun AyahLongPressMenu(
                             onListenAyah = onListenAyah,
                             onRepeat = onRepeat,
                         )
-                        // Numbered only when both are shown; alone, either is simply the bookmark.
-                        val bothBookmarks = showBookmark && showBookmark2
                         if (showBookmark) {
                             BookmarkBarAction(
                                 modifier = slot,
-                                label = if (bothBookmarks) "علامة ${1.toArabicDigits()}" else "علامة",
-                                set = bookmarked,
-                                tint = BookmarkGoldColor,
-                                name = "العلامة المرجعية",
-                                onClick = onBookmark,
-                            )
-                        }
-                        if (showBookmark2) {
-                            BookmarkBarAction(
-                                modifier = slot,
-                                label = if (bothBookmarks) "علامة ${2.toArabicDigits()}" else "علامة",
-                                set = bookmarked2,
-                                tint = BookmarkVioletColor,
-                                name = "العلامة الثانية",
-                                onClick = onBookmark2,
+                                verseKey = ayah.verseKey,
+                                menu = bookmarkMenu,
+                                onToggle = onBookmark,
                             )
                         }
                         AyahBarAction(
@@ -3948,32 +3981,59 @@ private fun ListenBarAction(
 }
 
 /**
- * A bookmark in the ayah card's bar: its own colour (gold for the first, violet for the second)
- * even when unset, so the two are told apart; filled while this ayah holds it. A short message
- * confirms each change, since the glyph alone is small.
+ * The bookmarks, as one action in the ayah card's bar: a tap opens the four, each with where it
+ * stands now. Picking one puts it on this ayah (moving it from wherever it was); picking one this
+ * ayah already holds takes it off. The button wears the colour of the bookmark on this ayah, or
+ * gold when none is. A short message confirms each change, since the glyph alone is small.
  */
 @Composable
 private fun BookmarkBarAction(
     modifier: Modifier,
-    label: String,
-    set: Boolean,
-    tint: Color,
-    name: String,
-    onClick: () -> Unit,
+    verseKey: String,
+    menu: BookmarkMenu,
+    onToggle: (Int) -> Unit,
 ) {
+    val place = menu.place
     val context = LocalContext.current
-    AyahBarAction(
-        modifier = modifier,
-        label = label,
-        icon = if (set) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-        tint = tint,
-        onClickLabel = if (set) "إزالة $name" else "حفظ $name",
-        onClick = {
-            onClick()
-            val message = if (set) "أُزيلت $name" else "حُفظت $name على هذه الآية"
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-        },
-    )
+    var open by remember { mutableStateOf(false) }
+    val held = BookmarkSlotStyles.indices.firstOrNull { place(it)?.verseKey == verseKey }
+    Box(modifier = modifier) {
+        AyahBarAction(
+            modifier = Modifier.fillMaxWidth(),
+            label = "علامة",
+            icon = if (held != null) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+            tint = BookmarkSlotStyles[held ?: 0].color,
+            onClickLabel = "العلامات المرجعية",
+            hasMenu = true,
+            onClick = { open = true },
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            BookmarkSlotStyles.indices.forEach { slot ->
+                val at = place(slot)
+                val here = at?.verseKey == verseKey
+                val title = menu.title(slot)
+                BookmarkSlotItem(
+                    slot = slot,
+                    title = title,
+                    place = at,
+                    checked = here,
+                    enabled = true,
+                    onClick = {
+                        open = false
+                        onToggle(slot)
+                        // "العلامة الذهبية" reads as is; a name of the reader's own is quoted.
+                        val name = if (title.startsWith("العلامة ")) title else "علامة «$title»"
+                        val message = if (here) "أُزيلت $name" else "حُفظت $name على هذه الآية"
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                    },
+                )
+            }
+            ManageBookmarksItem {
+                open = false
+                menu.onManage()
+            }
+        }
+    }
 }
 
 @Composable

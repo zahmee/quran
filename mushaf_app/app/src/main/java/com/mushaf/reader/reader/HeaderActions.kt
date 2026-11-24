@@ -56,11 +56,7 @@ internal val HeaderActions = listOf(
         Icons.Outlined.Share, Icons.Filled.Share,
     ),
     HeaderAction(
-        "bookmark", "العلامة المرجعية", "الانتقال إلى الفاصل الذهبي المحفوظ.",
-        Icons.Outlined.BookmarkBorder, Icons.Filled.Bookmark,
-    ),
-    HeaderAction(
-        "bookmark2", "العلامة المرجعية الثانية", "الانتقال إلى الفاصل البنفسجي المحفوظ.",
+        "bookmark", "العلامات المرجعية", "اختيار إحدى العلامات الأربع والانتقال إليها.",
         Icons.Outlined.BookmarkBorder, Icons.Filled.Bookmark,
     ),
     HeaderAction(

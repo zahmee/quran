@@ -59,10 +59,35 @@ class ReadingStore(private val context: Context) {
          *  the page itself, and a menu hop for it reads as friction. */
         val DEFAULT_BAR_BUTTONS = setOf("bookmark", "fill", "hide")
 
-        /** Header actions hidden until the reader turns them on. The second (purple) marker is for
-         *  readers who keep two places at once; offering both out of the box only crowds the bar
-         *  for everyone else, so it starts hidden and the first marker stands alone. */
+        /** Header actions hidden until the reader turns them on. "bookmark2" is the retired button
+         *  of the second marker: before the four markers shared one button it started hidden, and
+         *  installs that never touched the setting still read this default. */
         val DEFAULT_HIDDEN_BUTTONS = setOf("bookmark2")
+
+        /** How many coloured bookmarks a reader can keep: gold, violet, red and teal, in that order.
+         *  The first is the one that syncs across devices and feeds the statistics. */
+        const val BOOKMARK_SLOTS = 4
+
+        /** A bookmark's own name ("الحفظ", "المراجعة") is kept short enough for one menu line. */
+        const val BOOKMARK_NAME_MAX = 20
+
+        /** A name as it is stored: trimmed, one line, at most [BOOKMARK_NAME_MAX] characters.
+         *  Blank means "no name of its own", and the bookmark goes by its colour. */
+        fun cleanBookmarkName(raw: String): String =
+            raw.replace(Regex("\\s+"), " ").trim().take(BOOKMARK_NAME_MAX).trim()
+
+        /**
+         * Folds the retired "bookmark2" button into the one bookmark button that now holds all
+         * four markers. A reader who had the second marker showing keeps a bookmark button even if
+         * the gold one was hidden, and one who had it on the bar keeps the button on the bar.
+         * Pure, and applied on every read, so stored settings and restored backups both pass it.
+         */
+        fun foldRetiredBookmarkButton(hidden: Set<String>, bar: Set<String>): Pair<Set<String>, Set<String>> {
+            val secondShown = "bookmark2" !in hidden
+            val foldedHidden = (if (secondShown) hidden - "bookmark" else hidden) - "bookmark2"
+            val foldedBar = (if ("bookmark2" in bar) bar + "bookmark" else bar) - "bookmark2"
+            return foldedHidden to foldedBar
+        }
 
         /** The page fills the screen out of the box: the mushaf images carry almost no margin of
          *  their own, so a fitted page leaves bands of paper around text that could be read bigger.
@@ -138,8 +163,11 @@ class ReadingStore(private val context: Context) {
     }
 
     private val keyLastPage = intPreferencesKey("last_page")
-    private val keyBookmarks = stringSetPreferencesKey("bookmarks")
-    private val keyBookmarks2 = stringSetPreferencesKey("bookmarks2")
+    // One key per bookmark slot. The first two kept the names they had when there were two.
+    private val keyBookmarkSlots = listOf("bookmarks", "bookmarks2", "bookmarks3", "bookmarks4")
+        .map { stringSetPreferencesKey(it) }
+    // The name the reader gave each slot; absent until they give one.
+    private val keyBookmarkNames = (1..BOOKMARK_SLOTS).map { stringPreferencesKey("bookmark_name_$it") }
     private val keyThemeId = stringPreferencesKey("theme_id")
     // Superseded by keyThemeId; still read once so installs from before the palettes keep their look.
     private val keyDarkTheme = booleanPreferencesKey("dark_theme")
@@ -300,9 +328,16 @@ class ReadingStore(private val context: Context) {
     /** Complete user-owned state written to the backup file. Device-local metadata is excluded. */
     data class BackupState(
         val settings: Settings,
-        val bookmarks: Set<String>,
-        val bookmarks2: Set<String>,
-    )
+        /** One set per bookmark slot, [BOOKMARK_SLOTS] of them; an unused slot is empty. */
+        val bookmarks: List<Set<String>>,
+        /** The name of each slot, in the same order; blank where the reader gave none. */
+        val bookmarkNames: List<String> = List(BOOKMARK_SLOTS) { "" },
+    ) {
+        init {
+            require(bookmarks.size == BOOKMARK_SLOTS) { "expected $BOOKMARK_SLOTS bookmark slots" }
+            require(bookmarkNames.size == BOOKMARK_SLOTS) { "expected $BOOKMARK_SLOTS bookmark names" }
+        }
+    }
 
     /**
      * Reconciles this install with [DEFAULTS_VERSION]. Called once, before the first settings read.
@@ -337,6 +372,10 @@ class ReadingStore(private val context: Context) {
     suspend fun settings(): Settings {
         val prefs = context.dataStore.data.first()
         val readPages = prefs[keyReadPages].toIntSet()
+        val folded = foldRetiredBookmarkButton(
+            prefs[keyHiddenButtons] ?: DEFAULT_HIDDEN_BUTTONS,
+            prefs[keyBarButtons] ?: DEFAULT_BAR_BUTTONS,
+        )
         return Settings(
             lastPage = prefs[keyLastPage] ?: 1,
             themeId = prefs[keyThemeId]
@@ -349,8 +388,8 @@ class ReadingStore(private val context: Context) {
             // self-consistent whatever is already on disk.
             visitedPages = prefs[keyVisitedPages].toIntSet() + readPages,
             readPages = readPages,
-            hiddenButtons = prefs[keyHiddenButtons] ?: DEFAULT_HIDDEN_BUTTONS,
-            barButtons = prefs[keyBarButtons] ?: DEFAULT_BAR_BUTTONS,
+            hiddenButtons = folded.first,
+            barButtons = folded.second,
             buttonColors = decodeButtonColors(prefs[keyButtonColors]),
             bigButtons = prefs[keyBigButtons] ?: DEFAULT_BIG_BUTTONS,
             showClock = prefs[keyShowClock] ?: false,
@@ -391,8 +430,8 @@ class ReadingStore(private val context: Context) {
 
     suspend fun backupState(): BackupState = BackupState(
         settings = settings(),
-        bookmarks = bookmarks(),
-        bookmarks2 = bookmarks2(),
+        bookmarks = bookmarkSlots(),
+        bookmarkNames = bookmarkNames(),
     )
 
     /** Replace the backed-up preferences in one atomic DataStore edit. */
@@ -400,8 +439,11 @@ class ReadingStore(private val context: Context) {
         val value = state.settings
         context.dataStore.edit { prefs ->
             prefs[keyLastPage] = value.lastPage
-            prefs[keyBookmarks] = state.bookmarks
-            prefs[keyBookmarks2] = state.bookmarks2
+            keyBookmarkSlots.forEachIndexed { slot, key -> prefs[key] = state.bookmarks[slot] }
+            keyBookmarkNames.forEachIndexed { slot, key ->
+                val name = cleanBookmarkName(state.bookmarkNames[slot])
+                if (name.isEmpty()) prefs.remove(key) else prefs[key] = name
+            }
             prefs[keyThemeId] = value.themeId
             prefs[keyFillScreen] = value.fillScreen
             prefs[keyFillScreenWide] = value.fillScreenWide
@@ -777,15 +819,29 @@ class ReadingStore(private val context: Context) {
         context.dataStore.edit { it[keyKeepScreenOn] = value }
     }
 
-    suspend fun bookmarks(): Set<String> = context.dataStore.data.first()[keyBookmarks] ?: emptySet()
-
-    suspend fun setBookmarks(values: Set<String>) {
-        context.dataStore.edit { it[keyBookmarks] = values }
+    /** Every bookmark slot in order, [BOOKMARK_SLOTS] of them; an unused slot is empty. */
+    suspend fun bookmarkSlots(): List<Set<String>> {
+        val prefs = context.dataStore.data.first()
+        return keyBookmarkSlots.map { prefs[it] ?: emptySet() }
     }
 
-    suspend fun bookmarks2(): Set<String> = context.dataStore.data.first()[keyBookmarks2] ?: emptySet()
+    suspend fun setBookmarkSlot(slot: Int, values: Set<String>) {
+        context.dataStore.edit { it[keyBookmarkSlots[slot]] = values }
+    }
 
-    suspend fun setBookmarks2(values: Set<String>) {
-        context.dataStore.edit { it[keyBookmarks2] = values }
+    /** Every slot's own name in order; blank where the reader gave none. */
+    suspend fun bookmarkNames(): List<String> {
+        val prefs = context.dataStore.data.first()
+        return keyBookmarkNames.map { prefs[it].orEmpty() }
+    }
+
+    /** Names every slot at once — the bookmarks screen saves them together. Blank clears a name. */
+    suspend fun setBookmarkNames(names: List<String>) {
+        context.dataStore.edit { prefs ->
+            keyBookmarkNames.forEachIndexed { slot, key ->
+                val name = cleanBookmarkName(names[slot])
+                if (name.isEmpty()) prefs.remove(key) else prefs[key] = name
+            }
+        }
     }
 }

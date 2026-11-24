@@ -39,7 +39,6 @@ class BackupJsonCodecTest {
         assertEquals(snapshot.pageCount, decoded.pageCount)
         assertEquals(snapshot.reading.settings, decoded.reading.settings)
         assertEquals(snapshot.reading.bookmarks, decoded.reading.bookmarks)
-        assertEquals(snapshot.reading.bookmarks2, decoded.reading.bookmarks2)
         assertEquals(snapshot.sessions, decoded.sessions)
         assertEquals(snapshot.khatmas, decoded.khatmas)
     }
@@ -48,8 +47,7 @@ class BackupJsonCodecTest {
     fun `round trip survives an empty install`() {
         val empty = snapshot(
             settings = settings(lastPage = 1, visited = emptySet(), read = emptySet()),
-            bookmarks = emptySet(),
-            bookmarks2 = emptySet(),
+            bookmarks = List(ReadingStore.BOOKMARK_SLOTS) { emptySet() },
             sessions = emptyList(),
             khatmas = emptyList(),
         )
@@ -187,6 +185,73 @@ class BackupJsonCodecTest {
             BackupJsonCodec.decode(data, pageCount)
         }
         assertTrue(error.message!!.contains("موضع القراءة"))
+    }
+
+    @Test
+    fun `all four bookmarks survive the round trip`() {
+        val snapshot = snapshot()
+        val decoded = BackupJsonCodec.decode(BackupJsonCodec.encode(snapshot), pageCount)
+
+        assertEquals(
+            listOf(setOf("2:255"), setOf("36:1"), setOf("18:10"), setOf("112:1")),
+            decoded.reading.bookmarks,
+        )
+    }
+
+    @Test
+    fun `a backup from before the third and fourth bookmarks restores them empty`() {
+        val data = mutateRoot {
+            val reading = it.getJSONObject("reading")
+            reading.remove("bookmarks3")
+            reading.remove("bookmarks4")
+        }
+        val decoded = BackupJsonCodec.decode(data, pageCount)
+
+        assertEquals(
+            listOf(setOf("2:255"), setOf("36:1"), emptySet(), emptySet()),
+            decoded.reading.bookmarks,
+        )
+    }
+
+    @Test
+    fun `bookmark names survive the round trip`() {
+        val snapshot = snapshot(names = listOf("الحفظ", "", "المراجعة", ""))
+        val decoded = BackupJsonCodec.decode(BackupJsonCodec.encode(snapshot), pageCount)
+
+        assertEquals(listOf("الحفظ", "", "المراجعة", ""), decoded.reading.bookmarkNames)
+    }
+
+    @Test
+    fun `a backup without names restores every bookmark unnamed`() {
+        val data = mutateRoot { it.getJSONObject("reading").remove("bookmarkNames") }
+        val decoded = BackupJsonCodec.decode(data, pageCount)
+
+        assertEquals(List(4) { "" }, decoded.reading.bookmarkNames)
+    }
+
+    @Test
+    fun `an overlong or multi-line name is trimmed on the way in`() {
+        val data = mutateRoot {
+            it.getJSONObject("reading").put(
+                "bookmarkNames",
+                JSONArray(listOf("  ورد\nالليل  ", "ا".repeat(50), "", "")),
+            )
+        }
+        val names = BackupJsonCodec.decode(data, pageCount).reading.bookmarkNames
+
+        assertEquals("ورد الليل", names[0])
+        assertEquals(ReadingStore.BOOKMARK_NAME_MAX, names[1].length)
+    }
+
+    @Test
+    fun `a malformed fourth bookmark is rejected`() {
+        val data = mutateRoot {
+            it.getJSONObject("reading").put("bookmarks4", JSONArray(listOf("not-a-verse")))
+        }
+        val error = assertThrows(BackupException::class.java) {
+            BackupJsonCodec.decode(data, pageCount)
+        }
+        assertTrue(error.message!!.contains("علامة مرجعية"))
     }
 
     @Test
@@ -417,8 +482,8 @@ class BackupJsonCodecTest {
 
     private fun snapshot(
         settings: ReadingStore.Settings = settings(),
-        bookmarks: Set<String> = setOf("2:255"),
-        bookmarks2: Set<String> = setOf("36:1"),
+        bookmarks: List<Set<String>> = listOf(setOf("2:255"), setOf("36:1"), setOf("18:10"), setOf("112:1")),
+        names: List<String> = List(4) { "" },
         sessions: List<SessionEntity> = listOf(
             SessionEntity(
                 id = 1,
@@ -444,7 +509,7 @@ class BackupJsonCodecTest {
         appVersion = "0.6.4",
         deviceName = "جهاز اختبار",
         pageCount = pageCount,
-        reading = ReadingStore.BackupState(settings, bookmarks, bookmarks2),
+        reading = ReadingStore.BackupState(settings, bookmarks, names),
         sessions = sessions,
         khatmas = khatmas,
     )
