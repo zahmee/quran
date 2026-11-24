@@ -6,3 +6,6 @@
 node_modules/
 # Raw screen recordings from the emulator (large); see README.md to capture them again
 */assets/app/*.mp4
+# Generated projects copy the font from page-side/ when tools/build_clip.py runs
+*/assets/fonts/Alexandria.ttf
+!page-side/assets/fonts/Alexandria.ttf

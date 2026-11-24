@@ -49,7 +49,7 @@
       </div>
       <div class="meta">
         <span>أين تجدها: <strong>صفحة المصحف</strong></span>
-        <span>يطابق الإصدار <strong>0.19.0</strong></span>
+        <span>يطابق <strong>الإصدار القادم</strong></span>
       </div>
     </header>
 
@@ -57,26 +57,27 @@
       <div class="lesson-body">
         <h2>الخطوات</h2>
         <ol class="steps" id="steps">
-        <li data-touch="press:6" data-sel="6,7"><strong>اضغط مطولًا على الآية</strong><span>في أي موضع من أسطرها.</span></li>
-        <li data-sel="6,7" data-sheet="سورة البقرة · الآية ٢٥٥" data-chips="التفسير|استماع|العلامة|نسخ|مشاركة"><strong>تُظلَّل الآية وتظهر نافذتها</strong><span>نص الآية في وسطها، وتحته السورة ورقم الآية والصفحة والجزء والحزب.</span></li>
-        <li data-sel="6,7" data-sheet="سورة البقرة · الآية ٢٥٥" data-chips="التفسير|استماع|العلامة|نسخ|مشاركة" data-pick="1" data-touch="tap:pick"><strong>اختر ما تريد من الشريط</strong><span>التفسير، أو الاستماع، أو العلامة، أو النسخ، أو المشاركة.</span></li>
+        <li data-t="0"><strong>اضغط مطولًا على الآية</strong><span>في أي موضع من أسطرها.</span></li>
+        <li data-t="2.6"><strong>تُظلَّل الآية وتظهر نافذتها</strong><span>نص الآية، وتحته السورة ورقم الآية والصفحة والجزء والحزب.</span></li>
+        <li data-t="5.0"><strong>اختر ما تريد من الشريط</strong><span>التفسير، أو الاستماع، أو العلامة، أو الملاحظة، أو النسخ، أو المشاركة.</span></li>
         </ol>
 
       <h2>ما في الشريط</h2>
       <ul class="plain">
         <li><span class="ui">التفسير</span> يفتح نافذة التفسير على آخر مصدر قرأته. <a href="tafsir.html">شرح التفسير والمصادر</a></li>
         <li><span class="ui">استماع</span> يتلو من هذه الآية ويستمر بعدها. وسهمه الصغير فيه <span class="ui">الآية وحدها</span> و<span class="ui">التكرار والحفظ</span>. <a href="listen.html">شرح الاستماع</a></li>
-        <li><span class="ui">العلامة</span> تحفظ موضع الآية لتعود إليه. وتمتلئ أيقونتها حين تكون الآية معلَّمة.</li>
+        <li><span class="ui">علامة ▾</span> تضع إحدى العلامات الأربع على الآية. <a href="bookmarks.html">شرح العلامات</a></li>
+        <li><span class="ui">ملاحظة ▾</span> تكتب ملاحظتك على الآية أو على سورتها. <a href="notes.html">شرح الملاحظات</a></li>
         <li><span class="ui">نسخ</span> ينسخ نص الآية مع مرجعها، وتظهر رسالة «تم نسخ الآية».</li>
         <li><span class="ui">مشاركة</span> يفتح نافذة المشاركة: صورة أو صوت أو فيديو. <a href="share.html">شرح المشاركة</a></li>
       </ul>
       <p class="note"><strong>لمسة دقيقة:</strong> إن ضغطت في الفراغ بين سطرين يختار التطبيق آية السطر الذي تحت إصبعك أو فوقه، لا آية بعيدة في طرف السطر.</p>
       </div>
 
-      <aside class="demo-col" aria-label="عرض متحرك للخطوات">
-        <figure class="demo" data-steps="#steps">
-          <div class="phone-demo" data-title="سورة البقرة" data-buttons="⚙|⌕|▶|⋮"></div>
-          <figcaption>رسم توضيحي متحرك. المس أي خطوة لتراها.</figcaption>
+      <aside class="demo-col" aria-label="مقطع من التطبيق">
+        <figure class="demo demo-video" data-steps="#steps">
+          <video src="media/ayah.mp4" poster="media/ayah.jpg" muted loop playsinline preload="metadata" aria-label="نافذة الآية: تسجيل من التطبيق"></video>
+          <figcaption>تسجيل حقيقي من التطبيق. المس أي خطوة لتنتقل إليها.</figcaption>
         </figure>
       </aside>
     </div>
