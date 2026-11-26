@@ -21,3 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "MushafReader"
 include(":app")
+include(":baselineprofile")

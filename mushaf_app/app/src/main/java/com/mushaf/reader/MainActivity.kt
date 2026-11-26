@@ -46,10 +46,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         hideSystemBars()
         setContent {
-            MushafTheme(paletteId = vm.themeId) {
-                val palette = paletteFor(vm.themeId)
+            MushafTheme(paletteId = vm.display.themeId) {
+                val palette = paletteFor(vm.display.themeId)
                 LaunchedEffect(palette) { applyPalette(palette) }
-                LaunchedEffect(vm.keepScreenOn) { applyKeepScreenOn(vm.keepScreenOn) }
+                LaunchedEffect(vm.display.keepScreenOn) { applyKeepScreenOn(vm.display.keepScreenOn) }
                 val updateUi = remember { AppUpdateUi(updates) { updates.startUpdate(updateFlow) } }
                 ReaderScreen(viewModel = vm, updates = updateUi)
             }
