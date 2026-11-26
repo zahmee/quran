@@ -481,7 +481,7 @@ private fun GoToPageDialog(
                     keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Go
                 ),
-                keyboardActions = KeyboardActions(onGo = { if (valid) target?.let(onGo) }),
+                keyboardActions = KeyboardActions(onGo = { if (valid) onGo(target) }),
                 label = {
                     Text("رقم الصفحة (${1.toArabicDigits()} – ${pageCount.toArabicDigits()})")
                 },
