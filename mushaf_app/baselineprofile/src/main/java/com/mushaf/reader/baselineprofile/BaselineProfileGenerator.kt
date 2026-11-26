@@ -11,9 +11,10 @@ import org.junit.runner.RunWith
  * Generates the app's Baseline Profile: the classes and methods the reading journey runs, which
  * the device then compiles ahead of time instead of interpreting them on first use.
  *
- *   ./gradlew :app:generateReleaseBaselineProfile
+ *   ./gradlew :baselineprofile:updateAppBaselineProfile
  *
- * writes app/src/release/generated/baselineProfiles/, which is kept in git.
+ * writes app/src/release/generated/baselineProfiles/, which is kept in git. (The plugin's own
+ * :app:generateReleaseBaselineProfile finds no rules with this AGP; see this module's build file.)
  */
 @RunWith(AndroidJUnit4::class)
 @LargeTest
