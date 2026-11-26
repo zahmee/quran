@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.room)
     alias(libs.plugins.play.publisher)
 }
 
@@ -69,6 +70,7 @@ android {
         targetSdk = 36
         versionCode = 65
         versionName = "0.20.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         firebaseResources.forEach { (name, value) -> resValue("string", name, value) }
         buildConfigField("String", "FIREBASE_EMULATOR_HOST", "null")
@@ -122,6 +124,13 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+}
+
+// Room writes each database version's schema here (kept in git). The migration tests in
+// androidTest open the old versions from these files, so a schema change that lacks a correct
+// migration fails a test instead of a reader's stats and notes on upgrade.
+room {
+    schemaDirectory("$projectDir/schemas")
 }
 
 // Kotlin 2.4 removed the String-based android.kotlinOptions DSL (it is a hard compile error
@@ -215,6 +224,15 @@ dependencies {
     // The real org.json, because android.jar's stub throws on every call. The backup codec is
     // pure JSON over gzip, so this is what lets it be tested without a device.
     testImplementation(libs.json)
+    // On-device tests: Room's migrations run against real SQLite, from the exported schemas.
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    // Room's test helper reads the schemas with kotlinx-serialization 1.8.1, but the app only
+    // carries 1.7.3 (through lifecycle), and an app's tests run on the app's own versions: the
+    // helper then fails with AbstractMethodError. Raised for debug only, which the tests run on;
+    // the release build keeps exactly what it had.
+    debugImplementation(libs.kotlinx.serialization.json)
 }
 
 // ── Distribution: collect signed release builds the "old way" ────────────────────
