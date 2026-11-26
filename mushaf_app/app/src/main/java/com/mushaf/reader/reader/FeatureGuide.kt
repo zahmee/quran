@@ -56,23 +56,18 @@ internal data class WhatsNewItem(val title: String, val body: String, val slug: 
  * brings something worth showing; a release that does not touch it shows nothing.
  */
 internal object WhatsNew {
-    const val RELEASE = 65
+    const val RELEASE = 66
 
     val items = listOf(
         WhatsNewItem(
-            "أربع علامات مرجعية",
-            "بأربعة ألوان، ضع كل واحدة على آية وسمّها، وانتقل إليها من رأس الصفحة.",
+            "أخفِ العلامات التي لا تستعملها",
+            "من «إدارة العلامات» أطفئ «إظهار في القوائم والصفحة» تحت أي علامة، فتغيب وتبقى محفوظة حتى تظهرها.",
             "bookmarks",
         ),
         WhatsNewItem(
-            "ملاحظاتك على الآيات والسور",
-            "اكتب على أي آية أو على السورة كلها، وتجدها كلها في «ملاحظاتي».",
-            "notes",
-        ),
-        WhatsNewItem(
-            "التنقل بين الآيات في التفسير",
-            "انتقل إلى الآية السابقة أو التالية دون أن تغلق نافذة التفسير.",
-            "tafsir",
+            "علامة واحدة بلمسة واحدة",
+            "إن أبقيت علامة واحدة ظاهرة فزر «علامة» في نافذة الآية يضعها أو يزيلها دون قائمة.",
+            "bookmarks",
         ),
     )
 }
