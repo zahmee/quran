@@ -246,6 +246,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
     // What every bookmark menu (header bar, More menu, ayah card) reads and does.
     val bookmarkMenu = remember(viewModel) {
         BookmarkMenu(
+            // Read where the menus are drawn, so hiding a bookmark updates them at once.
+            slots = { viewModel.visibleBookmarkSlots },
             place = viewModel::bookmarkPlace,
             title = viewModel::bookmarkTitle,
             onJump = { slot ->
@@ -365,7 +367,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                         pagesInJuz = juzInfo.pagesInJuz,
                         juzPercent = juzInfo.pageInJuz * 100 / juzInfo.pagesInJuz,
                         paletteId = viewModel.themeId,
-                        hasBookmark = viewModel.bookmarks.any { it != null },
+                        hasBookmark = viewModel.visibleBookmarkSlots.any { viewModel.bookmarks[it] != null },
                         bookmarkMenu = bookmarkMenu,
                         fillScreen = fillScreen,
                         bigButtons = viewModel.bigButtons,
@@ -655,8 +657,10 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
         if (showBookmarkManager) {
             BookmarkManageDialog(
                 names = viewModel.bookmarkNames,
+                hidden = viewModel.hiddenBookmarks,
                 place = viewModel::bookmarkPlace,
                 onSaveNames = viewModel::saveBookmarkNames,
+                onSaveHidden = viewModel::saveHiddenBookmarks,
                 onJump = bookmarkMenu.onJump,
                 onClear = viewModel::clearBookmark,
                 onDismiss = { showBookmarkManager = false },
@@ -1061,12 +1065,13 @@ private fun ReaderPager(
 
         // Same page content for both orientations; only the pager axis differs.
         // Each bookmarked ayah and the colour of its bookmark. Where two share an ayah the earlier
-        // slot shows, so gold stays gold.
+        // slot shows, so gold stays gold. A bookmark the reader hid leaves no colour.
         val showBookmarks = viewModel.isButtonVisible("bookmark")
-        val bookmarkColors = remember(viewModel.bookmarks, showBookmarks) {
+        val visibleSlots = viewModel.visibleBookmarkSlots
+        val bookmarkColors = remember(viewModel.bookmarks, showBookmarks, visibleSlots) {
             if (!showBookmarks) emptyMap()
-            else viewModel.bookmarks.withIndex().reversed()
-                .mapNotNull { (slot, key) -> key?.let { it to BookmarkSlotStyles[slot].color } }
+            else visibleSlots.reversed()
+                .mapNotNull { slot -> viewModel.bookmarks[slot]?.let { it to BookmarkSlotStyles[slot].color } }
                 .toMap()
         }
         val pageContent: @Composable PagerScope.(Int) -> Unit = { index ->
@@ -4222,35 +4227,41 @@ private fun BookmarkBarAction(
     val place = menu.place
     val context = LocalContext.current
     var open by remember { mutableStateOf(false) }
-    val held = BookmarkSlotStyles.indices.firstOrNull { place(it)?.verseKey == verseKey }
+    val slots = menu.slots()
+    val held = slots.firstOrNull { place(it)?.verseKey == verseKey }
+    val toggle = { slot: Int ->
+        val title = menu.title(slot)
+        val here = place(slot)?.verseKey == verseKey
+        onToggle(slot)
+        // "العلامة الذهبية" reads as is; a name of the reader's own is quoted.
+        val name = if (title.startsWith("العلامة ")) title else "علامة «$title»"
+        val message = if (here) "أُزيلت $name" else "حُفظت $name على هذه الآية"
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+    // With a single bookmark showing there is nothing to choose: a tap puts it here or takes it off.
+    val single = slots.singleOrNull()
     Box(modifier = modifier) {
         AyahBarAction(
             modifier = Modifier.fillMaxWidth(),
             label = "علامة",
             icon = if (held != null) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-            tint = BookmarkSlotStyles[held ?: 0].color,
-            onClickLabel = "العلامات المرجعية",
-            hasMenu = true,
-            onClick = { open = true },
+            tint = BookmarkSlotStyles[held ?: single ?: 0].color,
+            onClickLabel = if (single != null) menu.title(single) else "العلامات المرجعية",
+            hasMenu = single == null,
+            onClick = { if (single != null) toggle(single) else open = true },
         )
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            BookmarkSlotStyles.indices.forEach { slot ->
+            slots.forEach { slot ->
                 val at = place(slot)
-                val here = at?.verseKey == verseKey
-                val title = menu.title(slot)
                 BookmarkSlotItem(
                     slot = slot,
-                    title = title,
+                    title = menu.title(slot),
                     place = at,
-                    checked = here,
+                    checked = at?.verseKey == verseKey,
                     enabled = true,
                     onClick = {
                         open = false
-                        onToggle(slot)
-                        // "العلامة الذهبية" reads as is; a name of the reader's own is quoted.
-                        val name = if (title.startsWith("العلامة ")) title else "علامة «$title»"
-                        val message = if (here) "أُزيلت $name" else "حُفظت $name على هذه الآية"
-                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        toggle(slot)
                     },
                 )
             }

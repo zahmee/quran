@@ -319,6 +319,28 @@ class BackupJsonCodecTest {
     }
 
     @Test
+    fun `hidden bookmarks survive the round trip`() {
+        val hiding = snapshot(settings = settings().copy(hiddenBookmarks = setOf(1, 3)))
+        val decoded = BackupJsonCodec.decode(BackupJsonCodec.encode(hiding), pageCount).reading.settings
+
+        assertEquals(setOf(1, 3), decoded.hiddenBookmarks)
+    }
+
+    @Test
+    fun `a backup from before hiding bookmarks shows all four`() {
+        val data = mutate { it.remove("hiddenBookmarks") }
+
+        assertEquals(emptySet<Int>(), BackupJsonCodec.decode(data, pageCount).reading.settings.hiddenBookmarks)
+    }
+
+    @Test
+    fun `gold and slots that do not exist are never restored as hidden`() {
+        val data = mutate { it.put("hiddenBookmarks", JSONArray(listOf(0, 2, 9, -1, "x"))) }
+
+        assertEquals(setOf(2), BackupJsonCodec.decode(data, pageCount).reading.settings.hiddenBookmarks)
+    }
+
+    @Test
     fun `a malformed fourth bookmark is rejected`() {
         val data = mutateRoot {
             it.getJSONObject("reading").put("bookmarks4", JSONArray(listOf("not-a-verse")))

@@ -139,6 +139,7 @@ object BackupJsonCodec {
         .put("edgeMargin", value.edgeMargin)
         .put("showNoteMarks", value.showNoteMarks)
         .put("noteMarkOpacity", value.noteMarkOpacity)
+        .put("hiddenBookmarks", JSONArray(value.hiddenBookmarks.sorted()))
 
     private fun decodeReading(root: JSONObject, pageCount: Int): ReadingStore.BackupState {
         val settingsJson = root.getJSONObject("settings")
@@ -227,6 +228,8 @@ object BackupJsonCodec {
             showNoteMarks = settingsJson.optBoolean("showNoteMarks", ReadingStore.DEFAULT_SHOW_NOTE_MARKS),
             noteMarkOpacity = settingsJson.optInt("noteMarkOpacity", ReadingStore.DEFAULT_NOTE_MARK_OPACITY)
                 .coerceIn(ReadingStore.NOTE_MARK_OPACITY_RANGE),
+            // Added with hiding bookmarks; a backup from before shows all four.
+            hiddenBookmarks = decodeHiddenBookmarks(settingsJson),
         )
         return ReadingStore.BackupState(settings, bookmarks, decodeBookmarkNames(root))
     }
@@ -378,6 +381,12 @@ object BackupJsonCodec {
                 add(item)
             }
         }
+    }
+
+    private fun decodeHiddenBookmarks(settings: JSONObject): Set<Int> {
+        val array = settings.optJSONArray("hiddenBookmarks") ?: return emptySet()
+        // Anything that is not a real, hideable slot is dropped rather than failing the restore.
+        return ReadingStore.cleanHiddenBookmarks((0 until array.length()).mapTo(HashSet()) { array.optInt(it, -1) })
     }
 
     /** Names came after the slots did; a backup without them, or with a short list, names nothing. */

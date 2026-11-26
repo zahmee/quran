@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
@@ -22,6 +23,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mushaf.reader.data.ReadingStore
@@ -68,6 +71,8 @@ internal fun bookmarkPlaceLine(place: BookmarkPlace?): String =
  * what it is called, going to it, and opening the screen that names and clears them.
  */
 internal class BookmarkMenu(
+    /** The slots the reader keeps showing, in slot order; the menus list only these. */
+    val slots: () -> List<Int>,
     val place: (Int) -> BookmarkPlace?,
     val title: (Int) -> String,
     val onJump: (Int) -> Unit,
@@ -126,8 +131,8 @@ internal fun ManageBookmarksItem(onClick: () -> Unit) {
 }
 
 /**
- * The four bookmarks to go back to, each with where it stands. A slot not in use is shown but
- * cannot be picked, so the reader sees all four and which are free.
+ * The bookmarks to go back to, each with where it stands: the ones the reader keeps showing. A
+ * slot not in use is shown but cannot be picked, so the reader sees which are free.
  */
 @Composable
 internal fun BookmarkJumpMenu(
@@ -136,7 +141,7 @@ internal fun BookmarkJumpMenu(
     onDismiss: () -> Unit,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        BookmarkSlotStyles.indices.forEach { slot ->
+        menu.slots().forEach { slot ->
             val at = menu.place(slot)
             BookmarkSlotItem(
                 slot = slot,
@@ -158,23 +163,29 @@ internal fun BookmarkJumpMenu(
 }
 
 /**
- * Naming and clearing the four bookmarks, all on one screen. Each row holds the bookmark's
- * colour, a field for its name (blank keeps the colour's name), where it stands, and the ways to
- * go there or take it off. The names are saved together when the screen closes, however it
- * closes, so nothing typed is lost to a stray tap outside it.
+ * Naming, clearing and choosing which of the four bookmarks to see, all on one screen. Each row
+ * holds the bookmark's colour, a field for its name (blank keeps the colour's name), where it
+ * stands, the ways to go there or take it off, and whether it shows at all. A hidden bookmark
+ * keeps its place; it only leaves the menus and the page. Gold always shows: the statistics,
+ * the khatma map and reading sync follow it. Everything is saved together when the screen
+ * closes, however it closes, so nothing typed is lost to a stray tap outside it.
  */
 @Composable
 internal fun BookmarkManageDialog(
     names: List<String>,
+    hidden: Set<Int>,
     place: (Int) -> BookmarkPlace?,
     onSaveNames: (List<String>) -> Unit,
+    onSaveHidden: (Set<Int>) -> Unit,
     onJump: (Int) -> Unit,
     onClear: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val edited = remember { mutableStateListOf(*names.toTypedArray()) }
+    val shown = remember { mutableStateListOf(*Array(names.size) { it !in hidden }) }
     val close = {
         onSaveNames(edited.toList())
+        onSaveHidden(shown.indices.filterTo(HashSet()) { !shown[it] })
         onDismiss()
     }
     AlertDialog(
@@ -222,6 +233,36 @@ internal fun BookmarkManageDialog(
                             },
                         ) { Text("انتقال") }
                         TextButton(enabled = at != null, onClick = { onClear(slot) }) { Text("إزالة") }
+                    }
+                    if (slot == ReadingStore.PRIMARY_BOOKMARK) {
+                        // No switch for gold: one that cannot move reads as "off" at a glance.
+                        Text(
+                            "تظهر دائمًا، فالإحصاءات والمزامنة تتبعها",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 36.dp, top = 4.dp),
+                        )
+                    } else {
+                        // The whole line toggles, so its words are what a screen reader announces.
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .toggleable(
+                                    value = shown[slot],
+                                    role = Role.Switch,
+                                    onValueChange = { shown[slot] = it },
+                                )
+                                .padding(start = 36.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "إظهار في القوائم والصفحة",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Switch(checked = shown[slot], onCheckedChange = null)
+                        }
                     }
                 }
             }

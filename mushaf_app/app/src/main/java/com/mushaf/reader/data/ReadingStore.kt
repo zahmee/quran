@@ -77,6 +77,14 @@ class ReadingStore(private val context: Context) {
         /** A bookmark's own name ("الحفظ", "المراجعة") is kept short enough for one menu line. */
         const val BOOKMARK_NAME_MAX = 20
 
+        /** The gold bookmark: the one the statistics, the khatma map and reading sync follow,
+         *  so it is never hidden. */
+        const val PRIMARY_BOOKMARK = 0
+
+        /** Hidden slots as they are stored: real slots only, never [PRIMARY_BOOKMARK]. */
+        fun cleanHiddenBookmarks(raw: Set<Int>): Set<Int> =
+            raw.filterTo(HashSet()) { it in 0 until BOOKMARK_SLOTS && it != PRIMARY_BOOKMARK }
+
         /** A name as it is stored: trimmed, one line, at most [BOOKMARK_NAME_MAX] characters.
          *  Blank means "no name of its own", and the bookmark goes by its colour. */
         fun cleanBookmarkName(raw: String): String =
@@ -237,6 +245,8 @@ class ReadingStore(private val context: Context) {
     private val keyEdgeMargin = stringPreferencesKey("edge_margin")
     private val keyShowNoteMarks = booleanPreferencesKey("show_note_marks")
     private val keyNoteMarkOpacity = intPreferencesKey("note_mark_opacity")
+    // The bookmark slots the reader chose not to see, as their numbers ("1", "2", "3").
+    private val keyHiddenBookmarks = stringSetPreferencesKey("hidden_bookmarks")
 
     /** Which generation of defaults this install has already been reconciled with. */
     private val keyDefaultsVersion = intPreferencesKey(DEFAULTS_VERSION_KEY)
@@ -328,6 +338,8 @@ class ReadingStore(private val context: Context) {
         val showNoteMarks: Boolean = DEFAULT_SHOW_NOTE_MARKS,
         /** Percent, within [NOTE_MARK_OPACITY_RANGE]. */
         val noteMarkOpacity: Int = DEFAULT_NOTE_MARK_OPACITY,
+        /** Bookmark slots left out of the menus and off the page; see [cleanHiddenBookmarks]. */
+        val hiddenBookmarks: Set<Int> = emptySet(),
     )
 
     /** When the app last asked Play about an update, and which version the reader waved away.
@@ -441,8 +453,12 @@ class ReadingStore(private val context: Context) {
             showNoteMarks = prefs[keyShowNoteMarks] ?: DEFAULT_SHOW_NOTE_MARKS,
             noteMarkOpacity = (prefs[keyNoteMarkOpacity] ?: DEFAULT_NOTE_MARK_OPACITY)
                 .coerceIn(NOTE_MARK_OPACITY_RANGE),
+            hiddenBookmarks = decodeHiddenBookmarks(prefs[keyHiddenBookmarks]),
         )
     }
+
+    private fun decodeHiddenBookmarks(raw: Set<String>?): Set<Int> =
+        cleanHiddenBookmarks(raw.orEmpty().mapNotNullTo(HashSet()) { it.toIntOrNull() })
 
     suspend fun backupState(): BackupState = BackupState(
         settings = settings(),
@@ -502,6 +518,7 @@ class ReadingStore(private val context: Context) {
             prefs[keyEdgeMargin] = value.edgeMargin
             prefs[keyShowNoteMarks] = value.showNoteMarks
             prefs[keyNoteMarkOpacity] = value.noteMarkOpacity
+            prefs[keyHiddenBookmarks] = cleanHiddenBookmarks(value.hiddenBookmarks).mapTo(HashSet()) { it.toString() }
         }
     }
 
@@ -613,6 +630,12 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setEdgeMargin(value: String) {
         context.dataStore.edit { it[keyEdgeMargin] = value }
+    }
+
+    suspend fun setHiddenBookmarks(value: Set<Int>) {
+        context.dataStore.edit { prefs ->
+            prefs[keyHiddenBookmarks] = cleanHiddenBookmarks(value).mapTo(HashSet()) { it.toString() }
+        }
     }
 
     suspend fun setShowNoteMarks(value: Boolean) {

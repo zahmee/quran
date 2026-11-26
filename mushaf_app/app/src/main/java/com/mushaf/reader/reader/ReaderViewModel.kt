@@ -526,6 +526,15 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var bookmarkNames by mutableStateOf(List(ReadingStore.BOOKMARK_SLOTS) { "" })
         private set
 
+    /** The bookmark slots the reader chose not to see. A hidden one keeps its place. */
+    var hiddenBookmarks by mutableStateOf(initialSettings.hiddenBookmarks)
+        private set
+
+    /** The slots the menus list and the page colours, in slot order; gold is always among them. */
+    val visibleBookmarkSlots: List<Int> by derivedStateOf {
+        (0 until ReadingStore.BOOKMARK_SLOTS).filter { it !in hiddenBookmarks }
+    }
+
     var stats by mutableStateOf<ReadingStats?>(null)
         private set
 
@@ -1245,6 +1254,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         edgeMargin = value.edgeMargin
         showNoteMarks = value.showNoteMarks
         noteMarkOpacity = value.noteMarkOpacity
+        hiddenBookmarks = value.hiddenBookmarks
         hiddenButtons = value.hiddenButtons
         barButtons = value.barButtons
         buttonColors = value.buttonColors
@@ -1474,6 +1484,14 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         if (clean == bookmarkNames) return
         bookmarkNames = clean
         viewModelScope.launch { store.setBookmarkNames(clean) }
+    }
+
+    /** Saves which bookmarks the bookmarks screen left hidden. */
+    fun saveHiddenBookmarks(slots: Set<Int>) {
+        val clean = ReadingStore.cleanHiddenBookmarks(slots)
+        if (clean == hiddenBookmarks) return
+        hiddenBookmarks = clean
+        viewModelScope.launch { store.setHiddenBookmarks(clean) }
     }
 
     /** Where bookmark [slot] stands, for the menus that list the four; null when it is unset. */
