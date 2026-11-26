@@ -69,8 +69,8 @@ android {
         applicationId = "com.mushaf.reader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 65
-        versionName = "0.20.0"
+        versionCode = 66
+        versionName = "0.21.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         firebaseResources.forEach { (name, value) -> resValue("string", name, value) }
