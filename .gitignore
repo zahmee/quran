@@ -59,3 +59,6 @@ old/
 
 # Python
 __pycache__/
+
+# App icon concept drafts (kept on this machine only)
+/design_snapshots/natlu-icon-concepts-*
