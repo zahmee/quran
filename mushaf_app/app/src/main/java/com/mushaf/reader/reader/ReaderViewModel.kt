@@ -1,7 +1,6 @@
 package com.mushaf.reader.reader
 
 import android.app.Application
-import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -14,7 +13,6 @@ import androidx.lifecycle.viewModelScope
 import com.mushaf.reader.data.AyahMarker
 import com.mushaf.reader.data.AyahRepository
 import com.mushaf.reader.data.AyahSearchIndex
-import com.mushaf.reader.data.ExplanationTextScale
 import com.mushaf.reader.data.AyahNeighbours
 import com.mushaf.reader.data.JuzLayout
 import com.mushaf.reader.data.PageRepository
@@ -23,42 +21,12 @@ import com.mushaf.reader.data.notes.NoteEntity
 import com.mushaf.reader.data.notes.NotesRepository
 import com.mushaf.reader.data.SearchTier
 import com.mushaf.reader.data.SurahAyahCounts
-import com.mushaf.reader.data.backup.BackupException
-import com.mushaf.reader.data.backup.BackupFileInfo
 import com.mushaf.reader.data.backup.BackupSnapshot
-import com.mushaf.reader.data.backup.BackupStage
-import com.mushaf.reader.data.backup.BackupUiState
-import com.mushaf.reader.data.backup.CloudBackupInfo
-import com.mushaf.reader.data.backup.CloudBackupRepository
-import com.mushaf.reader.data.backup.CloudBackupWorker
-import com.mushaf.reader.data.backup.CloudStage
-import com.mushaf.reader.data.backup.CloudUiState
-import com.mushaf.reader.data.backup.FileBackupRepository
-import com.mushaf.reader.data.backup.CloudOfflineException
-import com.mushaf.reader.data.sync.CloudFeature
-import com.mushaf.reader.data.sync.CloudHealth
-import com.mushaf.reader.data.sync.CloudHealthStore
-import com.mushaf.reader.data.sync.CloudProblem
-import com.mushaf.reader.data.sync.CloudSyncRepository
-import com.mushaf.reader.data.sync.CloudSyncStore
-import com.mushaf.reader.data.sync.CloudSyncWorker
 import com.mushaf.reader.data.sync.PlacePoint
-import com.mushaf.reader.data.sync.ReadingSync
-import com.mushaf.reader.data.sync.SyncUiState
-import com.mushaf.reader.data.content.GharibMeaning
 import com.mushaf.reader.data.RootSearch
 import com.mushaf.reader.data.content.CenterExtrasRepository
 import com.mushaf.reader.data.content.RootIndexRow
-import com.mushaf.reader.data.content.QuranContentRepository
-import com.mushaf.reader.data.content.SurahCard
-import com.mushaf.reader.data.content.TajweedNote
-import com.mushaf.reader.data.content.TafsirPassage
-import com.mushaf.reader.data.content.TafsirPassageRow
-import com.mushaf.reader.data.packs.InstalledPack
-import com.mushaf.reader.data.packs.PackContent
-import com.mushaf.reader.data.packs.PackContentRepository
 import com.mushaf.reader.data.packs.PackDownloads
-import com.mushaf.reader.data.packs.PackStore
 import com.mushaf.reader.data.stats.FullStats
 import com.mushaf.reader.data.stats.KhatmaEntity
 import com.mushaf.reader.data.stats.ReadingStats
@@ -71,100 +39,25 @@ import com.mushaf.reader.recitation.MobileData
 import com.mushaf.reader.recitation.MobileDataPolicy
 import com.mushaf.reader.recitation.RecitationController
 import com.mushaf.reader.recitation.RecitationDownloads
-import com.mushaf.reader.ui.theme.MushafPalette
-import com.mushaf.reader.ui.theme.paletteFor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /** The floating recitation handle starts a little below the middle of the screen edge, in thumb
  *  reach on a phone held in the right hand. */
 private const val DEFAULT_HANDLE_POS = 0.62f
 
-/** One surah in the navigation index: number, Arabic name, and the page it begins on. */
-data class SurahEntry(val number: Int, val nameAr: String, val firstPage: Int, val ayahCount: Int)
-
-/** One juz in the navigation index: number and the page it begins on. */
-data class JuzEntry(val number: Int, val firstPage: Int, val ayahCount: Int)
-
-/** A single ayah hit. */
-data class SearchResult(
-    val verseKey: String,
-    val surahNameAr: String,
-    val ayahNumber: Int,
-    val page: Int,
-    val text: String,
-    /** How the ayah matched; the search screen groups and labels hits by it. See [AyahSearchIndex]. */
-    val tier: SearchTier = SearchTier.WORD,
-    /** Character ranges in [text] of the words that matched, for the screen to mark. */
-    val highlights: List<IntRange> = emptyList(),
-)
-
-/** A search result's ayah being flashed on its page; [token] tells one opening from the next. */
-data class SearchFlash(val verseKey: String, val page: Int, val token: Long)
-
-/** A surah whose name matched the query — shown once, not as every ayah in it. */
-data class SurahSearchResult(val number: Int, val nameAr: String, val firstPage: Int)
-
-data class SearchResults(
-    val surahs: List<SurahSearchResult> = emptyList(),
-    val ayahs: List<SearchResult> = emptyList(),
-    /** The roots the typed word belongs to, offered above the other results. See [RootSearch]. */
-    val roots: List<RootSearch.Root> = emptyList(),
-) {
-    val isEmpty: Boolean get() = surahs.isEmpty() && ayahs.isEmpty() && roots.isEmpty()
-}
-
-/** Every ayah holding a word from [root] — or only from its form [form] — with those words marked. */
-data class RootResults(
-    val root: RootSearch.Root,
-    val form: Int?,
-    val ayahs: List<SearchResult>,
-)
-
-data class AyahExplanationUiState(
-    val verseKey: String? = null,
-    val loading: Boolean = false,
-    val tafsirHtml: String? = null,
-    val meanings: List<GharibMeaning> = emptyList(),
-    val saadi: TafsirPassage? = null,
-    val mukhtasar: String? = null,
-    /** The occasion of the ayah's revelation, for the ayahs the source records one for. */
-    val nozool: TafsirPassageRow? = null,
-    val errorMessage: String? = null,
-)
-
-/** What the sheet shows for a downloaded pack: that pack's text for one ayah. */
-data class PackContentUiState(
-    val verseKey: String? = null,
-    val packId: String? = null,
-    val loading: Boolean = false,
-    val content: PackContent? = null,
-)
-
-/** A cloud fault without words of its own from the server. */
-private const val GENERIC_CLOUD_ERROR = "تعذر إكمال العملية. أعد المحاولة بعد قليل."
-
 class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     private val pageRepo = PageRepository(app)
     private val ayahRepo = AyahRepository(app)
-    private val contentRepo = QuranContentRepository(app)
     private val centerExtras = CenterExtrasRepository(app)
     private val store = ReadingStore(app)
     private val statsRepo = StatsRepository(app)
     private val notesRepo = NotesRepository(app)
-    private val backupRepo = FileBackupRepository(app)
-    private val cloudRepo = CloudBackupRepository(app)
-    private val syncRepo = CloudSyncRepository(app)
-    private val syncStore = CloudSyncStore(app)
-    private val healthStore = CloudHealthStore(app)
 
     private val recitationRepo = RecitationRepository(app)
 
@@ -173,7 +66,9 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The downloadable tafsir packs: the library's catalog, downloads and installed packs. */
     val packDownloads = PackDownloads(app, viewModelScope)
-    private val packRepo = PackContentRepository(app)
+
+    /** The explanation sheet: its sources, pins, text size, and what it shows for an ayah. */
+    val explanation = ExplanationController(app, viewModelScope, store, centerExtras)
 
     /** Recitation: the player bar, the reciter list and the ayah being recited. */
     val recitation = RecitationController(
@@ -252,64 +147,24 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setRecitationHandleOpacity(normalized) }
     }
 
-    /** The source the explanation sheet last showed, which it opens on next ([ExplanationSources]). */
-    var explanationSource by mutableStateOf(ExplanationSources.SAADI)
-        private set
 
-    fun updateExplanationSource(source: String) {
-        if (source == explanationSource) return
-        explanationSource = source
-        viewModelScope.launch { store.setExplanationSource(source) }
-    }
 
-    /** The sources pinned as the sheet's tabs, in order, including pins on packs deleted since. */
-    var pinnedSources by mutableStateOf(ExplanationSources.DEFAULT_PINNED)
-        private set
 
-    /**
-     * Pins or unpins [source]; false when every place is taken. Pins on deleted packs are dropped
-     * here, so a place they held is free again — until then they come back with their pack.
-     */
-    fun togglePinnedSource(source: String): Boolean {
-        val shown = ExplanationSources.visiblePinned(pinnedSources, installedPackIds)
-        val next = ExplanationSources.togglePin(shown, source) ?: return false
-        pinnedSources = next
-        viewModelScope.launch { store.setPinnedSources(next) }
-        return true
-    }
 
-    /** The installed packs in the order the sources menu lists them. */
-    val installedPacks: List<InstalledPack>
-        get() = PackStore.installed.values.sortedBy { PACK_ORDER.indexOf(it.id).let { i -> if (i < 0) Int.MAX_VALUE else i } }
 
-    private val installedPackIds: Set<String> get() = PackStore.installed.keys
 
-    /** The source the sheet opens on: the last one read, unless its pack was deleted since. */
-    fun openingSource(): String = ExplanationSources.opening(explanationSource, installedPackIds)
 
-    /** Text size of the tafsir / word-meanings sheet, percent of the reading size. */
-    var explanationTextScale by mutableIntStateOf(ExplanationTextScale.DEFAULT)
-        private set
 
-    /** One size up ([direction] > 0) or down; remembered for the next time the sheet opens. */
-    fun stepExplanationTextScale(direction: Int) {
-        val next = ExplanationTextScale.step(explanationTextScale, direction)
-        if (next == explanationTextScale) return
-        explanationTextScale = next
-        viewModelScope.launch { store.setExplanationTextScale(next) }
-    }
 
     init {
         viewModelScope.launch {
             recitationFollowPage = store.recitationFollowPage()
             store.recitationHandlePos()?.let { recitationHandlePos = it }
             recitationHandleOpacity = store.recitationHandleOpacity()
-            explanationSource = store.explanationSource()
-            pinnedSources = store.pinnedSources()
-            explanationTextScale = store.explanationTextScale()
         }
         // Only lists the pack files already on the device; nothing here touches the network.
         packDownloads.start()
+        explanation.start()
         loadWhatsNew()
     }
 
@@ -332,152 +187,8 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     val initialPage: Int = initialSettings.lastPage.coerceIn(1, pageCount.coerceAtLeast(1))
 
-    /** Id of the chosen reading theme; [palette] resolves it to the colors it stands for. */
-    var themeId by mutableStateOf(initialSettings.themeId)
-        private set
-
-    val palette: MushafPalette get() = paletteFor(themeId)
-
-    /** When on, the page fills the screen (width-fill + scroll on wide screens, height-stretch
-     *  on tall screens); when off, the whole page is fitted and centered. Kept once for a
-     *  narrow screen and once for a wide one, so unfolding a phone brings back the choice
-     *  made unfolded, and folding it the choice made folded. */
-    var fillScreenNarrow by mutableStateOf(initialSettings.fillScreen)
-        private set
-    var fillScreenWide by mutableStateOf(initialSettings.fillScreenWide)
-        private set
-
-    fun fillScreen(wide: Boolean): Boolean = if (wide) fillScreenWide else fillScreenNarrow
-
-    /** When on, pages turn vertically (swipe up/down) instead of horizontally. */
-    var verticalPaging by mutableStateOf(initialSettings.verticalPaging)
-        private set
-
-    /** When on, the screen is held awake while the reader is in the foreground. */
-    var keepScreenOn by mutableStateOf(initialSettings.keepScreenOn)
-        private set
-
-    /** How far the corner controls and the page pull back from a curved screen edge; one of the
-     *  ReadingStore.EDGE_MARGIN_* ids. "none" is today's layout, and stays the default. */
-    var edgeMargin by mutableStateOf(initialSettings.edgeMargin)
-        private set
-
-    /** Whether an ayah that carries a note shows its mark on the page. */
-    var showNoteMarks by mutableStateOf(initialSettings.showNoteMarks)
-        private set
-
-    /** How strongly that mark shows, in percent. */
-    var noteMarkOpacity by mutableStateOf(initialSettings.noteMarkOpacity)
-        private set
-
-    /** Ids of the header buttons the user has hidden; any id NOT in this set is shown. */
-    var hiddenButtons by mutableStateOf(initialSettings.hiddenButtons)
-        private set
-
-    /** Ids drawn on the top bar itself; a visible action not in here lives in the More menu. */
-    var barButtons by mutableStateOf(initialSettings.barButtons)
-        private set
-
-    /** Color id per header action, for the icon it draws on the bar. Missing = "muted". */
-    var buttonColors by mutableStateOf(initialSettings.buttonColors)
-        private set
-
-    /** When on, the header buttons are rendered a little larger. */
-    var bigButtons by mutableStateOf(initialSettings.bigButtons)
-        private set
-
-    /** When on, a live wall-clock (red) shows in the header. */
-    var showClock by mutableStateOf(initialSettings.showClock)
-        private set
-
-    /** When on, the current reading-session duration (green) shows in the header. */
-    var showSessionTimer by mutableStateOf(initialSettings.showSessionTimer)
-        private set
-
-    var showSurahNumber by mutableStateOf(initialSettings.showSurahNumber)
-        private set
-
-    var showSurahAyahCount by mutableStateOf(initialSettings.showSurahAyahCount)
-        private set
-
-    var showSurahProgress by mutableStateOf(initialSettings.showSurahProgress)
-        private set
-
-    var showJuzProgressPercent by mutableStateOf(initialSettings.showJuzProgressPercent)
-        private set
-
-    var showJuzProgressPages by mutableStateOf(initialSettings.showJuzProgressPages)
-        private set
-
-    var showReadingPosition by mutableStateOf(initialSettings.showReadingPosition)
-        private set
-
-    var clockColor by mutableStateOf(initialSettings.clockColor)
-        private set
-
-    var sessionTimerColor by mutableStateOf(initialSettings.sessionTimerColor)
-        private set
-
-    /** Full-screen restore-header chip: show the page number, and its color. */
-    var showButtonPage by mutableStateOf(initialSettings.showButtonPage)
-        private set
-
-    var buttonPageColor by mutableStateOf(initialSettings.buttonPageColor)
-        private set
-
-    /** Opacity of the draggable restore-header button, 25..100 percent. */
-    var showHeaderButtonOpacity by mutableStateOf(initialSettings.showHeaderButtonOpacity)
-        private set
-
-    /** Where the user parked the full-screen chip, as a 0..1 fraction of its vertical travel
-     *  (0 = just under the top inset, 1 = bottom edge); -1 = never moved, so it rests at the top.
-     *  A fraction — not pixels — so the spot holds across rotation and different screen sizes. */
-    var buttonPosFraction by mutableStateOf(initialSettings.buttonPosFraction)
-        private set
-
-    /** Thin juz-progress bar pinned to the bottom of the page, its color, and its thickness (dp). */
-    var showBottomJuzBar by mutableStateOf(initialSettings.showBottomJuzBar)
-        private set
-
-    var bottomJuzBarColor by mutableStateOf(initialSettings.bottomJuzBarColor)
-        private set
-
-    var bottomJuzBarThickness by mutableStateOf(initialSettings.bottomJuzBarThickness)
-        private set
-
-    /** How solid the bar is drawn, 0..100 percent. */
-    var bottomJuzBarOpacity by mutableStateOf(initialSettings.bottomJuzBarOpacity)
-        private set
-
-    /** Thin surah-progress bar sitting just above the page, its color, and its thickness (dp). */
-    var showTopSurahBar by mutableStateOf(initialSettings.showTopSurahBar)
-        private set
-
-    var topSurahBarColor by mutableStateOf(initialSettings.topSurahBarColor)
-        private set
-
-    var topSurahBarThickness by mutableStateOf(initialSettings.topSurahBarThickness)
-        private set
-
-    var topSurahBarOpacity by mutableStateOf(initialSettings.topSurahBarOpacity)
-        private set
-
-    /** Full-screen edge marker for the current page's side (right/left of the spread): whether it
-     *  shows, its color, and its bar width (thickness) and height (length) in dp. */
-    var showPageSideIndicator by mutableStateOf(initialSettings.showPageSideIndicator)
-        private set
-
-    var pageSideIndicatorColor by mutableStateOf(initialSettings.pageSideIndicatorColor)
-        private set
-
-    var pageSideIndicatorThickness by mutableStateOf(initialSettings.pageSideIndicatorThickness)
-        private set
-
-    var pageSideIndicatorLength by mutableStateOf(initialSettings.pageSideIndicatorLength)
-        private set
-
-    var pageSideIndicatorOpacity by mutableStateOf(initialSettings.pageSideIndicatorOpacity)
-        private set
+    /** Theme, page fill, header buttons, progress bars: how the reader wants the page shown. */
+    val display = DisplaySettings(store, viewModelScope, initialSettings)
 
     /** When the current (in-progress) khatma cycle began, epoch millis. */
     var khatmaStartedAt by mutableStateOf(
@@ -497,10 +208,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var selectedAyah by mutableStateOf<AyahMarker?>(null)
         private set
 
-    var explanationState by mutableStateOf(AyahExplanationUiState())
-        private set
 
-    private var explanationJob: Job? = null
 
     /**
      * The verse each coloured bookmark holds, by slot (gold, violet, red, teal); null where unset.
@@ -552,17 +260,24 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     var readPagesAll by mutableStateOf(initialSettings.readPages)
         private set
 
-    var backupUiState by mutableStateOf(
-        BackupUiState(
-            lastBackup = initialLastBackup?.let {
-                BackupFileInfo(fileName = it.fileName, savedAt = it.savedAt, sizeBytes = it.sizeBytes)
-            }
-        )
-    )
-        private set
 
-    var cloudUiState by mutableStateOf(CloudUiState(available = cloudRepo.isAvailable))
-        private set
+
+    /** Backup file, cloud account, reading sync and cloud faults. */
+    val backupSync = BackupSyncController(
+        app = app,
+        scope = viewModelScope,
+        store = store,
+        host = object : BackupSyncHost {
+            override val currentPage: Int get() = lastPage
+            override val goldBookmark: String? get() = bookmarks[ReadingStore.PRIMARY_BOOKMARK]
+            override suspend fun checkpointForBackup() = checkpointCurrentSessionForBackup()
+            override suspend fun applyRestored(snapshot: BackupSnapshot) = applyRestoredSnapshot(snapshot)
+            override suspend fun reloadKhatmas() {
+                khatmas = statsRepo.allKhatmas()
+            }
+        },
+        initialLastBackup = initialLastBackup,
+    )
 
     /** A restored page is consumed by ReaderScreen so the live pager follows the imported state. */
     var restorePageRequest by mutableStateOf<Int?>(null)
@@ -587,566 +302,22 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { bookmarkNames = withContext(Dispatchers.IO) { store.bookmarkNames() } }
         viewModelScope.launch { notesRepo.notes.collect { notes = it } }
         viewModelScope.launch { khatmas = withContext(Dispatchers.IO) { statsRepo.allKhatmas() } }
-        if (cloudRepo.isAvailable) viewModelScope.launch {
-            loadCloudAccount()
-            refreshCloudProblems()
-        }
+        backupSync.start()
         // Anchor the current khatma cycle on first run of the feature so its duration is meaningful.
         if (initialSettings.khatmaStartedAt <= 0L) {
             viewModelScope.launch { store.setKhatmaStartedAt(khatmaStartedAt) }
         }
     }
 
-    fun updateThemeId(value: String) {
-        if (value == themeId) return
-        themeId = value
-        viewModelScope.launch { store.setThemeId(value) }
-    }
-
-    /** Flips the choice for the kind of screen being read on, and leaves the other alone. */
-    fun toggleFillScreen(wide: Boolean) {
-        val value = !fillScreen(wide)
-        if (wide) fillScreenWide = value else fillScreenNarrow = value
-        viewModelScope.launch { store.setFillScreen(wide, value) }
-    }
-
-    fun updateVerticalPaging(value: Boolean) {
-        if (value == verticalPaging) return
-        verticalPaging = value
-        viewModelScope.launch { store.setVerticalPaging(value) }
-    }
-
-    fun updateKeepScreenOn(value: Boolean) {
-        if (value == keepScreenOn) return
-        keepScreenOn = value
-        viewModelScope.launch { store.setKeepScreenOn(value) }
-    }
-
-    fun updateEdgeMargin(value: String) {
-        if (value == edgeMargin) return
-        edgeMargin = value
-        viewModelScope.launch { store.setEdgeMargin(value) }
-    }
-
-    fun updateShowNoteMarks(value: Boolean) {
-        if (value == showNoteMarks) return
-        showNoteMarks = value
-        viewModelScope.launch { store.setShowNoteMarks(value) }
-    }
-
-    fun updateNoteMarkOpacity(value: Int) {
-        val clamped = value.coerceIn(ReadingStore.NOTE_MARK_OPACITY_RANGE)
-        if (clamped == noteMarkOpacity) return
-        noteMarkOpacity = clamped
-        viewModelScope.launch { store.setNoteMarkOpacity(clamped) }
-    }
-
-    /** Whether the header button with [id] is currently shown. */
-    fun isButtonVisible(id: String): Boolean = !hiddenButtons.contains(id)
-
-    /** Show or hide the header button with [id] and persist the choice. */
-    fun setButtonVisible(id: String, visible: Boolean) {
-        val next = if (visible) hiddenButtons - id else hiddenButtons + id
-        if (next == hiddenButtons) return
-        hiddenButtons = next
-        viewModelScope.launch { store.setHiddenButtons(next) }
-    }
-
-    fun isButtonInBar(id: String): Boolean = barButtons.contains(id)
-
-    /** Move the header action with [id] onto the bar, or back into the More menu. */
-    fun setButtonInBar(id: String, inBar: Boolean) {
-        val next = if (inBar) barButtons + id else barButtons - id
-        if (next == barButtons) return
-        barButtons = next
-        viewModelScope.launch { store.setBarButtons(next) }
-    }
-
-    /** Color id the action with [id] draws in on the bar; "muted" means keep its own default. */
-    fun buttonColor(id: String): String = buttonColors[id] ?: "muted"
-
-    fun updateButtonColor(id: String, color: String) {
-        if (buttonColor(id) == color) return
-        buttonColors = buttonColors + (id to color)
-        viewModelScope.launch { store.setButtonColors(buttonColors) }
-    }
-
-    /** Enable or disable the larger header buttons and persist the choice. */
-    fun updateBigButtons(value: Boolean) {
-        if (value == bigButtons) return
-        bigButtons = value
-        viewModelScope.launch { store.setBigButtons(value) }
-    }
-
-    fun updateShowClock(value: Boolean) {
-        if (value == showClock) return
-        showClock = value
-        viewModelScope.launch { store.setShowClock(value) }
-    }
-
-    fun updateShowSessionTimer(value: Boolean) {
-        if (value == showSessionTimer) return
-        showSessionTimer = value
-        viewModelScope.launch { store.setShowSessionTimer(value) }
-    }
-
-    fun updateShowSurahNumber(value: Boolean) {
-        if (value == showSurahNumber) return
-        showSurahNumber = value
-        viewModelScope.launch { store.setShowSurahNumber(value) }
-    }
-
-    fun updateShowSurahAyahCount(value: Boolean) {
-        if (value == showSurahAyahCount) return
-        showSurahAyahCount = value
-        viewModelScope.launch { store.setShowSurahAyahCount(value) }
-    }
-
-    fun updateShowSurahProgress(value: Boolean) {
-        if (value == showSurahProgress) return
-        showSurahProgress = value
-        viewModelScope.launch { store.setShowSurahProgress(value) }
-    }
-
-    fun updateShowJuzProgressPercent(value: Boolean) {
-        if (value == showJuzProgressPercent) return
-        showJuzProgressPercent = value
-        viewModelScope.launch { store.setShowJuzProgressPercent(value) }
-    }
-
-    fun updateShowJuzProgressPages(value: Boolean) {
-        if (value == showJuzProgressPages) return
-        showJuzProgressPages = value
-        viewModelScope.launch { store.setShowJuzProgressPages(value) }
-    }
-
-    fun updateShowReadingPosition(value: Boolean) {
-        if (value == showReadingPosition) return
-        showReadingPosition = value
-        viewModelScope.launch { store.setShowReadingPosition(value) }
-    }
-
-    fun updateClockColor(value: String) {
-        if (value == clockColor) return
-        clockColor = value
-        viewModelScope.launch { store.setClockColor(value) }
-    }
-
-    fun updateSessionTimerColor(value: String) {
-        if (value == sessionTimerColor) return
-        sessionTimerColor = value
-        viewModelScope.launch { store.setSessionTimerColor(value) }
-    }
-
-    fun updateShowButtonPage(value: Boolean) {
-        if (value == showButtonPage) return
-        showButtonPage = value
-        viewModelScope.launch { store.setShowButtonPage(value) }
-    }
-
-    fun updateButtonPageColor(value: String) {
-        if (value == buttonPageColor) return
-        buttonPageColor = value
-        viewModelScope.launch { store.setButtonPageColor(value) }
-    }
-
-    fun updateShowHeaderButtonOpacity(value: Int) {
-        val normalized = value.coerceIn(25, 100)
-        if (normalized == showHeaderButtonOpacity) return
-        showHeaderButtonOpacity = normalized
-        viewModelScope.launch { store.setShowHeaderButtonOpacity(normalized) }
-    }
-
-    /** Live drag of the full-screen chip: memory only, so it tracks the finger without a disk
-     *  write per pixel. [saveButtonPosFraction] commits the spot when the finger lifts. */
-    fun dragButtonPosFraction(value: Float) {
-        buttonPosFraction = value.coerceIn(0f, 1f)
-    }
-
-    fun saveButtonPosFraction() {
-        val value = buttonPosFraction
-        viewModelScope.launch { store.setButtonPosFraction(value) }
-    }
-
-    fun updateShowBottomJuzBar(value: Boolean) {
-        if (value == showBottomJuzBar) return
-        showBottomJuzBar = value
-        viewModelScope.launch { store.setShowBottomJuzBar(value) }
-    }
-
-    fun updateBottomJuzBarColor(value: String) {
-        if (value == bottomJuzBarColor) return
-        bottomJuzBarColor = value
-        viewModelScope.launch { store.setBottomJuzBarColor(value) }
-    }
-
-    fun updateBottomJuzBarThickness(value: Int) {
-        if (value == bottomJuzBarThickness) return
-        bottomJuzBarThickness = value
-        viewModelScope.launch { store.setBottomJuzBarThickness(value) }
-    }
-
-    fun updateBottomJuzBarOpacity(value: Int) {
-        if (value == bottomJuzBarOpacity) return
-        bottomJuzBarOpacity = value
-        viewModelScope.launch { store.setBottomJuzBarOpacity(value) }
-    }
-
-    fun updateShowTopSurahBar(value: Boolean) {
-        if (value == showTopSurahBar) return
-        showTopSurahBar = value
-        viewModelScope.launch { store.setShowTopSurahBar(value) }
-    }
-
-    fun updateTopSurahBarColor(value: String) {
-        if (value == topSurahBarColor) return
-        topSurahBarColor = value
-        viewModelScope.launch { store.setTopSurahBarColor(value) }
-    }
-
-    fun updateTopSurahBarThickness(value: Int) {
-        if (value == topSurahBarThickness) return
-        topSurahBarThickness = value
-        viewModelScope.launch { store.setTopSurahBarThickness(value) }
-    }
-
-    fun updateTopSurahBarOpacity(value: Int) {
-        if (value == topSurahBarOpacity) return
-        topSurahBarOpacity = value
-        viewModelScope.launch { store.setTopSurahBarOpacity(value) }
-    }
-
-    fun updateShowPageSideIndicator(value: Boolean) {
-        if (value == showPageSideIndicator) return
-        showPageSideIndicator = value
-        viewModelScope.launch { store.setShowPageSideIndicator(value) }
-    }
-
-    fun updatePageSideIndicatorColor(value: String) {
-        if (value == pageSideIndicatorColor) return
-        pageSideIndicatorColor = value
-        viewModelScope.launch { store.setPageSideIndicatorColor(value) }
-    }
-
-    fun updatePageSideIndicatorThickness(value: Int) {
-        if (value == pageSideIndicatorThickness) return
-        pageSideIndicatorThickness = value
-        viewModelScope.launch { store.setPageSideIndicatorThickness(value) }
-    }
-
-    fun updatePageSideIndicatorLength(value: Int) {
-        if (value == pageSideIndicatorLength) return
-        pageSideIndicatorLength = value
-        viewModelScope.launch { store.setPageSideIndicatorLength(value) }
-    }
-
-    fun updatePageSideIndicatorOpacity(value: Int) {
-        if (value == pageSideIndicatorOpacity) return
-        pageSideIndicatorOpacity = value
-        viewModelScope.launch { store.setPageSideIndicatorOpacity(value) }
-    }
-
-    fun suggestedBackupFileName(): String = backupRepo.suggestedFileName()
-
-    fun exportBackup(target: Uri) {
-        viewModelScope.launch {
-            startBackupOperation(BackupStage.Exporting)
-            try {
-                checkpointCurrentSessionForBackup()
-                val saved = backupRepo.exportTo(target)
-                store.setLastBackup(
-                    ReadingStore.LastBackup(saved.savedAt, saved.fileName, saved.sizeBytes)
-                )
-                backupUiState = backupUiState.copy(
-                    lastBackup = saved,
-                    busy = false,
-                    stage = null,
-                    error = null,
-                    message = "حُفظت النسخة في «${saved.fileName}».",
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                finishBackupWithError(error)
-            }
-        }
-    }
-
-    fun importBackup(source: Uri, takeDisplaySettings: Boolean) {
-        viewModelScope.launch {
-            startBackupOperation(BackupStage.Importing)
-            try {
-                // Finish and await old writes before folding the backup into the database and preferences.
-                checkpointCurrentSessionForBackup()
-                val restored = backupRepo.importFrom(source, takeDisplaySettings)
-                applyRestoredSnapshot(restored.snapshot)
-                backupUiState = backupUiState.copy(
-                    busy = false,
-                    stage = null,
-                    error = null,
-                    message = "اكتملت الاستعادة من نسخة ${formatBackupDate(restored.snapshot.createdAt)} " +
-                        "(${restored.snapshot.deviceName}).",
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                finishBackupWithError(error)
-            }
-        }
-    }
-
-    /** The user closed the system picker without choosing a file. */
-    fun backupSelectionCancelled() {
-        backupUiState = backupUiState.copy(busy = false, stage = null)
-    }
-
-    fun clearBackupFeedback() {
-        backupUiState = backupUiState.copy(message = null, error = null)
-    }
-
     fun consumeRestorePageRequest() {
         restorePageRequest = null
-    }
-
-    private fun startBackupOperation(stage: BackupStage) {
-        backupUiState = backupUiState.copy(
-            busy = true,
-            stage = stage,
-            message = null,
-            error = null,
-        )
-    }
-
-    private fun finishBackupWithError(error: Exception) {
-        val message = if (error is BackupException) error.message else null
-        backupUiState = backupUiState.copy(
-            busy = false,
-            stage = null,
-            message = null,
-            error = message ?: "تعذر إكمال العملية. أعد المحاولة باختيار الملف مرة أخرى.",
-        )
-    }
-
-    private fun formatBackupDate(time: Long): String =
-        SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.forLanguageTag("ar")).format(Date(time))
-
-    // ── Cloud backup ────────────────────────────────────────────────────────────
-
-    private suspend fun loadCloudAccount() {
-        val username = cloudRepo.reconcileAccount()
-        val prefs = store.cloudPrefs()
-        cloudUiState = cloudUiState.copy(
-            username = username,
-            autoBackup = username != null && prefs.autoBackup,
-            lastUploadAt = prefs.lastUploadAt,
-        )
-    }
-
-    /** Called when the backup screen opens, so the list reflects the other device's uploads. */
-    fun refreshCloudBackups() {
-        if (cloudUiState.username == null || cloudUiState.busy) return
-        runCloud(CloudStage.Loading) {
-            cloudUiState = cloudUiState.copy(backups = cloudRepo.list(), listLoaded = true)
-            null
-        }
-    }
-
-    fun cloudSignUp(name: String, password: String) = runCloud(CloudStage.SigningUp) {
-        val username = cloudRepo.signUp(name, password)
-        CloudBackupWorker.schedule(getApplication(), enabled = true)
-        cloudUiState = cloudUiState.copy(username = username, autoBackup = true)
-        // The first backup right away: an account with nothing in it protects nothing.
-        checkpointCurrentSessionForBackup()
-        cloudRepo.upload(auto = false)
-        healthStore.recordSuccess(CloudFeature.BACKUP)
-        loadCloudAccount()
-        cloudUiState = cloudUiState.copy(backups = cloudRepo.list(), listLoaded = true)
-        syncReading(userAsked = false)
-        "أُنشئ حسابك «$username» وحُفظت أول نسخة. احفظ كلمة المرور جيداً."
-    }
-
-    fun cloudSignIn(name: String, password: String) = runCloud(CloudStage.SigningIn) {
-        val username = cloudRepo.signIn(name, password)
-        CloudBackupWorker.schedule(getApplication(), enabled = true)
-        loadCloudAccount()
-        val backups = cloudRepo.list()
-        cloudUiState = cloudUiState.copy(backups = backups, listLoaded = true)
-        syncReading(userAsked = false)
-        if (backups.isEmpty()) "مرحباً $username. لا توجد نسخ في حسابك بعد."
-        else "مرحباً $username. اختر نسخة لاستعادتها على هذا الجهاز."
-    }
-
-    fun cloudSignOut() {
-        if (cloudUiState.busy) return
-        viewModelScope.launch {
-            CloudBackupWorker.schedule(getApplication(), enabled = false)
-            cloudRepo.signOut()
-            forgetSyncAccount()
-            forgetCloudProblems()
-            cloudUiState = CloudUiState(available = cloudRepo.isAvailable)
-        }
-    }
-
-    fun cloudBackupNow() = runCloud(CloudStage.Uploading) {
-        checkpointCurrentSessionForBackup()
-        try {
-            cloudRepo.upload(auto = false)
-            healthStore.recordSuccess(CloudFeature.BACKUP)
-        } catch (offline: CloudOfflineException) {
-            throw offline
-        } catch (refused: BackupException) {
-            healthStore.recordRefused(CloudFeature.BACKUP, refused.message ?: GENERIC_CLOUD_ERROR)
-            throw refused
-        } finally {
-            refreshCloudProblems()
-        }
-        loadCloudAccount()
-        cloudUiState = cloudUiState.copy(backups = cloudRepo.list(), listLoaded = true)
-        "حُفظت نسخة جديدة في حسابك."
-    }
-
-    fun cloudRestore(backup: CloudBackupInfo, takeDisplaySettings: Boolean) = runCloud(CloudStage.Restoring) {
-        // Finish and await old writes before folding the backup into the database and preferences.
-        checkpointCurrentSessionForBackup()
-        applyRestoredSnapshot(cloudRepo.restore(backup, takeDisplaySettings))
-        "اكتملت الاستعادة من نسخة ${formatBackupDate(backup.createdAt)} (${backup.deviceName})."
-    }
-
-    fun cloudDeleteBackup(backup: CloudBackupInfo) = runCloud(CloudStage.DeletingBackup) {
-        cloudRepo.delete(backup)
-        cloudUiState = cloudUiState.copy(backups = cloudRepo.list(), listLoaded = true)
-        "حُذفت النسخة من حسابك."
-    }
-
-    fun setCloudAutoBackup(enabled: Boolean) {
-        if (cloudUiState.username == null || enabled == cloudUiState.autoBackup) return
-        cloudUiState = cloudUiState.copy(autoBackup = enabled)
-        viewModelScope.launch {
-            store.setCloudAutoBackup(enabled)
-            CloudBackupWorker.schedule(getApplication(), enabled)
-        }
-    }
-
-    fun cloudDeleteAccount(password: String) = runCloud(CloudStage.Deleting) {
-        cloudRepo.deleteAccount(password)
-        CloudBackupWorker.schedule(getApplication(), enabled = false)
-        forgetSyncAccount()
-        forgetCloudProblems()
-        cloudUiState = CloudUiState(available = cloudRepo.isAvailable)
-        "حُذف حسابك وجميع نسخه من الخادم. بياناتك على هذا الجهاز باقية كما هي."
-    }
-
-    fun clearCloudFeedback() {
-        cloudUiState = cloudUiState.copy(message = null, error = null)
-    }
-
-    // ── Reading sync between the reader's devices ──────────────────────────────
-
-    var syncUiState by mutableStateOf(SyncUiState())
-        private set
-
-    /** The app came to the front: see whether another device has read further since. */
-    fun onAppForeground() {
-        // Hidden with "Later" only until the reader next comes back: a fault is not forgotten.
-        cloudProblemsHidden = false
-        viewModelScope.launch {
-            if (syncRepo.isSignedIn) syncReading(userAsked = false)
-            refreshCloudProblems()
-        }
-    }
-
-    /**
-     * The app went to the background: report this page as where the reader stopped. Its time
-     * stays the moment the reader turned to it — stamping "now" here would make merely glancing
-     * at the app look like reading, and hide the newer place another device has to offer.
-     * The upload is left to [CloudSyncWorker] because the process may not live long enough.
-     */
-    fun onAppBackground() {
-        if (!syncRepo.isSignedIn) return
-        CloudSyncWorker.enqueue(getApplication())
-    }
-
-    /** "Sync now" in the history tab, which also reloads the history. */
-    fun syncNow() {
-        if (syncUiState.loading) return
-        viewModelScope.launch {
-            syncReading(userAsked = true)
-            if (syncUiState.error == null) loadSyncHistory()
-        }
-    }
-
-    /** Called when the history tab opens. */
-    fun refreshSyncHistory() {
-        if (!syncRepo.isSignedIn || syncUiState.loading) return
-        viewModelScope.launch {
-            syncReading(userAsked = false)
-            loadSyncHistory()
-        }
-    }
-
-    private suspend fun syncReading(userAsked: Boolean) {
-        syncUiState = syncUiState.copy(loading = true, error = null)
-        try {
-            val result = syncRepo.sync()
-            val local = syncStore.state()
-            val elsewhere = ReadingSync.elsewhere(
-                thisDeviceId = result.thisDeviceId,
-                localLatestAt = local.latestAt,
-                currentPage = lastPage,
-                localBookmarkKey = bookmarks[0],
-                devices = result.devices,
-                dismissedKey = local.dismissedKey,
-            )
-            if (result.khatmasAdded > 0) khatmas = statsRepo.allKhatmas()
-            healthStore.recordSuccess(CloudFeature.SYNC)
-            syncUiState = syncUiState.copy(
-                loading = false,
-                elsewhere = elsewhere,
-                lastSyncAt = result.syncedAt,
-            )
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            // Offline passes by itself; anything else is a fault the reader must hear about,
-            // whether or not they asked for this sync.
-            if (error !is CloudOfflineException) {
-                healthStore.recordRefused(CloudFeature.SYNC, (error as? BackupException)?.message ?: GENERIC_CLOUD_ERROR)
-            }
-            syncUiState = syncUiState.copy(
-                loading = false,
-                lastSyncAt = syncStore.state().lastSyncAt,
-                error = if (userAsked) {
-                    (error as? BackupException)?.message ?: "تعذرت المزامنة. أعد المحاولة بعد قليل."
-                } else {
-                    null
-                },
-            )
-        }
-        refreshCloudProblems()
-    }
-
-    private suspend fun loadSyncHistory() {
-        try {
-            syncUiState = syncUiState.copy(history = syncRepo.history())
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            // The tab keeps what it showed last; the sync line already says whether it is online.
-        }
     }
 
     /** Goes to [point] on this device — a page turn, never a bookmark. */
     fun goToSyncedPlace(point: PlacePoint) {
         restorePageRequest = point.page
         point.verseKey?.let { flashSearchResult(it, point.page) }
-        dismissElsewhere()
-    }
-
-    /** "Not now": this offer stays away until that device moves on. */
-    fun dismissElsewhere() {
-        val key = syncUiState.elsewhere?.key ?: return
-        syncUiState = syncUiState.copy(elsewhere = null)
-        viewModelScope.launch { syncStore.setDismissed(key) }
+        backupSync.dismissElsewhere()
     }
 
     /** "البقرة ٢٥٥" for a verse key, or null before the ayah index has loaded. */
@@ -1161,80 +332,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun recordBookmarkForSync(verseKey: String?) {
         val page = verseKey?.let { ayahData.keyToPage[it] }
-        syncStore.recordBookmark(verseKey, page, System.currentTimeMillis())
-        if (syncRepo.isSignedIn) CloudSyncWorker.enqueue(getApplication())
-    }
-
-    // ── Cloud faults the reader must hear about ────────────────────────────────
-
-    /** What is broken or stuck in cloud backup and reading sync, newest knowledge first. */
-    var cloudProblems by mutableStateOf<List<CloudProblem>>(emptyList())
-        private set
-
-    /** "Later" on the reader's alert: hidden until the app next comes to the front. */
-    var cloudProblemsHidden by mutableStateOf(false)
-        private set
-
-    fun hideCloudProblems() { cloudProblemsHidden = true }
-
-    /** "Try again" from an alert: the same operation the reader would start by hand. */
-    fun retryCloudProblem(problem: CloudProblem) {
-        when (problem.feature) {
-            CloudFeature.SYNC -> syncNow()
-            CloudFeature.BACKUP -> cloudBackupNow()
-        }
-    }
-
-    private suspend fun refreshCloudProblems() {
-        if (!cloudRepo.isAvailable) return
-        val health = healthStore.state()
-        val prefs = store.cloudPrefs()
-        cloudProblems = CloudHealth.problems(
-            CloudHealth.Input(
-                signedIn = cloudRepo.isSignedIn && prefs.username != null,
-                syncRefusedAt = health.syncRefusedAt,
-                syncRefusedMessage = health.syncRefusedMessage,
-                backupRefusedAt = health.backupRefusedAt,
-                backupRefusedMessage = health.backupRefusedMessage,
-                outbox = syncStore.state().outbox.map { it.at },
-                autoBackup = prefs.autoBackup,
-                backupLastOkAt = health.backupLastOkAt,
-                lastUploadAt = prefs.lastUploadAt,
-            ),
-            now = System.currentTimeMillis(),
-        )
-    }
-
-    private suspend fun forgetCloudProblems() {
-        healthStore.clear()
-        cloudProblems = emptyList()
-    }
-
-
-    private suspend fun forgetSyncAccount() {
-        CloudSyncWorker.cancel(getApplication())
-        syncStore.forgetAccount()
-        syncUiState = SyncUiState()
-    }
-
-    /** Runs one cloud operation behind the busy state; [block] returns the success message. */
-    private fun runCloud(stage: CloudStage, block: suspend () -> String?) {
-        if (cloudUiState.busy || backupUiState.busy) return
-        cloudUiState = cloudUiState.copy(busy = true, stage = stage, message = null, error = null)
-        viewModelScope.launch {
-            try {
-                val message = block()
-                cloudUiState = cloudUiState.copy(busy = false, stage = null, message = message)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                cloudUiState = cloudUiState.copy(
-                    busy = false,
-                    stage = null,
-                    error = (error as? BackupException)?.message ?: "تعذر إكمال العملية. أعد المحاولة بعد قليل.",
-                )
-            }
-        }
+        backupSync.recordBookmark(verseKey, page)
     }
 
     /** A file picker can stop the activity first, so await that commit as well as this one. */
@@ -1246,46 +344,8 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun applyRestoredSnapshot(snapshot: BackupSnapshot) {
         val value = snapshot.reading.settings
-        themeId = value.themeId
-        fillScreenNarrow = value.fillScreen
-        fillScreenWide = value.fillScreenWide
-        verticalPaging = value.verticalPaging
-        keepScreenOn = value.keepScreenOn
-        edgeMargin = value.edgeMargin
-        showNoteMarks = value.showNoteMarks
-        noteMarkOpacity = value.noteMarkOpacity
+        display.apply(value)
         hiddenBookmarks = value.hiddenBookmarks
-        hiddenButtons = value.hiddenButtons
-        barButtons = value.barButtons
-        buttonColors = value.buttonColors
-        bigButtons = value.bigButtons
-        showClock = value.showClock
-        showSessionTimer = value.showSessionTimer
-        showSurahNumber = value.showSurahNumber
-        showSurahAyahCount = value.showSurahAyahCount
-        showSurahProgress = value.showSurahProgress
-        showJuzProgressPercent = value.showJuzProgressPercent
-        showJuzProgressPages = value.showJuzProgressPages
-        showReadingPosition = value.showReadingPosition
-        clockColor = value.clockColor
-        sessionTimerColor = value.sessionTimerColor
-        showButtonPage = value.showButtonPage
-        buttonPageColor = value.buttonPageColor
-        showHeaderButtonOpacity = value.showHeaderButtonOpacity
-        buttonPosFraction = value.buttonPosFraction
-        showBottomJuzBar = value.showBottomJuzBar
-        bottomJuzBarColor = value.bottomJuzBarColor
-        bottomJuzBarThickness = value.bottomJuzBarThickness
-        bottomJuzBarOpacity = value.bottomJuzBarOpacity
-        showTopSurahBar = value.showTopSurahBar
-        topSurahBarColor = value.topSurahBarColor
-        topSurahBarThickness = value.topSurahBarThickness
-        topSurahBarOpacity = value.topSurahBarOpacity
-        showPageSideIndicator = value.showPageSideIndicator
-        pageSideIndicatorColor = value.pageSideIndicatorColor
-        pageSideIndicatorThickness = value.pageSideIndicatorThickness
-        pageSideIndicatorLength = value.pageSideIndicatorLength
-        pageSideIndicatorOpacity = value.pageSideIndicatorOpacity
         khatmaStartedAt = value.khatmaStartedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
         bookmarks = snapshot.reading.bookmarks.map { it.firstOrNull() }
         bookmarkNames = snapshot.reading.bookmarkNames.map(ReadingStore::cleanBookmarkName)
@@ -1331,87 +391,12 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearSearchFlash() { searchFlash = null }
 
-    fun loadExplanation(ayah: AyahMarker) {
-        explanationJob?.cancel()
-        explanationState = AyahExplanationUiState(
-            verseKey = ayah.verseKey,
-            loading = true,
-        )
-        explanationJob = viewModelScope.launch {
-            try {
-                val content = contentRepo.explanationFor(ayah.verseKey)
-                explanationState = AyahExplanationUiState(
-                    verseKey = ayah.verseKey,
-                    tafsirHtml = content.tafsirHtml,
-                    meanings = content.meanings,
-                    saadi = content.saadi,
-                    mukhtasar = content.mukhtasar,
-                    nozool = content.nozool,
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                explanationState = AyahExplanationUiState(
-                    verseKey = ayah.verseKey,
-                    errorMessage = "تعذر فتح المحتوى. حاول مرة أخرى.",
-                )
-            }
-        }
-    }
 
-    /** The fawaed the Mukhtasar draws from [page]; empty when the page has none or cannot be read. */
-    suspend fun pageFawaed(page: Int): List<String> =
-        runCatching { centerExtras.fawaedForPage(page) }
-            .onFailure { if (it is CancellationException) throw it }
-            .getOrDefault(emptyList())
 
-    /** The tajweed note on an ayah; null when it has none or the note cannot be read. */
-    suspend fun tajweed(surah: Int, ayah: Int): TajweedNote? =
-        runCatching { centerExtras.tajweed(surah, ayah) }
-            .onFailure { if (it is CancellationException) throw it }
-            .getOrNull()
 
-    /** [surah]'s introduction, or null when it cannot be read. */
-    suspend fun surahCard(surah: Int): SurahCard? =
-        runCatching { centerExtras.surahCard(surah) }
-            .onFailure { if (it is CancellationException) throw it }
-            .getOrNull()
 
-    fun clearExplanation() {
-        explanationJob?.cancel()
-        explanationJob = null
-        explanationState = AyahExplanationUiState()
-        packJob?.cancel()
-        packJob = null
-        packState = PackContentUiState()
-    }
 
-    var packState by mutableStateOf(PackContentUiState())
-        private set
-    private var packJob: Job? = null
 
-    /** Loads [packId]'s text for [verseKey] into [packState], unless it is already there. */
-    fun loadPackContent(verseKey: String, packId: String) {
-        val current = packState
-        if (current.verseKey == verseKey && current.packId == packId && (current.loading || current.content != null)) return
-        val pack = PackStore.installed[packId]
-        packJob?.cancel()
-        if (pack == null) {
-            packState = PackContentUiState(verseKey, packId)
-            return
-        }
-        packState = PackContentUiState(verseKey, packId, loading = true)
-        packJob = viewModelScope.launch {
-            val content = try {
-                packRepo.contentFor(packId, pack.kind, verseKey)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                null
-            }
-            packState = PackContentUiState(verseKey, packId, content = content)
-        }
-    }
 
     /**
      * Puts bookmark [slot] on [ayah], moving it from wherever it was; tapping the slot that
@@ -1518,8 +503,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         // Only a real move counts as reading here: reopening the app on its saved page is not news
         // for the other device, and must not hide a newer place found there.
         if (page != lastPage) {
-            val now = System.currentTimeMillis()
-            viewModelScope.launch { syncStore.setPageAt(now) }
+            backupSync.recordPageTurn(System.currentTimeMillis())
         }
         saveLastPage(page)
     }
@@ -1645,7 +629,7 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             statsRepo.saveKhatma(now, started, days, pageCount)
             khatmas = statsRepo.allKhatmas()
-            if (syncRepo.isSignedIn) CloudSyncWorker.enqueue(getApplication())
+            backupSync.queueUpload()
             resetKhatmaProgressInternal(now)
         }
     }
@@ -1835,4 +819,3 @@ private fun AyahMarker.toSearchResult(tier: SearchTier, highlights: List<IntRang
     SearchResult(verseKey, surahNameAr, ayahNumber, page, textUthmani, tier, highlights)
 
 /** The order the sources menu and the library list the packs in. */
-val PACK_ORDER = listOf("ibn_kathir", "tabari", "baghawi", "qurtubi", "shawkani", "ibn_ashur", "irab")

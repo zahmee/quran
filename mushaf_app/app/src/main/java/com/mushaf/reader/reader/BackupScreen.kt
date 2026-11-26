@@ -80,8 +80,8 @@ fun BackupScreen(
     onBack: () -> Unit,
     onOpenPlace: (PlacePoint) -> Unit,
 ) {
-    val state = viewModel.backupUiState
-    val cloud = viewModel.cloudUiState
+    val state = viewModel.backupSync.backupUiState
+    val cloud = viewModel.backupSync.cloudUiState
     // Providers report backup files under inconsistent MIME types, so filtering by type would hide
     // the very file the user is looking for on some clouds.
     val openableTypes = remember { arrayOf("*/*") }
@@ -93,21 +93,21 @@ fun BackupScreen(
     var tab by rememberSaveable { mutableStateOf(0) }
     val historyTab = cloud.available && tab == 1
 
-    LaunchedEffect(historyTab, cloud.username) { if (historyTab) viewModel.refreshSyncHistory() }
+    LaunchedEffect(historyTab, cloud.username) { if (historyTab) viewModel.backupSync.refreshSyncHistory() }
 
     // Another device may have uploaded since this screen was last open.
-    LaunchedEffect(cloud.username) { viewModel.refreshCloudBackups() }
+    LaunchedEffect(cloud.username) { viewModel.backupSync.refreshCloudBackups() }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(BACKUP_MIME_TYPE)
     ) { uri ->
-        if (uri == null) viewModel.backupSelectionCancelled() else viewModel.exportBackup(uri)
+        if (uri == null) viewModel.backupSync.backupSelectionCancelled() else viewModel.backupSync.exportBackup(uri)
     }
 
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri == null) viewModel.backupSelectionCancelled() else pendingRestore = uri
+        if (uri == null) viewModel.backupSync.backupSelectionCancelled() else pendingRestore = uri
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -135,13 +135,13 @@ fun BackupScreen(
                 }
 
                 // Above both tabs: whatever is broken comes before everything that works.
-                val problems = viewModel.cloudProblems
+                val problems = viewModel.backupSync.cloudProblems
                 if (problems.isNotEmpty()) {
                     item {
                         CloudProblemsPanel(
                             problems = problems,
-                            busy = cloud.busy || viewModel.syncUiState.loading,
-                            onRetry = viewModel::retryCloudProblem,
+                            busy = cloud.busy || viewModel.backupSync.syncUiState.loading,
+                            onRetry = viewModel.backupSync::retryCloudProblem,
                         )
                     }
                 }
@@ -149,10 +149,10 @@ fun BackupScreen(
                 if (historyTab) {
                     readingHistoryItems(
                         signedIn = cloud.username != null,
-                        state = viewModel.syncUiState,
+                        state = viewModel.backupSync.syncUiState,
                         describeVerse = viewModel::describeVerse,
                         surahOfPage = viewModel::surahOfPage,
-                        onSyncNow = viewModel::syncNow,
+                        onSyncNow = viewModel.backupSync::syncNow,
                         onGo = onOpenPlace,
                     )
                     item { Spacer(Modifier.height(12.dp)) }
@@ -165,14 +165,14 @@ fun BackupScreen(
                     item {
                         CloudBackupSection(
                             state = cloud,
-                            onSignIn = viewModel::cloudSignIn,
-                            onSignUp = viewModel::cloudSignUp,
-                            onBackupNow = viewModel::cloudBackupNow,
-                            onAutoBackupChange = viewModel::setCloudAutoBackup,
-                            onRefresh = viewModel::refreshCloudBackups,
+                            onSignIn = viewModel.backupSync::cloudSignIn,
+                            onSignUp = viewModel.backupSync::cloudSignUp,
+                            onBackupNow = viewModel.backupSync::cloudBackupNow,
+                            onAutoBackupChange = viewModel.backupSync::setCloudAutoBackup,
+                            onRefresh = viewModel.backupSync::refreshCloudBackups,
                             onRestore = { pendingCloudRestore = it.id },
                             onDeleteBackup = { pendingCloudDelete = it.id },
-                            onSignOut = viewModel::cloudSignOut,
+                            onSignOut = viewModel.backupSync::cloudSignOut,
                             onDeleteAccount = { confirmDeleteAccount = true },
                         )
                     }
@@ -181,7 +181,7 @@ fun BackupScreen(
                             FeedbackPanel(
                                 message = cloud.message,
                                 error = cloud.error,
-                                onDismiss = viewModel::clearCloudFeedback,
+                                onDismiss = viewModel.backupSync::clearCloudFeedback,
                             )
                         }
                     }
@@ -193,7 +193,7 @@ fun BackupScreen(
                     BackupActions(
                         state = state.copy(busy = state.busy || cloud.busy),
                         onExport = {
-                            exportLauncher.launch(viewModel.suggestedBackupFileName())
+                            exportLauncher.launch(viewModel.backupSync.suggestedBackupFileName())
                         },
                         onImport = { importLauncher.launch(openableTypes) },
                     )
@@ -204,7 +204,7 @@ fun BackupScreen(
                         FeedbackPanel(
                             message = state.message,
                             error = state.error,
-                            onDismiss = viewModel::clearBackupFeedback,
+                            onDismiss = viewModel.backupSync::clearBackupFeedback,
                         )
                     }
                 }
@@ -222,11 +222,11 @@ fun BackupScreen(
             busy = state.busy,
             onConfirm = { takeDisplaySettings ->
                 pendingRestore = null
-                viewModel.importBackup(uri, takeDisplaySettings)
+                viewModel.backupSync.importBackup(uri, takeDisplaySettings)
             },
             onDismiss = {
                 pendingRestore = null
-                viewModel.backupSelectionCancelled()
+                viewModel.backupSync.backupSelectionCancelled()
             },
         )
     }
@@ -243,7 +243,7 @@ fun BackupScreen(
                 busy = cloud.busy,
                 onConfirm = { takeDisplaySettings ->
                     pendingCloudRestore = null
-                    viewModel.cloudRestore(backup, takeDisplaySettings)
+                    viewModel.backupSync.cloudRestore(backup, takeDisplaySettings)
                 },
                 onDismiss = { pendingCloudRestore = null },
             )
@@ -260,7 +260,7 @@ fun BackupScreen(
                 busy = cloud.busy,
                 onConfirm = {
                     pendingCloudDelete = null
-                    viewModel.cloudDeleteBackup(backup)
+                    viewModel.backupSync.cloudDeleteBackup(backup)
                 },
                 onDismiss = { pendingCloudDelete = null },
             )
@@ -272,7 +272,7 @@ fun BackupScreen(
             busy = cloud.busy,
             onConfirm = { password ->
                 confirmDeleteAccount = false
-                viewModel.cloudDeleteAccount(password)
+                viewModel.backupSync.cloudDeleteAccount(password)
             },
             onDismiss = { confirmDeleteAccount = false },
         )
