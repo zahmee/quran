@@ -392,6 +392,7 @@ internal fun ReaderOverlays(
 
     if (ui.showSearch) {
         SearchScreen(
+            session = ui.search,
             onSearch = { q -> viewModel.search(q) },
             onJump = { page ->
                 ui.showSearch = false

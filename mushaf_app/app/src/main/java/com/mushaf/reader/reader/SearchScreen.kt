@@ -10,14 +10,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -37,6 +45,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mushaf.reader.data.RootSearch
 import com.mushaf.reader.data.SearchTier
@@ -53,67 +62,83 @@ private const val MinQueryLength = 2
 /** How long the typing has to pause before a search runs, so a fast typist triggers one scan. */
 private const val SearchDebounceMs = 220L
 
-/** Results together with the query they answer, so the labels describe that query and not one the
- *  reader has typed since. */
-private class Answer(val query: String, val results: SearchResults)
-
 /** Full-screen search over ayah text + surah names; a surah jumps to its page, an ayah to its page with
  *  the ayah flashed there. */
 @Composable
-fun SearchScreen(
+internal fun SearchScreen(
+    session: SearchSession,
     onSearch: suspend (String) -> SearchResults,
     onJump: (Int) -> Unit,
     onJumpToAyah: (SearchResult) -> Unit,
     onBack: () -> Unit,
     onRootResults: suspend (RootSearch.Root, Int?) -> RootResults,
 ) {
-    var query by remember { mutableStateOf("") }
-    // The root whose words are listed, over the results it was chosen from; Back returns to them.
-    var openRoot by remember { mutableStateOf<RootSearch.Root?>(null) }
-    BackHandler(enabled = openRoot != null) { openRoot = null }
-    var answer by remember { mutableStateOf(Answer("", SearchResults())) }
+    BackHandler(enabled = session.openRoot != null) { session.openRoot = null }
     var searching by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    val trimmed = query.trim()
+    val trimmed = session.query.trim()
 
+    // A fresh search wants the keyboard; coming back to kept results wants the list, not the keys.
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-        keyboard?.show()
+        if (session.query.isEmpty()) {
+            focusRequester.requestFocus()
+            keyboard?.show()
+        }
     }
 
     // Keyed on the query, so a new keystroke cancels the pending scan before it starts — that is
-    // the debounce. The scan itself runs off the main thread inside onSearch.
+    // the debounce. The scan itself runs off the main thread inside onSearch. A query already
+    // answered (the screen reopened over kept results) is not scanned again.
     LaunchedEffect(trimmed) {
+        if (session.answer.query == trimmed) return@LaunchedEffect
+        session.openedKey = null
         if (trimmed.length < MinQueryLength) {
-            answer = Answer(trimmed, SearchResults())
+            session.answer = Answer(trimmed, SearchResults())
             searching = false
             return@LaunchedEffect
         }
         searching = true
         delay(SearchDebounceMs)
-        answer = Answer(trimmed, onSearch(trimmed))
+        session.answer = Answer(trimmed, onSearch(trimmed))
+        // requestScrollToItem, not scrollToItem: the list is not on screen while the spinner is, and
+        // scrollToItem waits for its first layout — the search would never finish.
+        session.listState.requestScrollToItem(0)
         searching = false
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxSize()) {
-            val root = openRoot
+            val root = session.openRoot
             if (root != null) {
-                MushafTopBar(title = "جذر «${root.root}»", onBack = { openRoot = null })
-                RootResultsView(root = root, load = onRootResults, onJumpToAyah = onJumpToAyah)
+                MushafTopBar(title = "جذر «${root.root}»", onBack = { session.openRoot = null })
+                RootResultsView(session = session, root = root, load = onRootResults, onJumpToAyah = { r ->
+                    session.opened("root-ayah:${r.verseKey}", r.page)
+                    onJumpToAyah(r)
+                })
                 return@Column
             }
             MushafTopBar(title = "البحث", onBack = onBack)
             OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
+                value = session.query,
+                onValueChange = { session.query = it },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 10.dp)
                     .focusRequester(focusRequester),
                 shape = MaterialTheme.shapes.medium,
                 placeholder = { Text("ابحث عن آية أو سورة") },
+                trailingIcon = if (session.query.isNotEmpty()) {
+                    {
+                        IconButton(onClick = {
+                            session.clear()
+                            focusRequester.requestFocus()
+                            keyboard?.show()
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "مسح البحث")
+                        }
+                    }
+                } else null,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() })
@@ -125,24 +150,33 @@ fun SearchScreen(
                 searching -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-                answer.results.isEmpty -> Hint("لا توجد نتائج")
+                session.answer.results.isEmpty -> Hint("لا توجد نتائج")
                 else -> {
+                    val answer = session.answer
                     val rows = remember(answer) { searchRows(answer) }
                     val mark = SpanStyle(
                         color = MaterialTheme.colorScheme.primary,
                         background = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
                     )
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(modifier = Modifier.fillMaxSize(), state = session.listState) {
                         items(rows, key = { it.key }) { row ->
+                            val opened = row.key == session.openedKey
                             when (row) {
                                 is ResultRow.Header -> GroupHeader(row, first = row === rows.first())
-                                is ResultRow.RootRow -> RootSuggestionRow(row.root, onClick = { openRoot = row.root })
+                                is ResultRow.RootRow -> RootSuggestionRow(row.root, onClick = { session.showRoot(row.root) })
                                 is ResultRow.SurahRow -> MushafNavigationRow(
                                     title = "سورة ${row.surah.nameAr}",
                                     meta = "صفحة ${row.surah.firstPage.toArabicDigits()}",
-                                    onClick = { onJump(row.surah.firstPage) },
+                                    selected = opened,
+                                    onClick = {
+                                        session.opened(row.key, row.surah.firstPage)
+                                        onJump(row.surah.firstPage)
+                                    },
                                 )
-                                is ResultRow.AyahRow -> AyahRow(row.result, mark, onClick = { onJumpToAyah(row.result) })
+                                is ResultRow.AyahRow -> AyahRow(row.result, mark, selected = opened, onClick = {
+                                    session.opened(row.key, row.result.page)
+                                    onJumpToAyah(row.result)
+                                })
                             }
                         }
                     }
@@ -275,13 +309,14 @@ private fun Hint(text: String) {
 }
 
 @Composable
-private fun AyahRow(r: SearchResult, mark: SpanStyle, onClick: () -> Unit) {
+private fun AyahRow(r: SearchResult, mark: SpanStyle, selected: Boolean = false, onClick: () -> Unit) {
     val text = remember(r, mark) { markedSnippet(r.text, r.highlights, mark) }
     MushafNavigationRow(
         title = "${r.surahNameAr} • آية ${r.ayahNumber.toArabicDigits()}",
         meta = "صفحة ${r.page.toArabicDigits()}",
         supportingText = text.takeIf { it.isNotBlank() },
         supportingStyle = ReadingType.bodyMedium,
+        selected = selected,
         onClick = onClick,
     )
 }
@@ -353,16 +388,20 @@ private fun RootSuggestionRow(root: RootSearch.Root, onClick: () -> Unit) {
  */
 @Composable
 private fun RootResultsView(
+    session: SearchSession,
     root: RootSearch.Root,
     load: suspend (RootSearch.Root, Int?) -> RootResults,
     onJumpToAyah: (SearchResult) -> Unit,
 ) {
-    var form by remember(root.id) { mutableStateOf<Int?>(null) }
-    var results by remember(root.id) { mutableStateOf<RootResults?>(null) }
+    val form = session.rootForm
     LaunchedEffect(root.id, form) {
-        results = null
-        results = load(root, form)
+        val kept = session.rootResults
+        if (kept != null && kept.root.id == root.id && kept.form == form) return@LaunchedEffect
+        session.rootResults = null
+        session.rootResults = load(root, form)
+        session.rootListState.requestScrollToItem(0)
     }
+    val results = session.rootResults?.takeIf { it.root.id == root.id && it.form == form }
     val mark = SpanStyle(
         color = MaterialTheme.colorScheme.primary,
         background = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
@@ -382,14 +421,14 @@ private fun RootResultsView(
             item {
                 FilterChip(
                     selected = form == null,
-                    onClick = { form = null },
+                    onClick = { session.rootForm = null },
                     label = { Text("الكل") },
                 )
             }
             itemsIndexed(root.forms) { index, f ->
                 FilterChip(
                     selected = form == index,
-                    onClick = { form = if (form == index) null else index },
+                    onClick = { session.rootForm = if (form == index) null else index },
                     label = { Text("${f.text} (${f.count.toArabicDigits()})") },
                 )
             }
@@ -407,11 +446,62 @@ private fun RootResultsView(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp),
                 )
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(modifier = Modifier.fillMaxSize(), state = session.rootListState) {
                     items(shown.ayahs, key = { "root-ayah:${it.verseKey}" }) { r ->
-                        AyahRow(r, mark, onClick = { onJumpToAyah(r) })
+                        AyahRow(
+                            r, mark,
+                            selected = session.openedKey == "root-ayah:${r.verseKey}",
+                            onClick = { onJumpToAyah(r) },
+                        )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * The way back to the search results, floating over the page a result was opened on. Tapping it
+ * reopens the search as it was left; the cross lets it go. The reader hides it by paging away.
+ */
+@Composable
+internal fun SearchReturnChip(
+    query: String,
+    onOpen: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onOpen,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shadowElevation = 4.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 14.dp, end = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Default.Search,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "نتائج البحث: «$query»",
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 220.dp),
+            )
+            IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "إخفاء",
+                    modifier = Modifier.size(16.dp),
+                )
             }
         }
     }

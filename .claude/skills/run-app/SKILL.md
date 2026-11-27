@@ -56,6 +56,22 @@ adb install -r mushaf_app/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.mushaf.reader/.MainActivity
 ```
 
+### Folding and unfolding
+
+Fold with the hinge sensor, never with `cmd device_state`:
+
+```bash
+adb emu sensor set hinge-angle0 0     # folded: cover screen 1080x2092
+adb emu sensor set hinge-angle0 180   # unfolded: inner screen 2208x1840
+```
+
+`adb shell cmd device_state state N` installs a sticky override that ignores the
+hinge and is saved into the quick-boot snapshot. Android then keeps drawing the
+inner screen while the emulator window shows the cover one, so the picture is
+squashed and the layout jumbled. Check with `adb shell dumpsys device_state`
+(`mOverrideState` must be `Optional.empty`); clear it with
+`adb shell cmd device_state state reset`.
+
 ## 2. Helpers and coordinates
 
 On `FoldDevice`, skip fixed coordinates: source the helpers and tap by label.
