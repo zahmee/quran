@@ -28,8 +28,9 @@ internal object FeatureGuide {
     const val HUB = "https://zahmee.github.io/quran/features/"
     const val WHATS_NEW = HUB + "whats-new.html"
 
-    /** One guide page, by the slug of its file in docs/features/. */
-    fun page(slug: String) = "$HUB$slug.html"
+    /** One guide page, by the slug of its file in docs/features/, opened at [section] when given. */
+    fun page(slug: String, section: String? = null) =
+        "$HUB$slug.html" + (section?.let { "#$it" } ?: "")
 }
 
 /** Opens a guide page, and says so when the device has nothing that can open a web link. */
@@ -47,7 +48,13 @@ internal fun openFeatureGuide(context: Context, url: String) {
 }
 
 /** One line of the "what's new" card, and the guide page that shows it. */
-internal data class WhatsNewItem(val title: String, val body: String, val slug: String)
+internal data class WhatsNewItem(
+    val title: String,
+    val body: String,
+    val slug: String,
+    /** The lesson on that page, for a page that holds more than one. */
+    val section: String? = null,
+)
 
 /**
  * What the card shown once after an update tells the reader.
@@ -56,18 +63,20 @@ internal data class WhatsNewItem(val title: String, val body: String, val slug: 
  * brings something worth showing; a release that does not touch it shows nothing.
  */
 internal object WhatsNew {
-    const val RELEASE = 66
+    const val RELEASE = 67
 
     val items = listOf(
         WhatsNewItem(
-            "أخفِ العلامات التي لا تستعملها",
-            "من «إدارة العلامات» أطفئ «إظهار في القوائم والصفحة» تحت أي علامة، فتغيب وتبقى محفوظة حتى تظهرها.",
-            "bookmarks",
+            "بحثك لا يضيع",
+            "افتح نتيجة ثم ارجع إلى البحث، تجد الكلمة والنتائج وموضعك كما تركتها، والنتيجة التي فتحتها مميّزة.",
+            "search",
+            "return",
         ),
         WhatsNewItem(
-            "علامة واحدة بلمسة واحدة",
-            "إن أبقيت علامة واحدة ظاهرة فزر «علامة» في نافذة الآية يضعها أو يزيلها دون قائمة.",
-            "bookmarks",
+            "زر «نتائج البحث»",
+            "بعد فتح نتيجة يظهر أسفل الصفحة زر يعيدك إلى نتائجك بلمسة.",
+            "search",
+            "return",
         ),
     )
 }
@@ -90,7 +99,7 @@ internal fun WhatsNewDialog(onDismiss: () -> Unit) {
                         modifier = Modifier.padding(top = 2.dp),
                     )
                     TextButton(
-                        onClick = { openFeatureGuide(context, FeatureGuide.page(item.slug)) },
+                        onClick = { openFeatureGuide(context, FeatureGuide.page(item.slug, item.section)) },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("شاهد الشرح") }
                 }
