@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.rememberPagerState
@@ -34,6 +35,7 @@ import com.mushaf.reader.data.recitation.RepeatPlan
 import com.mushaf.reader.update.AppUpdateUi
 import com.mushaf.reader.update.UpdateBanner
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 @Composable
 fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
@@ -115,6 +117,11 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
         // explanation sheet just stepped to — is the reason the page turned, and stays.
         if (viewModel.selectedAyah?.page != pagerState.currentPage + 1) viewModel.clearSelection()
         viewModel.onPageVisible(pagerState.currentPage + 1)
+        // Paging well away from an opened search result ends the offer to go back to the results.
+        val back = ui.search.returnPage
+        if (back != null && abs(pagerState.currentPage + 1 - back) > SearchReturnReach) {
+            ui.search.returnPage = null
+        }
     }
 
     // The page follows the recitation: when the ayah being recited moves onto another page, turn
@@ -324,7 +331,21 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
             // opening the index or the stats screen hides it instead of stacking on top of them.
             // The bar reads the update state itself, so a download's progress ticks redraw the
             // bar alone instead of invalidating this whole scope on every percent.
-            Column(modifier = Modifier.align(Alignment.BottomCenter)) {
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // Back to the search results this page was opened from, while the reader stays near it.
+                if (ui.search.returnPage != null && !ui.showSearch) {
+                    SearchReturnChip(
+                        query = ui.search.answer.query,
+                        onOpen = { ui.showSearch = true },
+                        onDismiss = { ui.search.returnPage = null },
+                        modifier = Modifier
+                            .navigationBarsPadding()
+                            .padding(bottom = 16.dp),
+                    )
+                }
                 // A broken or stuck cloud feature: said plainly, never left to fail in silence.
                 CloudProblemBanner(
                     problems = viewModel.backupSync.cloudProblems,

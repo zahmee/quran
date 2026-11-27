@@ -23,6 +23,9 @@ internal class ReaderScreenState {
     var showIndex by mutableStateOf(false)
     var indexTab by mutableStateOf(0)
     var showSearch by mutableStateOf(false)
+
+    /** The search screen's word, results and place, kept while it is closed. */
+    val search = SearchSession()
     var showAbout by mutableStateOf(false)
     var showSettings by mutableStateOf(false)
     var showBackup by mutableStateOf(false)
