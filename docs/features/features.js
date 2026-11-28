@@ -27,6 +27,7 @@
     ["customize.html", "المظهر وتخصيص الشاشة"],
     ["fullscreen.html", "ملء الشاشة: توسيع مساحة القراءة"],
     ["page-side.html", "صفحة يمين أم يسار؟"],
+    ["anaa.html", "آناء من قائمة نتلو"],
   ];
 
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
