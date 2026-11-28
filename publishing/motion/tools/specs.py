@@ -97,6 +97,34 @@ SPECS = [
                 {"start": 17.2, "end": 19.4, "x": 260, "y": 2235, "w": 560, "h": 115}],
          end={"start": 19.8, "title": "البحث|*لا يضيع*", "sub": "زر «نتائج البحث» أسفل الصفحة · نتلو"}),
 
+    # Recorded on QuranTest054 (1080x2400) for the release after 0.22.0, from Al-Kahf 294 with Ana'a
+    # 2.0.4 installed: More → المسبحة opens Ana'a on its counter (one count), then — cut, Natlu back
+    # in front — Settings → القائمة → آناء turns on الأذكار, and the menu's new item opens Ana'a there.
+    # One take in two pieces: recording time = clip time + 1.4, then clip time + 3.4 after the cut.
+    dict(slug="anaa", duration=27.0,
+         media=[{"src": "anaa.mp4", "start": 0, "dur": 8.0, "mstart": 1.4},
+                {"src": "anaa.mp4", "start": 8.0, "dur": 14.3, "mstart": 11.4},
+                {"src": "anaa_last.png", "start": 22.3, "dur": 1.9}],
+         camera=[cam(0, 0, W), cam(0.9, 0.6, 1.6, 250, 1320, 520, 1100), cam(3.3, 0.5, W),
+                 cam(14.0, 0.6, 1.3, 540, 1600, 540, 1150), cam(16.9, 0.6, W),
+                 cam(19.0, 0.6, 1.6, 250, 1380, 520, 1100), cam(21.4, 0.5, W)],
+         titles=[T(0, 2.4, "آناء|*من قائمة نتلو*"),
+                 T(2.5, 3.6, "*المسبحة* بلمسة", "اختصارات آناء في قائمة المزيد"),
+                 T(6.2, 2.0, "على *شاشتها* مباشرة", "يُفتح آناء"),
+                 T(8.4, 4.8, "اختر *اختصاراتك*", "الإعدادات ← القائمة ← آناء"),
+                 T(13.4, 3.6, "فعّل *الأذكار* مثلًا", "ستة اختصارات"),
+                 T(17.2, 4.1, "تظهر *في القائمة*", "مع المسبحة والصلاة"),
+                 T(21.5, 2.6, "*الأذكار* مباشرة", "وتفتح")],
+         taps=[MORE(0.6), {"t": 3.3, "x": 230, "y": 1311}, {"t": 6.45, "x": 540, "y": 1660},
+               SETTINGS(8.55), {"t": 10.3, "x": 741, "y": 251}, {"t": 15.0, "x": 152, "y": 1618},
+               MORE(18.7), {"t": 21.4, "x": 230, "y": 1563}],
+         drags=[{"t": 11.7, "dur": 1.8, "x": 540, "y": 2000, "x2": 540, "y2": 300}],
+         rings=[{"start": 1.2, "end": 3.2, "x": 10, "y": 1160, "w": 400, "h": 330},
+                {"start": 14.2, "end": 15.9, "x": 40, "y": 1545, "w": 1000, "h": 150},
+                {"start": 19.4, "end": 21.3, "x": 10, "y": 1160, "w": 400, "h": 460}],
+         swaps=[8.0],
+         end={"start": 24.2, "title": "آناء|*بلمسة من نتلو*", "sub": "يظهر إذا كان آناء مثبّتًا · نتلو"}),
+
     dict(slug="notes", duration=20.0,
          media=[{"src": "notes_a.mp4", "start": 0, "dur": 7.4, "mstart": 1.0},
                 {"src": "notes_b.mp4", "start": 7.4, "dur": 8.3, "mstart": 0.8},
