@@ -299,6 +299,7 @@ internal fun ReaderOverlays(
             onAbout = { ui.showAbout = true },
             onTafsirLibrary = { ui.showTafsirLibrary = true },
             onClearAllStats = { viewModel.clearAllStats() },
+            menuTabExtra = { AnaaSettingsPanel(viewModel.anaa) },
             recitationTab = {
                 val page = pagerState.currentPage + 1
                 val juz = viewModel.juzInfoForPage(page).juz

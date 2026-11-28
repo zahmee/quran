@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Ana'a's own debug build, so a debug Natlu can open it too. -->
+    <queries>
+        <package android:name="com.sakinah.tasbih.preview" />
+    </queries>
+
     <application android:networkSecurityConfig="@xml/network_security_config" />
 </manifest>

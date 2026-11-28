@@ -130,6 +130,8 @@ fun SettingsScreen(
     onClearAllStats: () -> Unit,
     /** The «التلاوة» tab's content, built by the reader, which owns recitation. */
     recitationTab: @Composable ColumnScope.() -> Unit,
+    /** Below the header buttons in the «القائمة» tab: the reader's آناء section. */
+    menuTabExtra: @Composable ColumnScope.() -> Unit = {},
     onBack: () -> Unit,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
@@ -403,6 +405,7 @@ fun SettingsScreen(
                         if (index != HeaderActions.lastIndex) SettingsDivider()
                     }
                 }
+                menuTabExtra()
                 }
                 2 -> SettingsTabScroll {
                 SettingsPanel(

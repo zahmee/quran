@@ -110,19 +110,7 @@ fun AboutScreen(
                     runCatching { context.startActivity(mail) }
                 }
                 val openAnaa: () -> Unit = {
-                    val opened = runCatching {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, "market://details?id=com.sakinah.tasbih".toUri())
-                                .setPackage("com.android.vending")
-                        )
-                    }.isSuccess || runCatching {
-                        context.startActivity(
-                            Intent(
-                                Intent.ACTION_VIEW,
-                                "https://play.google.com/store/apps/details?id=com.sakinah.tasbih".toUri()
-                            )
-                        )
-                    }.isSuccess
+                    val opened = openAnaaInStore(context)
                     if (!opened) {
                         Toast.makeText(
                             context,

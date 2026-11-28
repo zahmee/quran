@@ -37,6 +37,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import android.widget.Toast
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -176,6 +178,8 @@ internal fun ReaderHeader(
     onOpenNotes: () -> Unit,
     onPageClick: () -> Unit,
     onAbout: () -> Unit,
+    /** What the More menu offers for آناء; see [anaaMenu]. */
+    anaaMenu: AnaaMenu = AnaaMenu.None,
 ) {
     val headerColor = MaterialTheme.colorScheme.surface
     val contentColor = MaterialTheme.colorScheme.onSurface
@@ -377,7 +381,8 @@ internal fun ReaderHeader(
                         onListen = onListen,
                         onSharePage = onSharePage,
                         onPageFawaed = onPageFawaed,
-                        onAbout = onAbout
+                        onAbout = onAbout,
+                        anaaMenu = anaaMenu,
                     )
                 }
             }
@@ -495,7 +500,8 @@ internal fun ReaderHeader(
                         onListen = onListen,
                         onSharePage = onSharePage,
                         onPageFawaed = onPageFawaed,
-                        onAbout = onAbout
+                        onAbout = onAbout,
+                        anaaMenu = anaaMenu,
                     )
                 }
             }
@@ -585,6 +591,7 @@ private fun HeaderMoreMenu(
     onSharePage: () -> Unit,
     onPageFawaed: () -> Unit,
     onAbout: () -> Unit,
+    anaaMenu: AnaaMenu,
 ) {
     // Actions assigned to the menu plus any preferred bar actions that did not fit this window.
     val menuActions = HeaderActions.filter { isVisible(it.id) && it.id !in visibleBarActionIds }
@@ -640,7 +647,17 @@ private fun HeaderMoreMenu(
                 )
             }
 
-            if (menuActions.isNotEmpty()) HorizontalDivider()
+            if (anaaMenu != AnaaMenu.None) {
+                if (menuActions.isNotEmpty()) HorizontalDivider()
+                AnaaMenuItems(anaaMenu, quietContentColor) { shortcut ->
+                    showMoreMenu = false
+                    if (!openAnaa(context, shortcut)) {
+                        Toast.makeText(context, "تعذّر فتح آناء.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+
+            if (menuActions.isNotEmpty() || anaaMenu != AnaaMenu.None) HorizontalDivider()
             DropdownMenuItem(
                 text = { Text("دليل الميزات") },
                 leadingIcon = {
@@ -683,6 +700,35 @@ private fun HeaderMoreMenu(
             menu = bookmarkMenu,
             onDismiss = { showBookmarkMenu = false },
         )
+    }
+}
+
+/** آناء's items in the More menu: its name over the chosen shortcuts, or one item for an Ana'a
+ *  that can only be opened on its home screen. [onOpen] gets null for the home screen. */
+@Composable
+private fun AnaaMenuItems(menu: AnaaMenu, tint: Color, onOpen: (AnaaShortcut?) -> Unit) {
+    when (menu) {
+        AnaaMenu.None -> Unit
+        AnaaMenu.OpenOnly -> DropdownMenuItem(
+            text = { Text("آناء") },
+            leadingIcon = { Icon(Icons.Outlined.Apps, contentDescription = null, tint = tint) },
+            onClick = { onOpen(null) }
+        )
+        is AnaaMenu.Shortcuts -> {
+            Text(
+                text = "آناء",
+                style = MaterialTheme.typography.labelMedium,
+                color = tint,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+            )
+            menu.items.forEach { shortcut ->
+                DropdownMenuItem(
+                    text = { Text(shortcut.title) },
+                    leadingIcon = { Icon(shortcut.icon, contentDescription = null, tint = tint) },
+                    onClick = { onOpen(shortcut) }
+                )
+            }
+        }
     }
 }
 
