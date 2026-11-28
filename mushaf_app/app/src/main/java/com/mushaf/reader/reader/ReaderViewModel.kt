@@ -190,6 +190,9 @@ class ReaderViewModel(app: Application) : AndroidViewModel(app) {
     /** Theme, page fill, header buttons, progress bars: how the reader wants the page shown. */
     val display = DisplaySettings(store, viewModelScope, initialSettings)
 
+    /** Whether آناء shows in the More menu, and which of its screens. */
+    internal val anaa = AnaaSettings(store, viewModelScope)
+
     /** When the current (in-progress) khatma cycle began, epoch millis. */
     var khatmaStartedAt by mutableStateOf(
         initialSettings.khatmaStartedAt.takeIf { it > 0L } ?: System.currentTimeMillis()

@@ -90,6 +90,9 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
         onStopOrDispose { viewModel.backupSync.onAppBackground() }
     }
 
+    // Whether آناء is here, asked again on every resume, for the More menu and the settings.
+    val anaaStatus = rememberAnaaStatus()
+
     val jumpToPage: (Int) -> Unit = { page ->
         scope.launch { pagerState.scrollToPage((page - 1).coerceIn(0, pageCount - 1)) }
     }
@@ -210,7 +213,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, updates: AppUpdateUi? = null) {
                             ui.showStatsScreen = true
                         },
                         onPageClick = { ui.showGoTo = true },
-                        onAbout = { ui.showAbout = true }
+                        onAbout = { ui.showAbout = true },
+                        anaaMenu = anaaMenu(anaaStatus, viewModel.anaa.showInMenu, viewModel.anaa.shortcuts),
                     )
                 }
 

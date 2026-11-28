@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.mushaf.reader.reader.AnaaShortcut
 import com.mushaf.reader.reader.ExplanationSources
 import kotlinx.coroutines.flow.first
 import java.util.UUID
@@ -257,6 +258,10 @@ class ReadingStore(private val context: Context) {
     // The chosen recitation (an MP3Quran read id). Device-local like the update nudge.
     private val keyRecitationReciterId = intPreferencesKey("recitation_reciter_id")
     private val keyRecitationSpeed = floatPreferencesKey("recitation_speed")
+    // Whether آناء shows in the More menu, and which of its screens. Device-local like recitation:
+    // Ana'a is installed per device.
+    private val keyAnaaInMenu = booleanPreferencesKey("anaa_in_menu")
+    private val keyAnaaShortcuts = stringSetPreferencesKey("anaa_shortcuts")
     private val keyRecitationAyahTimes = intPreferencesKey("recitation_ayah_times")
     private val keyRecitationRangeTimes = intPreferencesKey("recitation_range_times")
     private val keyRecitationFollowPage = booleanPreferencesKey("recitation_follow_page")
@@ -696,6 +701,21 @@ class ReadingStore(private val context: Context) {
 
     suspend fun setRecitationHandleOpacity(value: Int) {
         context.dataStore.edit { it[keyRecitationHandleOpacity] = value.coerceIn(25, 100) }
+    }
+
+    /** (shown in the More menu, the shortcut ids chosen); defaults until the reader picks. */
+    suspend fun anaaPrefs(): Pair<Boolean, Set<String>> {
+        val prefs = context.dataStore.data.first()
+        return (prefs[keyAnaaInMenu] ?: true) to
+            (prefs[keyAnaaShortcuts] ?: AnaaShortcut.DEFAULT_IDS)
+    }
+
+    suspend fun setAnaaInMenu(value: Boolean) {
+        context.dataStore.edit { it[keyAnaaInMenu] = value }
+    }
+
+    suspend fun setAnaaShortcuts(value: Set<String>) {
+        context.dataStore.edit { it[keyAnaaShortcuts] = value }
     }
 
     suspend fun recitationSpeed(): Float? = context.dataStore.data.first()[keyRecitationSpeed]
